@@ -211,6 +211,7 @@ export function RecordPaymentModal({
             </label>
             <input
               type="number"
+              name="payment_amount"
               min={1}
               max={summary?.outstanding}
               placeholder="e.g. 2000"
@@ -233,6 +234,7 @@ export function RecordPaymentModal({
           </label>
           <input
             type="date"
+            name="payment_date"
             value={paymentDate}
             onChange={(e) => setPaymentDate(e.target.value)}
             className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
@@ -259,6 +261,7 @@ export function RecordPaymentModal({
             Notes <span className="text-text-muted">(optional)</span>
           </label>
           <textarea
+            name="payment_notes"
             className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
             rows={2}
             placeholder="Payment notes"

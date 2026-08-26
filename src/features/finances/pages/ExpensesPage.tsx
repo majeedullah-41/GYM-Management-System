@@ -214,6 +214,7 @@ export function ExpensesPage() {
           />
           <input
             type="text"
+            name="expense_search"
             placeholder="Search expenses..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -364,6 +365,7 @@ export function ExpensesPage() {
               </label>
               <input
                 type="number"
+                name="expense_amount"
                 min={1}
                 placeholder="e.g. 5000"
                 value={formData.amount}
@@ -380,6 +382,7 @@ export function ExpensesPage() {
               </label>
               <input
                 type="date"
+                name="expense_date"
                 value={formData.expense_date}
                 onChange={(e) =>
                   setFormData((p) => ({ ...p, expense_date: e.target.value }))
@@ -397,6 +400,7 @@ export function ExpensesPage() {
             </label>
             <input
               type="text"
+              name="expense_description"
               placeholder="e.g. Monthly electricity bill"
               value={formData.description}
               onChange={(e) =>
@@ -410,6 +414,7 @@ export function ExpensesPage() {
               Notes <span className="text-text-muted">(optional)</span>
             </label>
             <textarea
+              name="expense_notes"
               className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               rows={2}
               placeholder="Additional notes"

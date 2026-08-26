@@ -19,10 +19,12 @@ export function Select({
   placeholder,
   className = "",
   id: idProp,
+  name: nameProp,
   ...props
 }: SelectProps) {
   const autoId = useId();
-  const id = idProp ?? (label ? autoId : undefined);
+  const id = idProp ?? autoId;
+  const name = nameProp ?? autoId;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -36,6 +38,7 @@ export function Select({
       )}
       <select
         id={id}
+        name={name}
         className={`w-full rounded-md border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary ${
           error ? "border-danger" : "border-border"
         } ${className}`}

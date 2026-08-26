@@ -147,3 +147,13 @@
 - [x] Frontend: MembersPage — added "Balance" column (orange when > 0, dash when paid)
 - [x] Frontend lint + typecheck + build pass
 - [x] Full verification: cargo check ✓, cargo test (138/138) ✓, tsc ✓, vite build ✓
+
+## Member Detail Page
+- [x] Page type extended with "member-detail" variant
+- [x] MemberDetailPage — member info card (name, father, phone, CNIC, gender, DOB, address, notes)
+- [x] MemberDetailPage — membership card (plan, status, start/expiry dates, price, paid, outstanding)
+- [x] MemberDetailPage — payment history table (receipt #, date, amount, method, period, outstanding)
+- [x] AppShell routing — supports member-detail with sidebar hidden + back navigation
+- [x] MembersPage — row click navigates to MemberDetailPage
+- [x] MembersPage — action buttons (Pay/Edit/Archive) stop propagation
+- [x] Frontend lint + typecheck + build pass

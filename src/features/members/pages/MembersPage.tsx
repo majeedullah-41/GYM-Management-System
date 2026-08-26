@@ -58,7 +58,11 @@ const STATUS_BADGE: Record<string, "active" | "warning" | "expired" | "info"> = 
   none: "info",
 };
 
-export function MembersPage() {
+export function MembersPage({
+  onMemberClick,
+}: {
+  onMemberClick?: (memberId: string) => void;
+} = {}) {
   const { addToast } = useToast();
 
   const [members, setMembers] = useState<MemberResponse[]>([]);
@@ -211,6 +215,7 @@ export function MembersPage() {
           />
           <input
             type="text"
+            name="member_search"
             placeholder="Search by name, phone or member #..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -279,7 +284,12 @@ export function MembersPage() {
               {members.map((m) => (
                 <tr
                   key={m.id}
-                  className="border-b border-border last:border-b-0"
+                  onClick={() => onMemberClick?.(m.id)}
+                  className={`border-b border-border last:border-b-0 ${
+                    onMemberClick
+                      ? "cursor-pointer hover:bg-secondary-bg"
+                      : ""
+                  }`}
                 >
                   <td className="px-4 py-3 font-mono text-xs text-text-muted">
                     {m.member_number}
@@ -321,7 +331,7 @@ export function MembersPage() {
                         <Button
                           variant="primary"
                           size="sm"
-                          onClick={() => setPaymentTarget(m)}
+                          onClick={(e) => { e.stopPropagation(); setPaymentTarget(m); }}
                         >
                           Pay
                         </Button>
@@ -329,7 +339,7 @@ export function MembersPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => openEditForm(m)}
+                        onClick={(e) => { e.stopPropagation(); openEditForm(m); }}
                       >
                         Edit
                       </Button>
@@ -337,7 +347,7 @@ export function MembersPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setArchiveTarget(m)}
+                          onClick={(e) => { e.stopPropagation(); setArchiveTarget(m); }}
                         >
                           Archive
                         </Button>
@@ -408,6 +418,7 @@ export function MembersPage() {
                 Gender
               </label>
               <select
+                name="member_gender"
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
                 value={formData.gender}
                 onChange={(e) =>
@@ -440,6 +451,7 @@ export function MembersPage() {
               Notes <span className="text-text-muted">(optional)</span>
             </label>
             <textarea
+              name="member_notes"
               className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               rows={3}
               placeholder="Additional notes about this member"

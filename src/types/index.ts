@@ -85,7 +85,8 @@ export type Page =
   | "members"
   | "finances"
   | "reports"
-  | "settings";
+  | "settings"
+  | "member-detail";
 
 export interface Toast {
   id: string;

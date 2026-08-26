@@ -61,7 +61,7 @@ export async function listMembers(args: {
   return invokeCommand<MemberResponse[]>("list_members", {
     search: args.search ?? null,
     status: args.status ?? null,
-    include_archived: args.include_archived ?? false,
+    includeArchived: args.include_archived ?? false,
   });
 }
 

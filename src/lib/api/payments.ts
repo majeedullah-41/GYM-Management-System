@@ -52,8 +52,8 @@ export async function listPayments(args: {
 }): Promise<PaymentResponse[]> {
   return invokeCommand<PaymentResponse[]>("list_payments", {
     search: args.search ?? null,
-    date_from: args.date_from ?? null,
-    date_to: args.date_to ?? null,
+    dateFrom: args.date_from ?? null,
+    dateTo: args.date_to ?? null,
   });
 }
 
@@ -61,7 +61,7 @@ export async function listMemberPayments(
   memberId: string,
 ): Promise<PaymentResponse[]> {
   return invokeCommand<PaymentResponse[]>("list_member_payments", {
-    member_id: memberId,
+    memberId: memberId,
   });
 }
 
@@ -70,7 +70,7 @@ export async function getPaymentSummary(
   planId: string,
 ): Promise<PaymentSummary> {
   return invokeCommand<PaymentSummary>("get_payment_summary", {
-    member_id: memberId,
-    plan_id: planId,
+    memberId: memberId,
+    planId: planId,
   });
 }

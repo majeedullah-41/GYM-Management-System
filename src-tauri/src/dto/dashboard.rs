@@ -1,6 +1,18 @@
 use serde::Serialize;
 
+use crate::dto::member::MemberResponse;
 use crate::dto::payment::PaymentResponse;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExpiringMember {
+    pub id: String,
+    pub member_number: String,
+    pub full_name: String,
+    pub plan_name: Option<String>,
+    pub membership_expiry_date: Option<String>,
+    pub days_remaining: i64,
+    pub outstanding: i64,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DashboardSummary {
@@ -14,4 +26,6 @@ pub struct DashboardSummary {
     pub month_net_income: i64,
     pub total_outstanding: i64,
     pub recent_payments: Vec<PaymentResponse>,
+    pub recent_members: Vec<MemberResponse>,
+    pub expiring_members: Vec<ExpiringMember>,
 }

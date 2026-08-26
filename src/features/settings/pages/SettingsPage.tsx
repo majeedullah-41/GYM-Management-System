@@ -310,6 +310,7 @@ export function SettingsPage() {
               Description <span className="text-text-muted">(optional)</span>
             </label>
             <textarea
+              name="plan_description"
               className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               rows={3}
               placeholder="Brief description of this plan"

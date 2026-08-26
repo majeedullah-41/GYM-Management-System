@@ -100,9 +100,10 @@ export function PaymentsPage() {
             size={16}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
           />
-          <input
-            type="text"
-            placeholder="Search by receipt #, member name or phone..."
+            <input
+              type="text"
+              name="payment_search"
+              placeholder="Search by receipt #, member name or phone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-md border border-border bg-surface py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"

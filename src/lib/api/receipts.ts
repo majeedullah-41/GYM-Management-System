@@ -23,7 +23,7 @@ export async function getReceiptByPaymentId(
   paymentId: string,
 ): Promise<ReceiptResponse> {
   return invokeCommand<ReceiptResponse>("get_receipt_by_payment_id", {
-    payment_id: paymentId,
+    paymentId: paymentId,
   });
 }
 
@@ -31,12 +31,12 @@ export async function getReceiptByNumber(
   receiptNumber: string,
 ): Promise<ReceiptResponse> {
   return invokeCommand<ReceiptResponse>("get_receipt_by_number", {
-    receipt_number: receiptNumber,
+    receiptNumber: receiptNumber,
   });
 }
 
 export async function printReceipt(receipt: ReceiptResponse): Promise<void> {
   return invokeCommand<void>("print_receipt_json", {
-    receipt_json: JSON.stringify(receipt),
+    receiptJson: JSON.stringify(receipt),
   });
 }

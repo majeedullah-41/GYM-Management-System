@@ -57,8 +57,8 @@ export async function listExpenses(args: {
   return invokeCommand<ExpenseResponse[]>("list_expenses", {
     search: args.search ?? null,
     category: args.category ?? null,
-    date_from: args.date_from ?? null,
-    date_to: args.date_to ?? null,
+    dateFrom: args.date_from ?? null,
+    dateTo: args.date_to ?? null,
   });
 }
 
@@ -67,8 +67,8 @@ export async function totalExpenses(
   dateTo: string,
 ): Promise<number> {
   return invokeCommand<number>("total_expenses", {
-    date_from: dateFrom,
-    date_to: dateTo,
+    dateFrom: dateFrom,
+    dateTo: dateTo,
   });
 }
 
