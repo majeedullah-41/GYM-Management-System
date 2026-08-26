@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Search, DollarSign } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
+import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
 import { Badge } from "../../../components/ui/Badge";
 import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
 import { EmptyState } from "../../../components/ui/EmptyState";
+import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
 import { formatCurrency } from "../../../lib/utils/format";
 import {
   listPayments,
@@ -58,6 +60,7 @@ export function PaymentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [datePreset, setDatePreset] = useState("");
+  const [receiptPaymentId, setReceiptPaymentId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -206,12 +209,27 @@ export function PaymentsPage() {
                   <td className="px-4 py-3 text-text-muted">
                     {p.payment_date}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setReceiptPaymentId(p.id)}
+                    >
+                      Receipt
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <ReceiptPreview
+        isOpen={!!receiptPaymentId}
+        onClose={() => setReceiptPaymentId(null)}
+        paymentId={receiptPaymentId}
+      />
     </div>
   );
 }

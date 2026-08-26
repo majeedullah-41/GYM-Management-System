@@ -6,6 +6,7 @@ import { useToast } from "../../../components/feedback/ToastProvider";
 import { createPayment } from "../../../lib/api/payments";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { formatCurrency } from "../../../lib/utils/format";
+import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
 
 interface Props {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export function RecordPaymentModal({
   });
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [completedPaymentId, setCompletedPaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -62,6 +64,7 @@ export function RecordPaymentModal({
       setMethod("Cash");
       setPaymentDate(new Date().toISOString().split("T")[0]);
       setNotes("");
+      setCompletedPaymentId(null);
     }
   }, [isOpen]);
 
@@ -80,7 +83,7 @@ export function RecordPaymentModal({
 
     try {
       setSubmitting(true);
-      await createPayment({
+      const payment = await createPayment({
         member_id: memberId,
         membership_plan_id: selectedPlanId,
         amount: amountNum,
@@ -94,7 +97,7 @@ export function RecordPaymentModal({
         message: `${formatCurrency(amountNum)} payment from ${memberName} saved.`,
       });
       onPaymentRecorded();
-      onClose();
+      setCompletedPaymentId(payment.id);
     } catch (err) {
       addToast({
         variant: "error",

@@ -3,8 +3,8 @@ use rusqlite::Connection;
 
 use crate::dto::payment::{CreatePaymentRequest, PaymentResponse};
 use crate::errors::AppError;
-use crate::models::Payment;
-use crate::repositories::{member_repository, membership_plan_repository, payment_repository};
+use crate::models::{Payment, Receipt};
+use crate::repositories::{member_repository, membership_plan_repository, payment_repository, receipt_repository};
 use crate::utils::dates::now_iso8601;
 
 const VALID_METHODS: &[&str] = &["Cash", "Card", "BankTransfer", "Other"];
@@ -67,10 +67,19 @@ pub fn create_payment(
         membership_expiry_date: expiry_date.format("%Y-%m-%d").to_string(),
         notes: request.notes,
         created_at: now.clone(),
-        updated_at: now,
+        updated_at: now.clone(),
     };
 
     payment_repository::create(conn, &payment)?;
+
+    let receipt = Receipt {
+        id: uuid::Uuid::new_v4().to_string(),
+        receipt_number: receipt_number.clone(),
+        payment_id: payment.id.clone(),
+        issued_at: now.clone(),
+        created_at: now,
+    };
+    receipt_repository::create(conn, &receipt)?;
 
     log::info!(
         "Payment {} recorded: Rs. {} from {} ({})",
