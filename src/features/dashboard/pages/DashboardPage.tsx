@@ -8,6 +8,7 @@ import {
   TrendingUp,
   TrendingDown,
   Activity,
+  Wallet,
 } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Card } from "../../../components/ui/Card";
@@ -112,7 +113,7 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <StatCard
           icon={DollarSign}
           label="Today's Revenue"
@@ -136,6 +137,12 @@ export function DashboardPage() {
           label="Net Income"
           value={formatCurrency(summary.month_net_income)}
           color={summary.month_net_income >= 0 ? "bg-primary" : "bg-red-500"}
+        />
+        <StatCard
+          icon={Wallet}
+          label="Outstanding"
+          value={formatCurrency(summary.total_outstanding)}
+          color={summary.total_outstanding > 0 ? "bg-amber-500" : "bg-green-500"}
         />
       </div>
 

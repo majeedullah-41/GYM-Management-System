@@ -16,6 +16,7 @@ export interface MemberResponse {
   membership_start_date: string | null;
   membership_expiry_date: string | null;
   membership_status: string | null;
+  outstanding_balance: number;
   created_at: string;
   updated_at: string;
 }

@@ -83,6 +83,8 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
         recent_payments.push(resp);
     }
 
+    let total_outstanding = payment_repository::get_total_outstanding(conn)?;
+
     Ok(DashboardSummary {
         total_members,
         active_members,
@@ -92,6 +94,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
         month_revenue,
         month_expenses,
         month_net_income: month_revenue - month_expenses,
+        total_outstanding,
         recent_payments,
     })
 }
@@ -115,6 +118,7 @@ mod tests {
         assert_eq!(summary.total_members, 0);
         assert_eq!(summary.today_revenue, 0);
         assert_eq!(summary.month_expenses, 0);
+        assert_eq!(summary.total_outstanding, 0);
         assert!(summary.recent_payments.is_empty());
     }
 

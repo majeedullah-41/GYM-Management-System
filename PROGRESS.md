@@ -129,3 +129,21 @@
   - Membership Status: active/expiring/expired member lists
 - [x] Frontend lint + typecheck + build pass
 - [x] Full verification: cargo check ✓, cargo test (133/133) ✓, tsc ✓, vite build ✓
+
+## Phase 9.5: Partial Payments & Outstanding Balances
+- [x] Backend: New repository functions (total_paid_for_period, get_current_period, get_total_outstanding)
+- [x] Backend: PaymentSummary DTO (plan_price, previously_paid, outstanding, membership dates)
+- [x] Backend: get_payment_summary Tauri command
+- [x] Backend: Updated create_payment — validates against outstanding, allows partial payments, reuses existing period dates
+- [x] Backend: Dashboard DTO — added total_outstanding KPI
+- [x] Backend: ReceiptResponse — added remaining_balance field (calculated from plan price - total paid for period)
+- [x] Backend: MemberResponse — added outstanding_balance field
+- [x] Rust tests — 138 pass (+5 new tests: partial payment, overpayment rejection, payment summary, summary with no payments, multiple partial payments)
+- [x] Frontend: PaymentSummary type + getPaymentSummary API
+- [x] Frontend: RecordPaymentModal — shows plan price, previously paid, outstanding, amount, remaining after payment
+- [x] Frontend: DashboardPage — 5th KPI card "Outstanding" (amber/green based on amount)
+- [x] Frontend: ReceiptPreview — shows "Remaining Balance" in orange when > 0
+- [x] Frontend: print.html — prints remaining balance on receipt
+- [x] Frontend: MembersPage — added "Balance" column (orange when > 0, dash when paid)
+- [x] Frontend lint + typecheck + build pass
+- [x] Full verification: cargo check ✓, cargo test (138/138) ✓, tsc ✓, vite build ✓

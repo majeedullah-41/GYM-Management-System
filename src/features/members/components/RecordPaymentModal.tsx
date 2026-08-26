@@ -3,7 +3,7 @@ import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
 import { useToast } from "../../../components/feedback/ToastProvider";
-import { createPayment } from "../../../lib/api/payments";
+import { createPayment, getPaymentSummary, type PaymentSummary } from "../../../lib/api/payments";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { formatCurrency } from "../../../lib/utils/format";
 import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
@@ -42,6 +42,8 @@ export function RecordPaymentModal({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [completedPaymentId, setCompletedPaymentId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<PaymentSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -50,7 +52,6 @@ export function RecordPaymentModal({
           setPlans(p);
           if (p.length === 1) {
             setSelectedPlanId(p[0].id);
-            setAmount(String(p[0].price));
           }
         })
         .catch(() => {});
@@ -65,8 +66,24 @@ export function RecordPaymentModal({
       setPaymentDate(new Date().toISOString().split("T")[0]);
       setNotes("");
       setCompletedPaymentId(null);
+      setSummary(null);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!selectedPlanId || !isOpen) {
+      setSummary(null);
+      return;
+    }
+    setSummaryLoading(true);
+    getPaymentSummary(memberId, selectedPlanId)
+      .then((s) => {
+        setSummary(s);
+        setAmount(String(s.outstanding));
+      })
+      .catch(() => setSummary(null))
+      .finally(() => setSummaryLoading(false));
+  }, [selectedPlanId, isOpen, memberId]);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
 
@@ -151,10 +168,41 @@ export function RecordPaymentModal({
           value={selectedPlanId}
           onChange={(e) => {
             setSelectedPlanId(e.target.value);
-            const plan = plans.find((p) => p.id === e.target.value);
-            if (plan) setAmount(String(plan.price));
           }}
         />
+
+        {summaryLoading && selectedPlanId && (
+          <div className="text-sm text-text-muted text-center py-2">Loading plan info...</div>
+        )}
+
+        {summary && (
+          <div className="rounded-md bg-secondary-bg p-3 text-sm space-y-1.5">
+            <div className="flex justify-between">
+              <span className="text-text-muted">Plan:</span>
+              <span className="font-medium">{selectedPlan?.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Duration:</span>
+              <span>{selectedPlan?.duration_days} days</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Plan Price:</span>
+              <span>{formatCurrency(summary.plan_price)}</span>
+            </div>
+            {summary.previously_paid > 0 && (
+              <div className="flex justify-between">
+                <span className="text-text-muted">Previously Paid:</span>
+                <span className="text-green-600">{formatCurrency(summary.previously_paid)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold border-t border-border pt-1.5">
+              <span className="text-text-muted">Outstanding:</span>
+              <span className={summary.outstanding > 0 ? "text-orange-600" : "text-green-600"}>
+                {formatCurrency(summary.outstanding)}
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
@@ -164,6 +212,7 @@ export function RecordPaymentModal({
             <input
               type="number"
               min={1}
+              max={summary?.outstanding}
               placeholder="e.g. 2000"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -190,28 +239,18 @@ export function RecordPaymentModal({
           />
         </div>
 
-        {selectedPlan && (
-          <div className="rounded-md bg-secondary-bg p-3 text-sm">
+        {summary && amount && parseInt(amount, 10) > 0 && (
+          <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm">
             <div className="flex justify-between">
-              <span className="text-text-muted">Plan:</span>
-              <span className="font-medium">{selectedPlan.name}</span>
+              <span className="text-blue-700">Payment Now:</span>
+              <span className="font-medium text-blue-800">{formatCurrency(parseInt(amount, 10) || 0)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-text-muted">Duration:</span>
-              <span>{selectedPlan.duration_days} days</span>
+              <span className="text-blue-700">Remaining After Payment:</span>
+              <span className="font-medium text-blue-800">
+                {formatCurrency(Math.max(0, summary.outstanding - (parseInt(amount, 10) || 0)))}
+              </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Plan Price:</span>
-              <span>{formatCurrency(selectedPlan.price)}</span>
-            </div>
-            {amount && (
-              <div className="flex justify-between border-t border-border mt-2 pt-2">
-                <span className="text-text-muted">Payment:</span>
-                <span className="font-medium text-primary">
-                  {formatCurrency(parseInt(amount, 10) || 0)}
-                </span>
-              </div>
-            )}
           </div>
         )}
 

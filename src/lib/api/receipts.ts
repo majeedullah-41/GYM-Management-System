@@ -16,6 +16,7 @@ export interface ReceiptResponse {
   membership_start_date: string;
   membership_expiry_date: string;
   notes: string | null;
+  remaining_balance: number;
 }
 
 export async function getReceiptByPaymentId(

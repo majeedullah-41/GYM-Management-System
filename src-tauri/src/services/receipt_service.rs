@@ -59,9 +59,21 @@ fn assemble_receipt(
         .map(|m| m.member_number)
         .unwrap_or_default();
 
-    let plan_name = membership_plan_repository::get_by_id(conn, &payment.membership_plan_id)?
-        .map(|p| p.name)
-        .unwrap_or_default();
+    let plan = membership_plan_repository::get_by_id(conn, &payment.membership_plan_id)?;
+    let plan_name = plan.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+
+    let remaining_balance = if let Some(ref p) = plan {
+        let total_paid = payment_repository::total_paid_for_period(
+            conn,
+            &payment.member_id,
+            &payment.membership_plan_id,
+            &payment.membership_start_date,
+            &payment.membership_expiry_date,
+        )?;
+        p.price - total_paid
+    } else {
+        0
+    };
 
     Ok(ReceiptResponse {
         id: uuid::Uuid::new_v4().to_string(),
@@ -79,6 +91,7 @@ fn assemble_receipt(
         membership_start_date: payment.membership_start_date.clone(),
         membership_expiry_date: payment.membership_expiry_date.clone(),
         notes: payment.notes.clone(),
+        remaining_balance,
     })
 }
 

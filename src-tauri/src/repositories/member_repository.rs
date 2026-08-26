@@ -90,20 +90,29 @@ pub fn list(
 pub fn get_latest_membership_info(
     conn: &Connection,
     member_id: &str,
-) -> Result<(Option<String>, Option<String>, Option<String>), AppError> {
+) -> Result<(Option<String>, Option<String>, Option<String>, i64), AppError> {
     let result = conn.query_row(
-        "SELECT mp.name, p.membership_start_date, p.membership_expiry_date \
+        "SELECT mp.name, p.membership_start_date, p.membership_expiry_date, mp.price \
          FROM payments p \
          JOIN membership_plans mp ON mp.id = p.membership_plan_id \
          WHERE p.member_id = ?1 \
          ORDER BY p.payment_date DESC LIMIT 1",
         params![member_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get::<_, i64>(3)?)),
     );
 
     match result {
-        Ok(tuple) => Ok(tuple),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, None, None)),
+        Ok((plan_name, start_date, expiry_date, plan_price)) => {
+            let total_paid: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM payments \
+                 WHERE member_id = ?1 AND membership_start_date = ?2 AND membership_expiry_date = ?3",
+                params![member_id, start_date, expiry_date],
+                |row| row.get(0),
+            )?;
+            let outstanding = plan_price - total_paid;
+            Ok((plan_name, start_date, expiry_date, outstanding))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, None, None, 0)),
         Err(e) => Err(AppError::DatabaseError(e)),
     }
 }
@@ -342,5 +351,6 @@ mod tests {
         let member = make_member("No Payments");
         let info = get_latest_membership_info(&conn, &member.id).unwrap();
         assert_eq!(info.0, None);
+        assert_eq!(info.3, 0);
     }
 }

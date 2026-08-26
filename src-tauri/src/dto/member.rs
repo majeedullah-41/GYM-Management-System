@@ -43,6 +43,7 @@ pub struct MemberResponse {
     pub membership_start_date: Option<String>,
     pub membership_expiry_date: Option<String>,
     pub membership_status: Option<String>,
+    pub outstanding_balance: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -65,6 +66,7 @@ impl MemberResponse {
             membership_start_date: membership.start_date,
             membership_expiry_date: membership.expiry_date,
             membership_status: membership.status,
+            outstanding_balance: membership.outstanding_balance,
             created_at: member.created_at,
             updated_at: member.updated_at,
         }
@@ -77,4 +79,5 @@ pub struct MembershipInfo {
     pub start_date: Option<String>,
     pub expiry_date: Option<String>,
     pub status: Option<String>,
+    pub outstanding_balance: i64,
 }

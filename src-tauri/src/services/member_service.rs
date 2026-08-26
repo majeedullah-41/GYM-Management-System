@@ -149,7 +149,7 @@ fn get_membership_info(
     conn: &Connection,
     member_id: &str,
 ) -> Result<MembershipInfo, AppError> {
-    let (plan_name, start_date, expiry_date) =
+    let (plan_name, start_date, expiry_date, outstanding) =
         member_repository::get_latest_membership_info(conn, member_id)?;
 
     let status = compute_membership_status(expiry_date.as_deref());
@@ -159,6 +159,7 @@ fn get_membership_info(
         start_date,
         expiry_date,
         status,
+        outstanding_balance: outstanding,
     })
 }
 

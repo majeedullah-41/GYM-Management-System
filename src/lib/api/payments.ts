@@ -18,6 +18,14 @@ export interface PaymentResponse {
   updated_at: string;
 }
 
+export interface PaymentSummary {
+  plan_price: number;
+  previously_paid: number;
+  outstanding: number;
+  membership_start_date: string | null;
+  membership_expiry_date: string | null;
+}
+
 export interface CreatePaymentRequest {
   member_id: string;
   membership_plan_id: string;
@@ -54,5 +62,15 @@ export async function listMemberPayments(
 ): Promise<PaymentResponse[]> {
   return invokeCommand<PaymentResponse[]>("list_member_payments", {
     member_id: memberId,
+  });
+}
+
+export async function getPaymentSummary(
+  memberId: string,
+  planId: string,
+): Promise<PaymentSummary> {
+  return invokeCommand<PaymentSummary>("get_payment_summary", {
+    member_id: memberId,
+    plan_id: planId,
   });
 }

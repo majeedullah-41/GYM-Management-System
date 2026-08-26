@@ -19,6 +19,7 @@ import {
   type MemberResponse,
 } from "../../../lib/api/members";
 import { RecordPaymentModal } from "../components/RecordPaymentModal";
+import { formatCurrency } from "../../../lib/utils/format";
 
 interface FormData {
   full_name: string;
@@ -267,6 +268,9 @@ export function MembersPage() {
                   Status
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted">
+                  Balance
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted">
                   Actions
                 </th>
               </tr>
@@ -301,6 +305,15 @@ export function MembersPage() {
                           m.membership_status.slice(1)
                         : "No Plan"}
                     </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {m.outstanding_balance > 0 ? (
+                      <span className="text-orange-600 font-medium">
+                        {formatCurrency(m.outstanding_balance)}
+                      </span>
+                    ) : (
+                      <span className="text-green-600">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">

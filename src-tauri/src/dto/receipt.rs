@@ -17,4 +17,5 @@ pub struct ReceiptResponse {
     pub membership_start_date: String,
     pub membership_expiry_date: String,
     pub notes: Option<String>,
+    pub remaining_balance: i64,
 }

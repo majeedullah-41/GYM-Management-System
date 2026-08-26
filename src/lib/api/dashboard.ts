@@ -10,6 +10,7 @@ export interface DashboardSummary {
   month_revenue: number;
   month_expenses: number;
   month_net_income: number;
+  total_outstanding: number;
   recent_payments: PaymentResponse[];
 }
 

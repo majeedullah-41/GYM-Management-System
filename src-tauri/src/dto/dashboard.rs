@@ -12,5 +12,6 @@ pub struct DashboardSummary {
     pub month_revenue: i64,
     pub month_expenses: i64,
     pub month_net_income: i64,
+    pub total_outstanding: i64,
     pub recent_payments: Vec<PaymentResponse>,
 }

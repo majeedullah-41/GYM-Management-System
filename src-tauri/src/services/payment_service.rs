@@ -1,7 +1,7 @@
 use chrono::{Duration, NaiveDate, Utc};
 use rusqlite::Connection;
 
-use crate::dto::payment::{CreatePaymentRequest, PaymentResponse};
+use crate::dto::payment::{CreatePaymentRequest, PaymentResponse, PaymentSummary};
 use crate::errors::AppError;
 use crate::models::{Payment, Receipt};
 use crate::repositories::{member_repository, membership_plan_repository, payment_repository, receipt_repository};
@@ -50,8 +50,32 @@ pub fn create_payment(
         ));
     }
 
-    let start_date = Utc::now().date_naive();
-    let expiry_date = start_date + Duration::days(plan.duration_days as i64);
+    let (start_date, expiry_date) =
+        match payment_repository::get_current_period(conn, &request.member_id, &request.membership_plan_id)? {
+            Some((s, e)) => (s, e),
+            None => {
+                let s = Utc::now().date_naive();
+                let e = s + Duration::days(plan.duration_days as i64);
+                (s.format("%Y-%m-%d").to_string(), e.format("%Y-%m-%d").to_string())
+            }
+        };
+
+    let previously_paid = payment_repository::total_paid_for_period(
+        conn,
+        &request.member_id,
+        &request.membership_plan_id,
+        &start_date,
+        &expiry_date,
+    )?;
+
+    let outstanding = plan.price - previously_paid;
+    if request.amount > outstanding {
+        return Err(AppError::ValidationError(format!(
+            "Payment amount Rs. {} exceeds outstanding balance Rs. {}",
+            request.amount, outstanding
+        )));
+    }
+
     let now = now_iso8601();
     let receipt_number = payment_repository::next_receipt_number(conn)?;
 
@@ -63,8 +87,8 @@ pub fn create_payment(
         payment_method: request.payment_method.clone(),
         payment_date: request.payment_date,
         membership_plan_id: request.membership_plan_id.clone(),
-        membership_start_date: start_date.format("%Y-%m-%d").to_string(),
-        membership_expiry_date: expiry_date.format("%Y-%m-%d").to_string(),
+        membership_start_date: start_date.clone(),
+        membership_expiry_date: expiry_date.clone(),
         notes: request.notes,
         created_at: now.clone(),
         updated_at: now.clone(),
@@ -82,11 +106,12 @@ pub fn create_payment(
     receipt_repository::create(conn, &receipt)?;
 
     log::info!(
-        "Payment {} recorded: Rs. {} from {} ({})",
+        "Payment {} recorded: Rs. {} from {} ({}) [outstanding: Rs. {}]",
         receipt_number,
         payment.amount,
         member.full_name,
-        member.member_number
+        member.member_number,
+        outstanding - payment.amount
     );
 
     Ok(PaymentResponse::from_payment(
@@ -95,6 +120,44 @@ pub fn create_payment(
         Some(member.member_number),
         Some(plan.name),
     ))
+}
+
+pub fn get_payment_summary(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+) -> Result<PaymentSummary, AppError> {
+    let plan = membership_plan_repository::get_by_id(conn, plan_id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Plan '{}' not found", plan_id)))?;
+
+    if !plan.is_active {
+        return Err(AppError::ValidationError(
+            "Cannot calculate summary for an inactive plan".into(),
+        ));
+    }
+
+    let (start_date, expiry_date) =
+        match payment_repository::get_current_period(conn, member_id, plan_id)? {
+            Some((s, e)) => (Some(s), Some(e)),
+            None => (None, None),
+        };
+
+    let previously_paid = match (&start_date, &expiry_date) {
+        (Some(s), Some(e)) => {
+            payment_repository::total_paid_for_period(conn, member_id, plan_id, s, e)?
+        }
+        _ => 0,
+    };
+
+    let outstanding = plan.price - previously_paid;
+
+    Ok(PaymentSummary {
+        plan_price: plan.price,
+        previously_paid,
+        outstanding,
+        membership_start_date: start_date,
+        membership_expiry_date: expiry_date,
+    })
 }
 
 pub fn get_payment(conn: &Connection, id: &str) -> Result<PaymentResponse, AppError> {
@@ -292,12 +355,13 @@ mod tests {
     fn should_generate_correct_receipt_number() {
         let conn = test_db();
         let member_id = insert_test_member(&conn, "Ahmad");
-        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let plan1 = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let plan2 = insert_test_plan(&conn, "Quarterly", 5000, 90, true);
 
-        let p1 = create_payment(&conn, valid_request(&member_id, &plan_id, 2000)).unwrap();
+        let p1 = create_payment(&conn, valid_request(&member_id, &plan1, 2000)).unwrap();
         assert_eq!(p1.receipt_number, "RCP-000001");
 
-        let p2 = create_payment(&conn, valid_request(&member_id, &plan_id, 1000)).unwrap();
+        let p2 = create_payment(&conn, valid_request(&member_id, &plan2, 1000)).unwrap();
         assert_eq!(p2.receipt_number, "RCP-000002");
     }
 
@@ -338,10 +402,11 @@ mod tests {
     fn should_list_member_payments() {
         let conn = test_db();
         let member_id = insert_test_member(&conn, "Ahmad");
-        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let plan1 = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let plan2 = insert_test_plan(&conn, "Quarterly", 5000, 90, true);
 
-        create_payment(&conn, valid_request(&member_id, &plan_id, 2000)).unwrap();
-        create_payment(&conn, valid_request(&member_id, &plan_id, 500)).unwrap();
+        create_payment(&conn, valid_request(&member_id, &plan1, 2000)).unwrap();
+        create_payment(&conn, valid_request(&member_id, &plan2, 500)).unwrap();
 
         let payments = list_member_payments(&conn, &member_id).unwrap();
         assert_eq!(payments.len(), 2);
@@ -351,9 +416,9 @@ mod tests {
     fn should_accept_all_valid_payment_methods() {
         let conn = test_db();
         let member_id = insert_test_member(&conn, "Ahmad");
-        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
 
         for method in &["Cash", "Card", "BankTransfer", "Other"] {
+            let plan_id = insert_test_plan(&conn, &format!("Plan-{}", method), 2000, 30, true);
             let mut req = valid_request(&member_id, &plan_id, 2000);
             req.payment_method = method.to_string();
             let result = create_payment(&conn, req);
@@ -366,5 +431,64 @@ mod tests {
         let conn = test_db();
         let result = get_payment(&conn, "nonexistent");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_allow_partial_payment() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let result = create_payment(&conn, valid_request(&member_id, &plan_id, 500)).unwrap();
+        assert_eq!(result.amount, 500);
+    }
+
+    #[test]
+    fn should_track_multiple_partial_payments() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        create_payment(&conn, valid_request(&member_id, &plan_id, 500)).unwrap();
+        create_payment(&conn, valid_request(&member_id, &plan_id, 700)).unwrap();
+        let p3 = create_payment(&conn, valid_request(&member_id, &plan_id, 800)).unwrap();
+        assert_eq!(p3.amount, 800);
+    }
+
+    #[test]
+    fn should_reject_overpayment() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        create_payment(&conn, valid_request(&member_id, &plan_id, 1500)).unwrap();
+        let result = create_payment(&conn, valid_request(&member_id, &plan_id, 600));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_get_payment_summary() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        create_payment(&conn, valid_request(&member_id, &plan_id, 500)).unwrap();
+        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
+
+        assert_eq!(summary.plan_price, 2000);
+        assert_eq!(summary.previously_paid, 500);
+        assert_eq!(summary.outstanding, 1500);
+    }
+
+    #[test]
+    fn should_get_payment_summary_with_no_payments() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
+        assert_eq!(summary.plan_price, 2000);
+        assert_eq!(summary.previously_paid, 0);
+        assert_eq!(summary.outstanding, 2000);
     }
 }

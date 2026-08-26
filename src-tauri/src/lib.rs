@@ -51,6 +51,7 @@ pub fn run() {
             commands::payments::get_payment,
             commands::payments::list_payments,
             commands::payments::list_member_payments,
+            commands::payments::get_payment_summary,
             commands::receipts::get_receipt_by_payment_id,
             commands::receipts::get_receipt_by_number,
             commands::expenses::create_expense,

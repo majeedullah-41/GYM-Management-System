@@ -132,6 +132,14 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
                 {formatCurrency(receipt.amount)}
               </span>
             </div>
+            {receipt.remaining_balance > 0 && (
+              <div className="flex justify-between text-base mt-1">
+                <span className="font-medium text-orange-600">Remaining Balance</span>
+                <span className="font-bold text-orange-600">
+                  {formatCurrency(receipt.remaining_balance)}
+                </span>
+              </div>
+            )}
           </div>
 
           {receipt.notes && (

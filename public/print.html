@@ -50,6 +50,7 @@
         <div class="divider-thick"></div>
         <div class="row"><span class="label">Payment Method</span><span class="value">${esc(d.payment_method)}</span></div>
         <div class="row total-row"><span class="label">Amount Paid</span><span class="value">Rs. ${Number(d.amount).toLocaleString('en-PK')}</span></div>
+        ${d.remaining_balance > 0 ? `<div class="row" style="font-size:14px;font-weight:600;color:#ea580c;padding:4px 0;"><span class="label" style="color:#ea580c;">Remaining Balance</span><span class="value" style="color:#ea580c;">Rs. ${Number(d.remaining_balance).toLocaleString('en-PK')}</span></div>` : ''}
         ${d.notes ? `<div class="notes"><b>Notes:</b> ${esc(d.notes)}</div>` : ''}
         <div class="footer">Thank you for your payment!</div>
       `;

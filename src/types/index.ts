@@ -14,6 +14,7 @@ export interface Member {
   notes: string | null;
   is_archived: boolean;
   archived_at: string | null;
+  outstanding_balance: number;
   created_at: string;
   updated_at: string;
 }
