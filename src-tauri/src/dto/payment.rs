@@ -31,6 +31,15 @@ pub struct PaymentResponse {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PaymentSummary {
+    pub plan_price: i64,
+    pub previously_paid: i64,
+    pub outstanding: i64,
+    pub membership_start_date: Option<String>,
+    pub membership_expiry_date: Option<String>,
+}
+
 impl PaymentResponse {
     pub fn from_payment(
         payment: Payment,

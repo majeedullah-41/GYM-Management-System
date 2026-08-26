@@ -61,6 +61,7 @@ pub fn run() {
             commands::expenses::total_expenses,
             commands::dashboard::get_dashboard_summary,
             commands::printing::print_receipt_json,
+            commands::reports::generate_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

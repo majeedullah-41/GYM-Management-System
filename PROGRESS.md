@@ -112,3 +112,20 @@
 - [x] DashboardPage — 8 stat cards (Total, Active, Expiring, Expired, Today Revenue, Monthly Revenue, Monthly Expenses, Net Income) + recent payments table
 - [x] Frontend lint + typecheck + tests pass
 - [x] Full verification: cargo check ✓, cargo test (114/114) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
+
+## Phase 9: Reports
+- [x] Report DTOs (ReportRequest, ReportResponse enum, FinancialReport, PaymentReport, ExpenseReport, MemberReport, MembershipStatusReport)
+- [x] Repository layer — SQL queries for all 5 report types (financial, payment, expense, member, membership_status + date/category/method filtering)
+- [x] Service layer — business logic with validation (valid report types, date formats, payment methods)
+- [x] Tauri command (generate_report)
+- [x] Commands wired into lib.rs invoke_handler
+- [x] Rust tests — 133 pass (+19 report tests: 9 repository + 10 service)
+- [x] Frontend API layer (lib/api/reports.ts)
+- [x] ReportsPage — full UI (5 report tabs, 8 date presets, custom date range, per-report filters, Generate button)
+  - Financial: 4 summary cards + revenue by method + expenses by category
+  - Payment: count/amount summary + payment detail table
+  - Expense: count/amount summary + expense detail table
+  - Member: 5 status count cards
+  - Membership Status: active/expiring/expired member lists
+- [x] Frontend lint + typecheck + build pass
+- [x] Full verification: cargo check ✓, cargo test (133/133) ✓, tsc ✓, vite build ✓

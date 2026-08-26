@@ -132,6 +132,72 @@ pub fn total_paid_for_plan(
     Ok(total)
 }
 
+pub fn total_paid_for_period(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+    start_date: &str,
+    expiry_date: &str,
+) -> Result<i64, AppError> {
+    let total: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount), 0) FROM payments \
+         WHERE member_id = ?1 AND membership_plan_id = ?2 \
+         AND membership_start_date = ?3 AND membership_expiry_date = ?4",
+        params![member_id, plan_id, start_date, expiry_date],
+        |row| row.get(0),
+    )?;
+    Ok(total)
+}
+
+pub fn get_current_period(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+) -> Result<Option<(String, String)>, AppError> {
+    let result = conn.query_row(
+        "SELECT membership_start_date, membership_expiry_date FROM payments \
+         WHERE member_id = ?1 AND membership_plan_id = ?2 \
+         ORDER BY membership_start_date DESC LIMIT 1",
+        params![member_id, plan_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    );
+    match result {
+        Ok((s, e)) => Ok(Some((s, e))),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn get_total_outstanding(conn: &Connection) -> Result<i64, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT p.membership_plan_id, p.membership_start_date, p.membership_expiry_date, \
+         mp.price \
+         FROM (SELECT DISTINCT membership_plan_id, membership_start_date, membership_expiry_date \
+               FROM payments) p \
+         JOIN membership_plans mp ON p.membership_plan_id = mp.id",
+    )?;
+    let mut total_outstanding: i64 = 0;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let plan_id: String = row.get(0)?;
+        let start_date: String = row.get(1)?;
+        let expiry_date: String = row.get(2)?;
+        let plan_price: i64 = row.get(3)?;
+
+        let total_paid: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(amount), 0) FROM payments \
+             WHERE membership_plan_id = ?1 AND membership_start_date = ?2 AND membership_expiry_date = ?3",
+            params![plan_id, start_date, expiry_date],
+            |row| row.get(0),
+        )?;
+
+        if total_paid < plan_price {
+            total_outstanding += plan_price - total_paid;
+        }
+    }
+    Ok(total_outstanding)
+}
+
 pub fn next_receipt_number(conn: &Connection) -> Result<String, AppError> {
     let max_num: Option<i64> = conn
         .query_row(

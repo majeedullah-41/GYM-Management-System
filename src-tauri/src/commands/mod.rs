@@ -5,3 +5,4 @@ pub mod membership_plans;
 pub mod payments;
 pub mod printing;
 pub mod receipts;
+pub mod reports;

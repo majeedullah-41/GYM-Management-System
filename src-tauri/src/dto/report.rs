@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ReportResponse {
+    Financial(FinancialReportResponse),
+    Payment(PaymentReportResponse),
+    Expense(ExpenseReportResponse),
+    Member(MemberReportResponse),
+    MembershipStatus(MembershipStatusReportResponse),
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReportRequest {
     pub report_type: String,

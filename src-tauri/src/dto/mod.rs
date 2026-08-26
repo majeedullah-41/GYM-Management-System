@@ -4,3 +4,4 @@ pub mod member;
 pub mod membership_plan;
 pub mod payment;
 pub mod receipt;
+pub mod report;
