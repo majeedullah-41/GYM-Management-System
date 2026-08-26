@@ -42,6 +42,15 @@ pub fn run() {
             commands::membership_plans::list_active_plans,
             commands::membership_plans::update_plan,
             commands::membership_plans::deactivate_plan,
+            commands::members::create_member,
+            commands::members::get_member,
+            commands::members::list_members,
+            commands::members::update_member,
+            commands::members::archive_member,
+            commands::payments::create_payment,
+            commands::payments::get_payment,
+            commands::payments::list_payments,
+            commands::payments::list_member_payments,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

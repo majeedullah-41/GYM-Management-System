@@ -47,3 +47,30 @@
 - [x] Settings page — full plans management UI (table, create/edit modal, deactivate dialog, toasts)
 - [x] Frontend lint + typecheck + tests pass
 - [x] Full verification: cargo check ✓, cargo test (31/31) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
+
+## Phase 4: Members (CRUD, Search, Filtering)
+- [x] DTOs (CreateMemberRequest, UpdateMemberRequest, MemberResponse with membership info)
+- [x] Repository layer — SQL only (create, get_by_id, list, search, next_member_number, update, archive)
+- [x] Service layer — business logic (create, get, list, update, archive + membership status computation)
+- [x] Tauri commands — thin IPC (create_member, get_member, list_members, update_member, archive_member)
+- [x] Commands wired into lib.rs invoke_handler
+- [x] Rust tests — 55 pass (+24 member tests: 10 repo + 14 service)
+- [x] Frontend API layer (lib/api/members.ts)
+- [x] MembersPage — full UI (search, status filter, member table, create/edit modal, archive dialog, toast notifications)
+- [x] Frontend lint + typecheck + tests pass
+- [x] Full verification: cargo check ✓, cargo test (55/55) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
+
+## Phase 5: Payment System (Core Feature)
+- [x] DTOs (CreatePaymentRequest, PaymentResponse with member/plan names)
+- [x] Repository layer — SQL only (create, get_by_id, list, list_by_member, total_paid_for_plan, next_receipt_number + search, date filtering)
+- [x] Service layer — business logic (create_payment with validation + atomic receipt generation, get/list payments, member payment history)
+- [x] Tauri commands — thin IPC (create_payment, get_payment, list_payments, list_member_payments)
+- [x] Commands wired into lib.rs invoke_handler
+- [x] Rust tests — 79 pass (+24 payment tests: 11 repository + 14 service)
+- [x] Frontend API layer (lib/api/payments.ts)
+- [x] RecordPaymentModal — payment form (plan selection, amount, method, date, notes, plan summary)
+- [x] PaymentsPage — payment history with search + date range filtering (today/week/month/year)
+- [x] MembersPage — added "Record Payment" button per member row
+- [x] AppShell routing updated — Finances tab now shows PaymentsPage
+- [x] Frontend lint + typecheck + tests pass
+- [x] Full verification: cargo check ✓, cargo test (79/79) ✓, lint ✓, tsc ✓, vitest (4/4) ✓

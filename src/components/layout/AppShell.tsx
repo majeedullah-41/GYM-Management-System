@@ -3,7 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { ToastProvider } from "../feedback/ToastProvider";
 import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
 import { MembersPage } from "../../features/members/pages/MembersPage";
-import { FinancesPage } from "../../features/finances/pages/FinancesPage";
+import { PaymentsPage } from "../../features/finances/pages/PaymentsPage";
 import { ReportsPage } from "../../features/reports/pages/ReportsPage";
 import { SettingsPage } from "../../features/settings/pages/SettingsPage";
 import type { Page } from "../../types";
@@ -11,7 +11,7 @@ import type { Page } from "../../types";
 const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   dashboard: DashboardPage,
   members: MembersPage,
-  finances: FinancesPage,
+  finances: PaymentsPage,
   reports: ReportsPage,
   settings: SettingsPage,
 };
