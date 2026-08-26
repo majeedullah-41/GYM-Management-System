@@ -8,6 +8,7 @@ mod services;
 mod utils;
 
 use database::Database;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +35,14 @@ pub fn run() {
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::membership_plans::create_plan,
+            commands::membership_plans::get_plan,
+            commands::membership_plans::list_plans,
+            commands::membership_plans::list_active_plans,
+            commands::membership_plans::update_plan,
+            commands::membership_plans::deactivate_plan,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

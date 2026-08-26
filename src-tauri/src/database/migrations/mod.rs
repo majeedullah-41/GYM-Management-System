@@ -15,7 +15,7 @@ fn get_migrations() -> Vec<Migration> {
     }]
 }
 
-pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
+pub fn run_migrations(conn: &mut Connection) -> Result<(), AppError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             id         TEXT PRIMARY KEY NOT NULL,

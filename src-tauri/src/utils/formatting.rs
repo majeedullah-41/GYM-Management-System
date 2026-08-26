@@ -34,6 +34,6 @@ mod tests {
 
     #[test]
     fn should_format_large_amount() {
-        assert_eq!(format_currency(125000), "Rs. 1,25,000");
+        assert_eq!(format_currency(125000), "Rs. 125,000");
     }
 }

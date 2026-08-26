@@ -24,9 +24,9 @@ impl Database {
 }
 
 pub fn init_db(db_path: &Path) -> Result<Connection, AppError> {
-    let conn = Connection::open(db_path)?;
+    let mut conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-    migrations::run_migrations(&conn)?;
+    migrations::run_migrations(&mut conn)?;
     Ok(conn)
 }
 
@@ -35,10 +35,10 @@ mod tests {
     use super::*;
 
     fn test_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .unwrap();
-        migrations::run_migrations(&conn).unwrap();
+        migrations::run_migrations(&mut conn).unwrap();
         conn
     }
 
@@ -109,8 +109,8 @@ mod tests {
 
     #[test]
     fn should_run_migrations_idempotently() {
-        let conn = test_db();
-        migrations::run_migrations(&conn).unwrap();
-        migrations::run_migrations(&conn).unwrap();
+        let mut conn = test_db();
+        migrations::run_migrations(&mut conn).unwrap();
+        migrations::run_migrations(&mut conn).unwrap();
     }
 }
