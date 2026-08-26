@@ -88,3 +88,27 @@
 - [x] RecordPaymentModal — shows receipt preview after successful payment
 - [x] Frontend lint + typecheck + tests pass
 - [x] Full verification: cargo check ✓, cargo test (88/88) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
+
+## Phase 7: Expenses
+- [x] DTOs (CreateExpenseRequest, UpdateExpenseRequest, ExpenseResponse + EXPENSE_CATEGORIES constant)
+- [x] Repository layer — SQL only (create, get_by_id, update, delete, list, total_by_date_range + search, category, date filtering)
+- [x] Service layer — business logic (create, get, update, delete, list, total + validation: amount > 0, valid category, valid date)
+- [x] Tauri commands (create_expense, get_expense, update_expense, delete_expense, list_expenses, total_expenses)
+- [x] Commands wired into lib.rs invoke_handler
+- [x] Rust tests — 111 pass (+23 expense tests: 12 repository + 11 service)
+- [x] Frontend API layer (lib/api/expenses.ts)
+- [x] ExpensesPage — full UI (search, category filter, date range filter, expense table, create/edit modal, delete dialog)
+- [x] FinancesPage — tabbed wrapper (Payments / Expenses tabs)
+- [x] AppShell routing updated — Finances tab shows FinancesPage with tabs
+- [x] Frontend lint + typecheck + tests pass
+- [x] Full verification: cargo check ✓, cargo test (111/111) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
+
+## Phase 8: Dashboard KPIs
+- [x] Dashboard DTO (DashboardSummary — 8 KPIs + recent payments)
+- [x] Dashboard service — SQL queries for member counts, revenue, expenses, net income
+- [x] Tauri command (get_dashboard_summary)
+- [x] Rust tests — 114 pass (+3 dashboard tests)
+- [x] Frontend API layer (lib/api/dashboard.ts)
+- [x] DashboardPage — 8 stat cards (Total, Active, Expiring, Expired, Today Revenue, Monthly Revenue, Monthly Expenses, Net Income) + recent payments table
+- [x] Frontend lint + typecheck + tests pass
+- [x] Full verification: cargo check ✓, cargo test (114/114) ✓, lint ✓, tsc ✓, vitest (4/4) ✓

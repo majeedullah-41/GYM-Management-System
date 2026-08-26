@@ -6,6 +6,7 @@ import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
 import {
   getReceiptByPaymentId,
+  printReceipt,
   type ReceiptResponse,
 } from "../../../lib/api/receipts";
 import { formatCurrency } from "../../../lib/utils/format";
@@ -35,8 +36,13 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
     }
   }, [isOpen, paymentId]);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!receipt) return;
+    try {
+      await printReceipt(receipt);
+    } catch (err) {
+      console.error("Print failed:", err);
+    }
   };
 
   return (

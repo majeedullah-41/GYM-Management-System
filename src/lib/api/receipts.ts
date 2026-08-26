@@ -33,3 +33,9 @@ export async function getReceiptByNumber(
     receipt_number: receiptNumber,
   });
 }
+
+export async function printReceipt(receipt: ReceiptResponse): Promise<void> {
+  return invokeCommand<void>("print_receipt_json", {
+    receipt_json: JSON.stringify(receipt),
+  });
+}

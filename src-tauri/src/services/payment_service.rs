@@ -127,6 +127,13 @@ pub fn list_member_payments(
         .collect()
 }
 
+pub fn resolve_single(
+    conn: &Connection,
+    payment: Payment,
+) -> Result<PaymentResponse, AppError> {
+    resolve_payment_response(conn, payment)
+}
+
 fn resolve_payment_response(
     conn: &Connection,
     payment: Payment,

@@ -53,6 +53,14 @@ pub fn run() {
             commands::payments::list_member_payments,
             commands::receipts::get_receipt_by_payment_id,
             commands::receipts::get_receipt_by_number,
+            commands::expenses::create_expense,
+            commands::expenses::get_expense,
+            commands::expenses::update_expense,
+            commands::expenses::delete_expense,
+            commands::expenses::list_expenses,
+            commands::expenses::total_expenses,
+            commands::dashboard::get_dashboard_summary,
+            commands::printing::print_receipt_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
