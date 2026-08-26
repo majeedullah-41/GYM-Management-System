@@ -110,21 +110,34 @@ export function RecordPaymentModal({
   };
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={`Record Payment — ${memberName}`}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
+        completedPaymentId ? (
+          <Button variant="secondary" onClick={() => { setCompletedPaymentId(null); onClose(); }}>
+            Done
           </Button>
-          <Button loading={submitting} onClick={handleSubmit}>
-            Record Payment
-          </Button>
-        </>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button loading={submitting} onClick={handleSubmit}>
+              Record Payment
+            </Button>
+          </>
+        )
       }
     >
+      {completedPaymentId ? (
+        <div className="text-center py-8">
+          <div className="text-lg font-semibold text-green-600 mb-2">Payment Recorded Successfully</div>
+          <p className="text-sm text-text-muted">The receipt is shown below. You can print it or close this window.</p>
+        </div>
+      ) : (
       <div className="space-y-4">
         <Select
           label="Membership Plan *"
@@ -215,6 +228,17 @@ export function RecordPaymentModal({
           />
         </div>
       </div>
+      )}
     </Modal>
+
+    <ReceiptPreview
+      isOpen={!!completedPaymentId}
+      onClose={() => {
+        setCompletedPaymentId(null);
+        onClose();
+      }}
+      paymentId={completedPaymentId}
+    />
+    </>
   );
 }

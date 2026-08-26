@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
-import { Printer, X } from "lucide-react";
-import { Modal } from "../../components/ui/Modal";
-import { Button } from "../../components/ui/Button";
-import { LoadingState } from "../../components/ui/LoadingState";
-import { ErrorState } from "../../components/ui/ErrorState";
+import { Printer } from "lucide-react";
+import { Modal } from "../../../components/ui/Modal";
+import { Button } from "../../../components/ui/Button";
+import { LoadingState } from "../../../components/ui/LoadingState";
+import { ErrorState } from "../../../components/ui/ErrorState";
 import {
   getReceiptByPaymentId,
   type ReceiptResponse,
-} from "../../lib/api/receipts";
-import { formatCurrency } from "../../lib/utils/format";
+} from "../../../lib/api/receipts";
+import { formatCurrency } from "../../../lib/utils/format";
 
 interface Props {
   isOpen: boolean;

@@ -74,3 +74,17 @@
 - [x] AppShell routing updated — Finances tab now shows PaymentsPage
 - [x] Frontend lint + typecheck + tests pass
 - [x] Full verification: cargo check ✓, cargo test (79/79) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
+
+## Phase 6: Receipt System
+- [x] Receipt DTO (ReceiptResponse with gym info, member info, payment info)
+- [x] Receipt repository (create, get_by_payment_id, get_by_receipt_number, next_receipt_number)
+- [x] Settings repository (get_gym_settings for receipt header info)
+- [x] Receipt service (auto-create receipt on payment, get receipt by payment ID or receipt number)
+- [x] Tauri commands (get_receipt_by_payment_id, get_receipt_by_number)
+- [x] Rust tests — 88 pass (+9 receipt tests: 5 receipt repo + 4 receipt service)
+- [x] Frontend API layer (lib/api/receipts.ts)
+- [x] ReceiptPreview component — full printable receipt (gym header, member details, plan, payment, period)
+- [x] PaymentsPage — "Receipt" button per payment row
+- [x] RecordPaymentModal — shows receipt preview after successful payment
+- [x] Frontend lint + typecheck + tests pass
+- [x] Full verification: cargo check ✓, cargo test (88/88) ✓, lint ✓, tsc ✓, vitest (4/4) ✓
