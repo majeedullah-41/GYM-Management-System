@@ -2,7 +2,6 @@ use rusqlite::{params, Connection};
 
 use crate::errors::AppError;
 use crate::models::Receipt;
-use crate::utils::dates::now_iso8601;
 
 pub fn create(conn: &Connection, receipt: &Receipt) -> Result<(), AppError> {
     conn.execute(
@@ -60,6 +59,7 @@ pub fn get_by_receipt_number(
     }
 }
 
+#[allow(dead_code)]
 pub fn next_receipt_number(conn: &Connection) -> Result<String, AppError> {
     let max_num: Option<i64> = conn
         .query_row(

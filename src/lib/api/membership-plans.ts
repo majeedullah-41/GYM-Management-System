@@ -7,6 +7,7 @@ export interface PlanResponse {
   price: number;
   description: string | null;
   is_active: boolean;
+  member_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -52,4 +53,8 @@ export async function updatePlan(
 
 export async function deactivatePlan(id: string): Promise<PlanResponse> {
   return invokeCommand<PlanResponse>("deactivate_plan", { id });
+}
+
+export async function reactivatePlan(id: string): Promise<PlanResponse> {
+  return invokeCommand<PlanResponse>("reactivate_plan", { id });
 }

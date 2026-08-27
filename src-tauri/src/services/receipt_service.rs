@@ -50,14 +50,11 @@ fn assemble_receipt(
     payment: &crate::models::Payment,
 ) -> Result<ReceiptResponse, AppError> {
     let settings = settings_repository::get_gym_settings(conn)?;
+    let receipt_settings = settings_repository::get_receipt_settings(conn)?;
 
-    let member_name = member_repository::get_by_id(conn, &payment.member_id)?
-        .map(|m| m.full_name)
-        .unwrap_or_default();
-
-    let member_number = member_repository::get_by_id(conn, &payment.member_id)?
-        .map(|m| m.member_number)
-        .unwrap_or_default();
+    let member = member_repository::get_by_id(conn, &payment.member_id)?;
+    let member_name = member.as_ref().map(|m| m.full_name.clone()).unwrap_or_default();
+    let member_number = member.as_ref().map(|m| m.member_number.clone()).unwrap_or_default();
 
     let plan = membership_plan_repository::get_by_id(conn, &payment.membership_plan_id)?;
     let plan_name = plan.as_ref().map(|p| p.name.clone()).unwrap_or_default();
@@ -80,9 +77,9 @@ fn assemble_receipt(
         receipt_number: receipt_number.to_string(),
         issued_at,
         gym_name: settings.gym_name,
-        gym_address: settings.gym_address,
-        gym_phone: settings.gym_phone,
-        member_name,
+        gym_address: if receipt_settings.show_address { settings.gym_address } else { None },
+        gym_phone: if receipt_settings.show_phone { settings.gym_phone } else { None },
+        member_name: if receipt_settings.show_member_id { member_name } else { String::new() },
         member_number,
         plan_name,
         amount: payment.amount,
@@ -90,9 +87,14 @@ fn assemble_receipt(
         payment_date: payment.payment_date.clone(),
         membership_start_date: payment.membership_start_date.clone(),
         membership_expiry_date: payment.membership_expiry_date.clone(),
-        notes: payment.notes.clone(),
+        notes: if receipt_settings.show_notes { payment.notes.clone() } else { None },
         remaining_balance,
     })
+}
+
+#[allow(dead_code)]
+pub fn get_receipt_settings(conn: &Connection) -> Result<settings_repository::ReceiptSettings, AppError> {
+    settings_repository::get_receipt_settings(conn)
 }
 
 #[cfg(test)]
@@ -182,5 +184,31 @@ mod tests {
         let conn = test_db();
         let result = get_receipt_by_number(&conn, "RCP-999999");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_respect_receipt_show_phone_false() {
+        let conn = test_db();
+        seed_full(&conn);
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, created_at, updated_at) VALUES ('receipt_show_phone', '0', ?1, ?2)",
+            params![now, now],
+        ).unwrap();
+        let receipt = get_receipt_by_number(&conn, "RCP-000001").unwrap();
+        assert!(receipt.gym_phone.is_none());
+    }
+
+    #[test]
+    fn should_respect_receipt_show_notes_false() {
+        let conn = test_db();
+        seed_full(&conn);
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, created_at, updated_at) VALUES ('receipt_show_notes', '0', ?1, ?2)",
+            params![now, now],
+        ).unwrap();
+        let receipt = get_receipt_by_number(&conn, "RCP-000001").unwrap();
+        assert!(receipt.notes.is_none());
     }
 }

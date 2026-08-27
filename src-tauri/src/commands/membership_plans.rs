@@ -44,3 +44,11 @@ pub fn deactivate_plan(
 ) -> Result<PlanResponse, AppError> {
     membership_plan_service::deactivate_plan(&state.conn(), &id)
 }
+
+#[tauri::command]
+pub fn reactivate_plan(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<PlanResponse, AppError> {
+    membership_plan_service::reactivate_plan(&state.conn(), &id)
+}

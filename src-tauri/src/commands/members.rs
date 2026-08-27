@@ -49,3 +49,11 @@ pub fn archive_member(
 ) -> Result<MemberResponse, AppError> {
     member_service::archive_member(&state.conn(), &id)
 }
+
+#[tauri::command]
+pub fn unarchive_member(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<MemberResponse, AppError> {
+    member_service::unarchive_member(&state.conn(), &id)
+}

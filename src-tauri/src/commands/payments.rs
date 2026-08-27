@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::database::Database;
-use crate::dto::payment::{CreatePaymentRequest, PaymentResponse, PaymentSummary};
+use crate::dto::payment::{CreatePaymentRequest, PaymentResponse, PaymentSummary, VoidPaymentRequest};
 use crate::errors::AppError;
 use crate::services::payment_service;
 
@@ -51,4 +51,13 @@ pub fn get_payment_summary(
     plan_id: String,
 ) -> Result<PaymentSummary, AppError> {
     payment_service::get_payment_summary(&state.conn(), &member_id, &plan_id)
+}
+
+#[tauri::command]
+pub fn void_payment(
+    state: State<'_, Database>,
+    id: String,
+    request: VoidPaymentRequest,
+) -> Result<PaymentResponse, AppError> {
+    payment_service::void_payment(&state.conn(), &id, &request.reason)
 }

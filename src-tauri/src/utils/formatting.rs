@@ -1,5 +1,6 @@
 /// Format an integer PKR amount with comma separators.
 /// e.g., 2500 → "Rs. 2,500"
+#[allow(dead_code)]
 pub fn format_currency(amount: i64) -> String {
     let s = amount.to_string();
     let mut result = String::new();

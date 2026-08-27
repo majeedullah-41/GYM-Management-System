@@ -6,7 +6,11 @@ export interface ExpenseResponse {
   description: string | null;
   amount: number;
   expense_date: string;
+  payment_method: string | null;
+  vendor: string | null;
   notes: string | null;
+  is_deleted: boolean;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +20,8 @@ export interface CreateExpenseRequest {
   amount: number;
   expense_date: string;
   description: string | null;
+  payment_method: string | null;
+  vendor: string | null;
   notes: string | null;
 }
 
@@ -24,6 +30,8 @@ export interface UpdateExpenseRequest {
   amount: number;
   expense_date: string;
   description: string | null;
+  payment_method: string | null;
+  vendor: string | null;
   notes: string | null;
 }
 
@@ -46,6 +54,10 @@ export async function updateExpense(
 
 export async function deleteExpense(id: string): Promise<void> {
   return invokeCommand<void>("delete_expense", { id });
+}
+
+export async function restoreExpense(id: string): Promise<ExpenseResponse> {
+  return invokeCommand<ExpenseResponse>("restore_expense", { id });
 }
 
 export async function listExpenses(args: {
@@ -75,10 +87,22 @@ export async function totalExpenses(
 export const EXPENSE_CATEGORIES = [
   "Rent",
   "Electricity",
+  "Water",
+  "Gas",
+  "Internet",
   "Equipment",
   "Maintenance",
   "Cleaning",
   "Supplies",
+  "Staff",
+  "Marketing",
   "Salary",
+  "Other",
+];
+
+export const EXPENSE_PAYMENT_METHODS = [
+  "Cash",
+  "Card",
+  "Bank Transfer",
   "Other",
 ];

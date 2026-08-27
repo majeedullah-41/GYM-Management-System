@@ -2,18 +2,20 @@ use rusqlite::{params, Connection};
 
 use crate::errors::AppError;
 use crate::models::Expense;
-use crate::utils::dates::now_iso8601;
 
 pub fn create(conn: &Connection, expense: &Expense) -> Result<(), AppError> {
     conn.execute(
-        "INSERT INTO expenses (id, category, description, amount, expense_date, notes, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO expenses (id, category, description, amount, expense_date, \
+         payment_method, vendor, notes, is_deleted, deleted_at, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, NULL, ?9, ?10)",
         params![
             expense.id,
             expense.category,
             expense.description,
             expense.amount,
             expense.expense_date,
+            expense.payment_method,
+            expense.vendor,
             expense.notes,
             expense.created_at,
             expense.updated_at,
@@ -24,7 +26,8 @@ pub fn create(conn: &Connection, expense: &Expense) -> Result<(), AppError> {
 
 pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Expense>, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT id, category, description, amount, expense_date, notes, created_at, updated_at \
+        "SELECT id, category, description, amount, expense_date, payment_method, vendor, \
+         notes, is_deleted, deleted_at, created_at, updated_at \
          FROM expenses WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
@@ -38,13 +41,15 @@ pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Expense>, AppErro
 pub fn update(conn: &Connection, expense: &Expense) -> Result<(), AppError> {
     let rows = conn.execute(
         "UPDATE expenses SET category = ?1, description = ?2, amount = ?3, \
-         expense_date = ?4, notes = ?5, updated_at = ?6 \
-         WHERE id = ?7",
+         expense_date = ?4, payment_method = ?5, vendor = ?6, notes = ?7, updated_at = ?8 \
+         WHERE id = ?9",
         params![
             expense.category,
             expense.description,
             expense.amount,
             expense.expense_date,
+            expense.payment_method,
+            expense.vendor,
             expense.notes,
             expense.updated_at,
             expense.id,
@@ -59,8 +64,19 @@ pub fn update(conn: &Connection, expense: &Expense) -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn delete(conn: &Connection, id: &str) -> Result<bool, AppError> {
-    let rows = conn.execute("DELETE FROM expenses WHERE id = ?1", params![id])?;
+pub fn soft_delete(conn: &Connection, id: &str, deleted_at: &str) -> Result<bool, AppError> {
+    let rows = conn.execute(
+        "UPDATE expenses SET is_deleted = 1, deleted_at = ?2, updated_at = ?2 WHERE id = ?1 AND is_deleted = 0",
+        params![id, deleted_at],
+    )?;
+    Ok(rows > 0)
+}
+
+pub fn restore(conn: &Connection, id: &str, updated_at: &str) -> Result<bool, AppError> {
+    let rows = conn.execute(
+        "UPDATE expenses SET is_deleted = 0, deleted_at = NULL, updated_at = ?2 WHERE id = ?1 AND is_deleted = 1",
+        params![id, updated_at],
+    )?;
     Ok(rows > 0)
 }
 
@@ -71,11 +87,11 @@ pub fn list(
     date_from: Option<&str>,
     date_to: Option<&str>,
 ) -> Result<Vec<Expense>, AppError> {
-    let mut conditions = Vec::new();
+    let mut conditions = vec!["is_deleted = 0".to_string()];
     let mut param_values: Vec<String> = Vec::new();
 
     if !search.is_empty() {
-        conditions.push("(description LIKE ?1 OR notes LIKE ?1 OR category LIKE ?1)".to_string());
+        conditions.push("(description LIKE ?1 OR notes LIKE ?1 OR category LIKE ?1 OR vendor LIKE ?1)".to_string());
         param_values.push(format!("%{}%", search));
     }
 
@@ -94,14 +110,11 @@ pub fn list(
         param_values.push(to.to_string());
     }
 
-    let where_clause = if conditions.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", conditions.join(" AND "))
-    };
+    let where_clause = format!("WHERE {}", conditions.join(" AND "));
 
     let sql = format!(
-        "SELECT id, category, description, amount, expense_date, notes, created_at, updated_at \
+        "SELECT id, category, description, amount, expense_date, payment_method, vendor, \
+         notes, is_deleted, deleted_at, created_at, updated_at \
          FROM expenses {} ORDER BY expense_date DESC, created_at DESC",
         where_clause
     );
@@ -127,7 +140,8 @@ pub fn total_by_date_range(
     date_to: &str,
 ) -> Result<i64, AppError> {
     let total: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE expense_date >= ?1 AND expense_date <= ?2",
+        "SELECT COALESCE(SUM(amount), 0) FROM expenses \
+         WHERE expense_date >= ?1 AND expense_date <= ?2 AND is_deleted = 0",
         params![date_from, date_to],
         |row| row.get(0),
     )?;
@@ -141,9 +155,13 @@ fn row_to_expense(row: &rusqlite::Row) -> Result<Expense, rusqlite::Error> {
         description: row.get(2)?,
         amount: row.get(3)?,
         expense_date: row.get(4)?,
-        notes: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        payment_method: row.get(5)?,
+        vendor: row.get(6)?,
+        notes: row.get(7)?,
+        is_deleted: row.get::<_, i32>(8)? != 0,
+        deleted_at: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 
@@ -151,6 +169,7 @@ fn row_to_expense(row: &rusqlite::Row) -> Result<Expense, rusqlite::Error> {
 mod tests {
     use super::*;
     use crate::database::migrations;
+    use crate::utils::dates::now_iso8601;
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -167,7 +186,11 @@ mod tests {
             description: Some("Test expense".to_string()),
             amount,
             expense_date: date.to_string(),
+            payment_method: Some("Cash".to_string()),
+            vendor: None,
             notes: None,
+            is_deleted: false,
+            deleted_at: None,
             created_at: now.clone(),
             updated_at: now,
         }
@@ -182,6 +205,7 @@ mod tests {
         let found = get_by_id(&conn, &expense.id).unwrap().unwrap();
         assert_eq!(found.category, "Rent");
         assert_eq!(found.amount, 15000);
+        assert!(!found.is_deleted);
     }
 
     #[test]
@@ -217,20 +241,40 @@ mod tests {
     }
 
     #[test]
-    fn should_delete_expense() {
+    fn should_soft_delete_expense() {
         let conn = test_db();
         let expense = make_expense("Rent", 15000, "2025-01-15");
         create(&conn, &expense).unwrap();
 
-        let deleted = delete(&conn, &expense.id).unwrap();
+        let deleted = soft_delete(&conn, &expense.id, "2025-06-01T00:00:00Z").unwrap();
         assert!(deleted);
-        assert!(get_by_id(&conn, &expense.id).unwrap().is_none());
+
+        let found = get_by_id(&conn, &expense.id).unwrap().unwrap();
+        assert!(found.is_deleted);
+
+        let listed = list(&conn, "", None, None, None).unwrap();
+        assert_eq!(listed.len(), 0);
+    }
+
+    #[test]
+    fn should_restore_expense() {
+        let conn = test_db();
+        let expense = make_expense("Rent", 15000, "2025-01-15");
+        create(&conn, &expense).unwrap();
+
+        soft_delete(&conn, &expense.id, "2025-06-01T00:00:00Z").unwrap();
+        let restored = restore(&conn, &expense.id, "2025-06-02T00:00:00Z").unwrap();
+        assert!(restored);
+
+        let found = get_by_id(&conn, &expense.id).unwrap().unwrap();
+        assert!(!found.is_deleted);
+        assert!(found.deleted_at.is_none());
     }
 
     #[test]
     fn should_return_false_when_deleting_nonexistent() {
         let conn = test_db();
-        let deleted = delete(&conn, "nonexistent").unwrap();
+        let deleted = soft_delete(&conn, "nonexistent", "2025-06-01T00:00:00Z").unwrap();
         assert!(!deleted);
     }
 

@@ -6,3 +6,4 @@ pub mod payments;
 pub mod printing;
 pub mod receipts;
 pub mod reports;
+pub mod settings;

@@ -75,3 +75,7 @@ export async function updateMember(
 export async function archiveMember(id: string): Promise<MemberResponse> {
   return invokeCommand<MemberResponse>("archive_member", { id });
 }
+
+export async function unarchiveMember(id: string): Promise<MemberResponse> {
+  return invokeCommand<MemberResponse>("unarchive_member", { id });
+}

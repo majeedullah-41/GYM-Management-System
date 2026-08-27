@@ -49,23 +49,34 @@ pub fn create_plan(conn: &Connection, request: CreatePlanRequest) -> Result<Plan
     membership_plan_repository::create(conn, &plan)?;
     log::info!("Created membership plan: {} ({})", plan.name, plan.id);
 
-    Ok(PlanResponse::from(plan))
+    Ok(PlanResponse::from(plan).with_member_count(0))
 }
 
 pub fn get_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppError> {
-    membership_plan_repository::get_by_id(conn, id)?
-        .map(PlanResponse::from)
-        .ok_or_else(|| AppError::NotFoundError(format!("Plan with id '{}' not found", id)))
+    let plan = membership_plan_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Plan with id '{}' not found", id)))?;
+    let member_count = membership_plan_repository::count_members_by_plan(conn, id)?;
+    Ok(PlanResponse::from(plan).with_member_count(member_count))
 }
 
 pub fn list_plans(conn: &Connection) -> Result<Vec<PlanResponse>, AppError> {
     let plans = membership_plan_repository::list(conn)?;
-    Ok(plans.into_iter().map(PlanResponse::from).collect())
+    let mut result = Vec::with_capacity(plans.len());
+    for plan in plans {
+        let member_count = membership_plan_repository::count_members_by_plan(conn, &plan.id)?;
+        result.push(PlanResponse::from(plan).with_member_count(member_count));
+    }
+    Ok(result)
 }
 
 pub fn list_active_plans(conn: &Connection) -> Result<Vec<PlanResponse>, AppError> {
     let plans = membership_plan_repository::list_active(conn)?;
-    Ok(plans.into_iter().map(PlanResponse::from).collect())
+    let mut result = Vec::with_capacity(plans.len());
+    for plan in plans {
+        let member_count = membership_plan_repository::count_members_by_plan(conn, &plan.id)?;
+        result.push(PlanResponse::from(plan).with_member_count(member_count));
+    }
+    Ok(result)
 }
 
 pub fn update_plan(
@@ -113,7 +124,8 @@ pub fn update_plan(
     membership_plan_repository::update(conn, &plan)?;
     log::info!("Updated membership plan: {} ({})", plan.name, plan.id);
 
-    Ok(PlanResponse::from(plan))
+    let member_count = membership_plan_repository::count_members_by_plan(conn, id)?;
+    Ok(PlanResponse::from(plan).with_member_count(member_count))
 }
 
 pub fn deactivate_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppError> {
@@ -121,20 +133,47 @@ pub fn deactivate_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppE
         AppError::NotFoundError(format!("Plan with id '{}' not found", id))
     })?;
 
+    if !plan.is_active {
+        return Err(AppError::ValidationError(
+            "Plan is already inactive".into(),
+        ));
+    }
+
     plan.is_active = false;
     plan.updated_at = now_iso8601();
 
     membership_plan_repository::update(conn, &plan)?;
     log::info!("Deactivated membership plan: {} ({})", plan.name, plan.id);
 
-    Ok(PlanResponse::from(plan))
+    let member_count = membership_plan_repository::count_members_by_plan(conn, id)?;
+    Ok(PlanResponse::from(plan).with_member_count(member_count))
+}
+
+pub fn reactivate_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppError> {
+    let mut plan = membership_plan_repository::get_by_id(conn, id)?.ok_or_else(|| {
+        AppError::NotFoundError(format!("Plan with id '{}' not found", id))
+    })?;
+
+    if plan.is_active {
+        return Err(AppError::ValidationError(
+            "Plan is already active".into(),
+        ));
+    }
+
+    plan.is_active = true;
+    plan.updated_at = now_iso8601();
+
+    membership_plan_repository::update(conn, &plan)?;
+    log::info!("Reactivated membership plan: {} ({})", plan.name, plan.id);
+
+    let member_count = membership_plan_repository::count_members_by_plan(conn, id)?;
+    Ok(PlanResponse::from(plan).with_member_count(member_count))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::database::migrations;
-    use rusqlite::Connection;
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -159,6 +198,7 @@ mod tests {
         assert_eq!(result.name, "Monthly");
         assert!(result.is_active);
         assert!(!result.id.is_empty());
+        assert_eq!(result.member_count, 0);
     }
 
     #[test]
@@ -300,5 +340,53 @@ mod tests {
         let created = create_plan(&conn, valid_request("Monthly")).unwrap();
         let deactivated = deactivate_plan(&conn, &created.id).unwrap();
         assert!(!deactivated.is_active);
+    }
+
+    #[test]
+    fn should_reject_deactivating_already_inactive_plan() {
+        let conn = test_db();
+        let created = create_plan(&conn, valid_request("Monthly")).unwrap();
+        deactivate_plan(&conn, &created.id).unwrap();
+        let result = deactivate_plan(&conn, &created.id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_reactivate_plan() {
+        let conn = test_db();
+        let created = create_plan(&conn, valid_request("Monthly")).unwrap();
+        deactivate_plan(&conn, &created.id).unwrap();
+        let reactivated = reactivate_plan(&conn, &created.id).unwrap();
+        assert!(reactivated.is_active);
+    }
+
+    #[test]
+    fn should_reject_reactivating_already_active_plan() {
+        let conn = test_db();
+        let created = create_plan(&conn, valid_request("Monthly")).unwrap();
+        let result = reactivate_plan(&conn, &created.id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_count_members_per_plan() {
+        let conn = test_db();
+        let plan = create_plan(&conn, valid_request("Monthly")).unwrap();
+        assert_eq!(plan.member_count, 0);
+
+        // Create a payment for a member on this plan
+        conn.execute(
+            "INSERT INTO members (id, member_number, full_name, phone, is_archived, created_at, updated_at) \
+             VALUES ('m1', 'GYM-000001', 'Test', '03001234567', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO payments (id, receipt_number, member_id, amount, payment_method, payment_date, membership_plan_id, membership_start_date, membership_expiry_date, is_voided, created_at, updated_at) \
+             VALUES ('p1', 'RCP-000001', 'm1', 2000, 'Cash', '2026-01-01', ?1, '2026-01-01', '2026-02-01', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            rusqlite::params![plan.id],
+        ).unwrap();
+
+        let fetched = get_plan(&conn, &plan.id).unwrap();
+        assert_eq!(fetched.member_count, 1);
     }
 }

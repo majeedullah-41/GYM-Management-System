@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Search, Pencil, Trash2 } from "lucide-react";
+import { Search, Pencil, Trash2, RotateCcw } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
@@ -16,6 +16,7 @@ import {
   updateExpense,
   deleteExpense,
   EXPENSE_CATEGORIES,
+  EXPENSE_PAYMENT_METHODS,
   type ExpenseResponse,
 } from "../../../lib/api/expenses";
 
@@ -29,11 +30,18 @@ const FORM_CATEGORIES = EXPENSE_CATEGORIES.map((c) => ({
   label: c,
 }));
 
+const PAYMENT_METHOD_OPTIONS = [
+  { value: "", label: "Select method..." },
+  ...EXPENSE_PAYMENT_METHODS.map((m) => ({ value: m, label: m })),
+];
+
 interface FormData {
   category: string;
   amount: string;
   expense_date: string;
   description: string;
+  payment_method: string;
+  vendor: string;
   notes: string;
 }
 
@@ -42,6 +50,8 @@ const EMPTY_FORM: FormData = {
   amount: "",
   expense_date: new Date().toISOString().split("T")[0],
   description: "",
+  payment_method: "",
+  vendor: "",
   notes: "",
 };
 
@@ -132,6 +142,8 @@ export function ExpensesPage() {
       amount: String(expense.amount),
       expense_date: expense.expense_date,
       description: expense.description ?? "",
+      payment_method: expense.payment_method ?? "",
+      vendor: expense.vendor ?? "",
       notes: expense.notes ?? "",
     });
     setFormErrors({});
@@ -157,6 +169,8 @@ export function ExpensesPage() {
         amount: parseInt(formData.amount, 10),
         expense_date: formData.expense_date,
         description: formData.description.trim() || null,
+        payment_method: formData.payment_method || null,
+        vendor: formData.vendor.trim() || null,
         notes: formData.notes.trim() || null,
       };
 
@@ -286,6 +300,12 @@ export function ExpensesPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
                   Description
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
+                  Payment Method
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
+                  Vendor
+                </th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted">
                   Amount
                 </th>
@@ -307,7 +327,13 @@ export function ExpensesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-text-muted">
-                    {e.description || "—"}
+                    {e.description || "\u2014"}
+                  </td>
+                  <td className="px-4 py-3 text-text-muted text-xs">
+                    {e.payment_method || "\u2014"}
+                  </td>
+                  <td className="px-4 py-3 text-text-muted text-xs">
+                    {e.vendor || "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-text-primary">
                     {formatCurrency(e.amount)}
@@ -392,6 +418,27 @@ export function ExpensesPage() {
               {formErrors.expense_date && (
                 <p className="text-xs text-red-500">{formErrors.expense_date}</p>
               )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="Payment Method"
+              options={PAYMENT_METHOD_OPTIONS}
+              value={formData.payment_method}
+              onChange={(e) => setFormData((p) => ({ ...p, payment_method: e.target.value }))}
+            />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-text-primary">
+                Vendor <span className="text-text-muted">(optional)</span>
+              </label>
+              <input
+                type="text"
+                name="expense_vendor"
+                placeholder="e.g. ABC Suppliers"
+                value={formData.vendor}
+                onChange={(e) => setFormData((p) => ({ ...p, vendor: e.target.value }))}
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+              />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">

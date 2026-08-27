@@ -9,10 +9,20 @@ struct Migration {
 }
 
 fn get_migrations() -> Vec<Migration> {
-    vec![Migration {
-        id: "001_initial_schema",
-        sql: include_str!("001_initial_schema.sql"),
-    }]
+    vec![
+        Migration {
+            id: "001_initial_schema",
+            sql: include_str!("001_initial_schema.sql"),
+        },
+        Migration {
+            id: "002_add_payment_void",
+            sql: include_str!("002_add_payment_void.sql"),
+        },
+        Migration {
+            id: "003_add_expense_fields",
+            sql: include_str!("003_add_expense_fields.sql"),
+        },
+    ]
 }
 
 pub fn run_migrations(conn: &mut Connection) -> Result<(), AppError> {

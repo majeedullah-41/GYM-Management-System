@@ -175,6 +175,22 @@ pub fn archive(conn: &Connection, id: &str, archived_at: &str) -> Result<(), App
     Ok(())
 }
 
+pub fn unarchive(conn: &Connection, id: &str, updated_at: &str) -> Result<(), AppError> {
+    let rows = conn.execute(
+        "UPDATE members SET is_archived = 0, updated_at = ?2 WHERE id = ?1",
+        params![id, updated_at],
+    )?;
+
+    if rows == 0 {
+        return Err(AppError::NotFoundError(format!(
+            "Member with id '{}' not found",
+            id
+        )));
+    }
+
+    Ok(())
+}
+
 fn row_to_member(row: &rusqlite::Row<'_>) -> Result<Member, rusqlite::Error> {
     Ok(Member {
         id: row.get("id")?,

@@ -2,14 +2,13 @@ use rusqlite::{params, Connection};
 
 use crate::errors::AppError;
 use crate::models::Payment;
-use crate::utils::dates::now_iso8601;
 
 pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
     conn.execute(
         "INSERT INTO payments (id, receipt_number, member_id, amount, payment_method, \
          payment_date, membership_plan_id, membership_start_date, membership_expiry_date, \
-         notes, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+         notes, is_voided, voided_at, void_reason, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, NULL, NULL, ?11, ?12)",
         params![
             payment.id,
             payment.receipt_number,
@@ -32,7 +31,7 @@ pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Payment>, AppErro
     let mut stmt = conn.prepare(
         "SELECT id, receipt_number, member_id, amount, payment_method, payment_date, \
          membership_plan_id, membership_start_date, membership_expiry_date, notes, \
-         created_at, updated_at \
+         is_voided, voided_at, void_reason, created_at, updated_at \
          FROM payments WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
@@ -79,7 +78,8 @@ pub fn list(
     let sql = format!(
         "SELECT p.id, p.receipt_number, p.member_id, p.amount, p.payment_method, \
          p.payment_date, p.membership_plan_id, p.membership_start_date, \
-         p.membership_expiry_date, p.notes, p.created_at, p.updated_at \
+         p.membership_expiry_date, p.notes, p.is_voided, p.voided_at, p.void_reason, \
+         p.created_at, p.updated_at \
          FROM payments p \
          LEFT JOIN members m ON m.id = p.member_id \
          {} \
@@ -106,7 +106,7 @@ pub fn list_by_member(conn: &Connection, member_id: &str) -> Result<Vec<Payment>
     let mut stmt = conn.prepare(
         "SELECT id, receipt_number, member_id, amount, payment_method, payment_date, \
          membership_plan_id, membership_start_date, membership_expiry_date, notes, \
-         created_at, updated_at \
+         is_voided, voided_at, void_reason, created_at, updated_at \
          FROM payments WHERE member_id = ?1 \
          ORDER BY payment_date DESC, created_at DESC",
     )?;
@@ -116,20 +116,6 @@ pub fn list_by_member(conn: &Connection, member_id: &str) -> Result<Vec<Payment>
         payments.push(row_to_payment(row)?);
     }
     Ok(payments)
-}
-
-pub fn total_paid_for_plan(
-    conn: &Connection,
-    member_id: &str,
-    plan_id: &str,
-) -> Result<i64, AppError> {
-    let total: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments \
-         WHERE member_id = ?1 AND membership_plan_id = ?2",
-        params![member_id, plan_id],
-        |row| row.get(0),
-    )?;
-    Ok(total)
 }
 
 pub fn total_paid_for_period(
@@ -142,8 +128,24 @@ pub fn total_paid_for_period(
     let total: i64 = conn.query_row(
         "SELECT COALESCE(SUM(amount), 0) FROM payments \
          WHERE member_id = ?1 AND membership_plan_id = ?2 \
-         AND membership_start_date = ?3 AND membership_expiry_date = ?4",
+         AND membership_start_date = ?3 AND membership_expiry_date = ?4 \
+         AND is_voided = 0",
         params![member_id, plan_id, start_date, expiry_date],
+        |row| row.get(0),
+    )?;
+    Ok(total)
+}
+
+#[allow(dead_code)]
+pub fn total_paid_for_plan(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+) -> Result<i64, AppError> {
+    let total: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount), 0) FROM payments \
+         WHERE member_id = ?1 AND membership_plan_id = ?2 AND is_voided = 0",
+        params![member_id, plan_id],
         |row| row.get(0),
     )?;
     Ok(total)
@@ -156,7 +158,7 @@ pub fn get_current_period(
 ) -> Result<Option<(String, String)>, AppError> {
     let result = conn.query_row(
         "SELECT membership_start_date, membership_expiry_date FROM payments \
-         WHERE member_id = ?1 AND membership_plan_id = ?2 \
+         WHERE member_id = ?1 AND membership_plan_id = ?2 AND is_voided = 0 \
          ORDER BY membership_start_date DESC LIMIT 1",
         params![member_id, plan_id],
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
@@ -173,7 +175,7 @@ pub fn get_total_outstanding(conn: &Connection) -> Result<i64, AppError> {
         "SELECT p.membership_plan_id, p.membership_start_date, p.membership_expiry_date, \
          mp.price \
          FROM (SELECT DISTINCT membership_plan_id, membership_start_date, membership_expiry_date \
-               FROM payments) p \
+               FROM payments WHERE is_voided = 0) p \
          JOIN membership_plans mp ON p.membership_plan_id = mp.id",
     )?;
     let mut total_outstanding: i64 = 0;
@@ -186,7 +188,8 @@ pub fn get_total_outstanding(conn: &Connection) -> Result<i64, AppError> {
 
         let total_paid: i64 = conn.query_row(
             "SELECT COALESCE(SUM(amount), 0) FROM payments \
-             WHERE membership_plan_id = ?1 AND membership_start_date = ?2 AND membership_expiry_date = ?3",
+             WHERE membership_plan_id = ?1 AND membership_start_date = ?2 AND membership_expiry_date = ?3 \
+             AND is_voided = 0",
             params![plan_id, start_date, expiry_date],
             |row| row.get(0),
         )?;
@@ -211,6 +214,26 @@ pub fn next_receipt_number(conn: &Connection) -> Result<String, AppError> {
     Ok(format!("RCP-{:06}", next))
 }
 
+pub fn void_payment(
+    conn: &Connection,
+    id: &str,
+    reason: &str,
+    voided_at: &str,
+) -> Result<(), AppError> {
+    let rows = conn.execute(
+        "UPDATE payments SET is_voided = 1, void_reason = ?2, voided_at = ?3, updated_at = ?3 \
+         WHERE id = ?1 AND is_voided = 0",
+        params![id, reason, voided_at],
+    )?;
+    if rows == 0 {
+        return Err(AppError::NotFoundError(format!(
+            "Payment '{}' not found or already voided",
+            id
+        )));
+    }
+    Ok(())
+}
+
 fn row_to_payment(row: &rusqlite::Row) -> Result<Payment, rusqlite::Error> {
     Ok(Payment {
         id: row.get(0)?,
@@ -223,8 +246,11 @@ fn row_to_payment(row: &rusqlite::Row) -> Result<Payment, rusqlite::Error> {
         membership_start_date: row.get(7)?,
         membership_expiry_date: row.get(8)?,
         notes: row.get(9)?,
-        created_at: row.get(10)?,
-        updated_at: row.get(11)?,
+        is_voided: row.get::<_, i32>(10)? != 0,
+        voided_at: row.get(11)?,
+        void_reason: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -279,6 +305,9 @@ mod tests {
             membership_start_date: "2025-01-15".to_string(),
             membership_expiry_date: "2025-02-15".to_string(),
             notes: None,
+            is_voided: false,
+            voided_at: None,
+            void_reason: None,
             created_at: now.clone(),
             updated_at: now,
         }
@@ -295,6 +324,7 @@ mod tests {
         let fetched = get_by_id(&conn, &payment.id).unwrap().unwrap();
         assert_eq!(fetched.amount, 2000);
         assert_eq!(fetched.payment_method, "Cash");
+        assert!(!fetched.is_voided);
     }
 
     #[test]
@@ -407,5 +437,52 @@ mod tests {
         let results = list(&conn, "", Some("2025-03-01"), Some("2025-12-31")).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].amount, 1000);
+    }
+
+    #[test]
+    fn should_void_payment() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
+        let payment = make_payment(&member_id, &plan_id, 2000);
+        create(&conn, &payment).unwrap();
+
+        void_payment(&conn, &payment.id, "Duplicate entry", "2025-06-01T00:00:00Z").unwrap();
+
+        let fetched = get_by_id(&conn, &payment.id).unwrap().unwrap();
+        assert!(fetched.is_voided);
+        assert_eq!(fetched.void_reason.as_deref(), Some("Duplicate entry"));
+    }
+
+    #[test]
+    fn should_exclude_voided_from_total_paid() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
+        let p1 = make_payment(&member_id, &plan_id, 500);
+        create(&conn, &p1).unwrap();
+        let p2 = make_payment(&member_id, &plan_id, 700);
+        create(&conn, &p2).unwrap();
+
+        void_payment(&conn, &p1.id, "Wrong amount", "2025-06-01T00:00:00Z").unwrap();
+
+        let total = total_paid_for_period(
+            &conn, &member_id, &plan_id, "2025-01-15", "2025-02-15",
+        )
+        .unwrap();
+        assert_eq!(total, 700);
+    }
+
+    #[test]
+    fn should_not_void_already_voided() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
+        let payment = make_payment(&member_id, &plan_id, 2000);
+        create(&conn, &payment).unwrap();
+
+        void_payment(&conn, &payment.id, "First", "2025-06-01T00:00:00Z").unwrap();
+        let result = void_payment(&conn, &payment.id, "Second", "2025-06-02T00:00:00Z");
+        assert!(result.is_err());
     }
 }

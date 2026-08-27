@@ -143,6 +143,16 @@ pub fn exists_by_name(
     Ok(count > 0)
 }
 
+pub fn count_members_by_plan(conn: &Connection, plan_id: &str) -> Result<i32, AppError> {
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(DISTINCT member_id) FROM payments \
+         WHERE membership_plan_id = ?1 AND is_voided = 0",
+        params![plan_id],
+        |row| row.get(0),
+    )?;
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,7 +210,7 @@ mod tests {
     #[test]
     fn should_list_active_plans_only() {
         let conn = test_db();
-        let mut active = make_plan("Active Plan");
+        let active = make_plan("Active Plan");
         create(&conn, &active).unwrap();
 
         let mut inactive = make_plan("Inactive Plan");

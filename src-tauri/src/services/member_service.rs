@@ -145,6 +145,21 @@ pub fn archive_member(conn: &Connection, id: &str) -> Result<MemberResponse, App
     Ok(MemberResponse::from_member(updated, membership))
 }
 
+pub fn unarchive_member(conn: &Connection, id: &str) -> Result<MemberResponse, AppError> {
+    let member = member_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
+
+    let now = now_iso8601();
+    member_repository::unarchive(conn, id, &now)?;
+    log::info!("Reactivated member: {} ({})", member.full_name, member.member_number);
+
+    let mut updated = member;
+    updated.is_archived = false;
+    updated.updated_at = now;
+    let membership = get_membership_info(conn, &updated.id)?;
+    Ok(MemberResponse::from_member(updated, membership))
+}
+
 fn get_membership_info(
     conn: &Connection,
     member_id: &str,

@@ -14,6 +14,9 @@ export interface PaymentResponse {
   membership_start_date: string;
   membership_expiry_date: string;
   notes: string | null;
+  is_voided: boolean;
+  voided_at: string | null;
+  void_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,5 +75,15 @@ export async function getPaymentSummary(
   return invokeCommand<PaymentSummary>("get_payment_summary", {
     memberId: memberId,
     planId: planId,
+  });
+}
+
+export async function voidPayment(
+  id: string,
+  reason: string,
+): Promise<PaymentResponse> {
+  return invokeCommand<PaymentResponse>("void_payment", {
+    id,
+    request: { reason },
   });
 }

@@ -90,6 +90,9 @@ pub fn create_payment(
         membership_start_date: start_date.clone(),
         membership_expiry_date: expiry_date.clone(),
         notes: request.notes,
+        is_voided: false,
+        voided_at: None,
+        void_reason: None,
         created_at: now.clone(),
         updated_at: now.clone(),
     };
@@ -195,6 +198,36 @@ pub fn resolve_single(
     payment: Payment,
 ) -> Result<PaymentResponse, AppError> {
     resolve_payment_response(conn, payment)
+}
+
+pub fn void_payment(
+    conn: &Connection,
+    id: &str,
+    reason: &str,
+) -> Result<PaymentResponse, AppError> {
+    let payment = payment_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Payment '{}' not found", id)))?;
+
+    if payment.is_voided {
+        return Err(AppError::ValidationError(
+            "Payment is already voided".into(),
+        ));
+    }
+
+    if reason.trim().is_empty() {
+        return Err(AppError::ValidationError(
+            "Void reason is required".into(),
+        ));
+    }
+
+    let now = now_iso8601();
+    payment_repository::void_payment(conn, id, reason.trim(), &now)?;
+
+    log::info!("Voided payment {}: {}", payment.receipt_number, reason);
+
+    let updated = payment_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Payment '{}' not found", id)))?;
+    resolve_payment_response(conn, updated)
 }
 
 fn resolve_payment_response(

@@ -19,9 +19,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 uuid = { version = "1.25.0", features = ["v4"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 thiserror = "2.0.20"
 log = "0.4.34"
 env_logger = "0.11.11"
+dirs-next = "2.0.0"

@@ -157,3 +157,58 @@
 - [x] MembersPage — row click navigates to MemberDetailPage
 - [x] MembersPage — action buttons (Pay/Edit/Archive) stop propagation
 - [x] Frontend lint + typecheck + build pass
+
+## Module Gap Improvements
+
+### 01-Dashboard
+- [x] Quick Actions (Add Member, Receive Payment, Add Expense)
+- [x] Membership Overview (progress bar with green/amber/red)
+- [x] Expiring Members (days remaining badges, outstanding, click-to-navigate)
+- [x] Recent Members (avatar initials, member numbers, status badges, View All link)
+- [x] Loading skeletons, empty states, error state with retry
+- [x] NavigationContext for cross-page navigation
+- [x] Dashboard DTO — added expiring_members, recent_members fields
+- [x] Rust tests — 141 pass (+3 new: expiring members, recent members, empty dashboard)
+
+### 02-Members
+- [x] Plan filter dropdown (populated from active plans)
+- [x] Sort by columns (Member #, Name, Phone, Plan, Expiry, Balance)
+- [x] Pagination (20/page)
+- [x] Show Archived toggle + Reactivate button
+- [x] Unarchive backend (repository + service + command)
+- [x] Rust tests — 144 pass (+1 new: unarchive)
+
+### 04-Finances
+- [x] Migration 002_add_payment_void (is_voided, voided_at, void_reason)
+- [x] Void Payment (reason textarea + destructive confirm)
+- [x] Payment method filter
+- [x] KPI cards (Today's Income, This Week, This Month, Total Transactions)
+- [x] Valid/Voided status badges, voided rows dimmed
+- [x] Pagination (20/page)
+- [x] Rust tests — 148 pass (+3 new: void, exclude voided, prevent double-void)
+
+### 06-Expenses
+- [x] Migration 003_add_expense_fields (payment_method, vendor, is_deleted, deleted_at)
+- [x] More categories (Water, Gas, Internet, Staff, Marketing — 13 total)
+- [x] Payment method + vendor fields on expense form
+- [x] Soft delete + restore
+- [x] Expense payment method validation
+- [x] Rust tests — 152 pass (+4 new: restore, reject double-delete, accept valid methods, reject invalid method)
+
+### 03-Membership Plans
+- [x] Member count per plan (counts distinct members via payments table)
+- [x] Reactivate plan (backend + frontend)
+- [x] Deactivate rejects already-inactive; reactivate rejects already-active
+- [x] Status filter dropdown
+- [x] Description column, Members column, Free label for zero-price
+- [x] Rust tests — 152 pass (+4 new: reactivate, reject reactivate active, reject deactivate inactive, count members)
+
+### 09-Settings
+- [x] GymSettings DTO (name, phone, address, email, website)
+- [x] ReceiptSettings DTO (title, footer, show_phone, show_address, show_member_id, show_notes)
+- [x] Settings repository CRUD via key-value table
+- [x] Receipt service respects show_* toggles
+- [x] Commands: get_all_settings, save_gym_settings, save_receipt_settings, backup_database
+- [x] Database backup using SQLite backup API
+- [x] Tabbed SettingsPage (Gym Info, Plans, Receipts, Data & Backup + About)
+- [x] Rust tests — 154 pass (+2 new: receipt show_phone=false, show_notes=false)

@@ -12,6 +12,9 @@ pub struct Payment {
     pub membership_start_date: String,
     pub membership_expiry_date: String,
     pub notes: Option<String>,
+    pub is_voided: bool,
+    pub voided_at: Option<String>,
+    pub void_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

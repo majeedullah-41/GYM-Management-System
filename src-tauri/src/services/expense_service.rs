@@ -1,7 +1,10 @@
 use chrono::NaiveDate;
 use rusqlite::Connection;
 
-use crate::dto::expense::{CreateExpenseRequest, ExpenseResponse, UpdateExpenseRequest, EXPENSE_CATEGORIES};
+use crate::dto::expense::{
+    CreateExpenseRequest, ExpenseResponse, UpdateExpenseRequest,
+    EXPENSE_CATEGORIES, EXPENSE_PAYMENT_METHODS,
+};
 use crate::errors::AppError;
 use crate::models::Expense;
 use crate::repositories::expense_repository;
@@ -13,6 +16,16 @@ pub fn create_expense(
 ) -> Result<ExpenseResponse, AppError> {
     validate(&request.category, request.amount, &request.expense_date)?;
 
+    if let Some(ref method) = request.payment_method {
+        if !method.is_empty() && !EXPENSE_PAYMENT_METHODS.contains(&method.as_str()) {
+            return Err(AppError::ValidationError(format!(
+                "Invalid payment method '{}'. Must be one of: {}",
+                method,
+                EXPENSE_PAYMENT_METHODS.join(", ")
+            )));
+        }
+    }
+
     let now = now_iso8601();
     let expense = Expense {
         id: uuid::Uuid::new_v4().to_string(),
@@ -20,7 +33,11 @@ pub fn create_expense(
         description: request.description.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
         amount: request.amount,
         expense_date: request.expense_date,
+        payment_method: request.payment_method.filter(|v| !v.trim().is_empty()),
+        vendor: request.vendor.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
         notes: request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        is_deleted: false,
+        deleted_at: None,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -46,10 +63,22 @@ pub fn update_expense(
 
     validate(&request.category, request.amount, &request.expense_date)?;
 
+    if let Some(ref method) = request.payment_method {
+        if !method.is_empty() && !EXPENSE_PAYMENT_METHODS.contains(&method.as_str()) {
+            return Err(AppError::ValidationError(format!(
+                "Invalid payment method '{}'. Must be one of: {}",
+                method,
+                EXPENSE_PAYMENT_METHODS.join(", ")
+            )));
+        }
+    }
+
     expense.category = request.category;
     expense.description = request.description.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     expense.amount = request.amount;
     expense.expense_date = request.expense_date;
+    expense.payment_method = request.payment_method.filter(|v| !v.trim().is_empty());
+    expense.vendor = request.vendor.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     expense.notes = request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     expense.updated_at = now_iso8601();
 
@@ -59,12 +88,32 @@ pub fn update_expense(
 }
 
 pub fn delete_expense(conn: &Connection, id: &str) -> Result<(), AppError> {
-    let deleted = expense_repository::delete(conn, id)?;
+    let now = now_iso8601();
+    let deleted = expense_repository::soft_delete(conn, id, &now)?;
     if !deleted {
         return Err(AppError::NotFoundError(format!("Expense '{}' not found", id)));
     }
     log::info!("Deleted expense: {}", id);
     Ok(())
+}
+
+pub fn restore_expense(conn: &Connection, id: &str) -> Result<ExpenseResponse, AppError> {
+    let expense = expense_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Expense '{}' not found", id)))?;
+
+    if !expense.is_deleted {
+        return Err(AppError::ValidationError(
+            "Expense is not deleted".into(),
+        ));
+    }
+
+    let now = now_iso8601();
+    expense_repository::restore(conn, id, &now)?;
+
+    log::info!("Restored expense: {}", id);
+    let restored = expense_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Expense '{}' not found", id)))?;
+    Ok(ExpenseResponse::from_expense(restored))
 }
 
 pub fn list_expenses(
@@ -128,6 +177,8 @@ mod tests {
             amount,
             expense_date: "2025-01-15".to_string(),
             description: None,
+            payment_method: None,
+            vendor: None,
             notes: None,
         }
     }
@@ -191,6 +242,8 @@ mod tests {
                 amount: 5000,
                 expense_date: "2025-02-01".to_string(),
                 description: Some("Updated".to_string()),
+                payment_method: None,
+                vendor: None,
                 notes: None,
             },
         )
@@ -204,8 +257,17 @@ mod tests {
         let conn = test_db();
         let created = create_expense(&conn, valid_request("Rent", 15000)).unwrap();
         delete_expense(&conn, &created.id).unwrap();
-        let result = get_expense(&conn, &created.id);
-        assert!(result.is_err());
+        let expenses = list_expenses(&conn, "", None, None, None).unwrap();
+        assert_eq!(expenses.len(), 0);
+    }
+
+    #[test]
+    fn should_restore_expense() {
+        let conn = test_db();
+        let created = create_expense(&conn, valid_request("Rent", 15000)).unwrap();
+        delete_expense(&conn, &created.id).unwrap();
+        let restored = restore_expense(&conn, &created.id).unwrap();
+        assert!(!restored.is_deleted);
     }
 
     #[test]
@@ -238,5 +300,25 @@ mod tests {
 
         let results = list_expenses(&conn, "", Some("Rent"), None, None).unwrap();
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn should_accept_valid_payment_methods() {
+        let conn = test_db();
+        for method in EXPENSE_PAYMENT_METHODS {
+            let mut req = valid_request("Rent", 1000);
+            req.payment_method = Some(method.to_string());
+            let result = create_expense(&conn, req);
+            assert!(result.is_ok(), "Method '{}' should be valid", method);
+        }
+    }
+
+    #[test]
+    fn should_reject_invalid_payment_method() {
+        let conn = test_db();
+        let mut req = valid_request("Rent", 1000);
+        req.payment_method = Some("Crypto".to_string());
+        let result = create_expense(&conn, req);
+        assert!(result.is_err());
     }
 }

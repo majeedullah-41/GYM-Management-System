@@ -12,6 +12,11 @@ pub struct CreatePaymentRequest {
     pub notes: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VoidPaymentRequest {
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PaymentResponse {
     pub id: String,
@@ -27,6 +32,9 @@ pub struct PaymentResponse {
     pub membership_start_date: String,
     pub membership_expiry_date: String,
     pub notes: Option<String>,
+    pub is_voided: bool,
+    pub voided_at: Option<String>,
+    pub void_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -61,6 +69,9 @@ impl PaymentResponse {
             membership_start_date: payment.membership_start_date,
             membership_expiry_date: payment.membership_expiry_date,
             notes: payment.notes,
+            is_voided: payment.is_voided,
+            voided_at: payment.voided_at,
+            void_reason: payment.void_reason,
             created_at: payment.created_at,
             updated_at: payment.updated_at,
         }

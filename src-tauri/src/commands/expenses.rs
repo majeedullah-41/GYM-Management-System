@@ -63,3 +63,11 @@ pub fn total_expenses(
 ) -> Result<i64, AppError> {
     expense_service::total_expenses(&state.conn(), &date_from, &date_to)
 }
+
+#[tauri::command]
+pub fn restore_expense(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<ExpenseResponse, AppError> {
+    expense_service::restore_expense(&state.conn(), &id)
+}
