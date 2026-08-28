@@ -69,7 +69,7 @@ function StatCardSkeleton() {
 const METHOD_BADGE: Record<string, "active" | "info"> = {
   Cash: "active",
   Card: "info",
-  BankTransfer: "info",
+  "Bank Transfer": "info",
   Other: "info",
 };
 

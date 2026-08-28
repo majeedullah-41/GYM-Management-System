@@ -43,6 +43,7 @@ pub fn create_member(
         gender: request.gender,
         photo_path: None,
         notes: request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        admission_fee: request.admission_fee.filter(|v| *v > 0),
         is_archived: false,
         created_at: now.clone(),
         updated_at: now,
@@ -121,6 +122,7 @@ pub fn update_member(
     member.date_of_birth = request.date_of_birth;
     member.gender = request.gender;
     member.notes = request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    member.admission_fee = request.admission_fee.filter(|v| *v > 0);
     member.updated_at = now_iso8601();
 
     member_repository::update(conn, &member)?;
@@ -168,6 +170,7 @@ fn get_membership_info(
         member_repository::get_latest_membership_info(conn, member_id)?;
 
     let status = compute_membership_status(expiry_date.as_deref());
+    let admission_fee_collected = member_repository::has_any_payments(conn, member_id)?;
 
     Ok(MembershipInfo {
         plan_name,
@@ -175,6 +178,7 @@ fn get_membership_info(
         expiry_date,
         status,
         outstanding_balance: outstanding,
+        admission_fee_collected,
     })
 }
 
@@ -216,6 +220,7 @@ mod tests {
             date_of_birth: None,
             gender: None,
             notes: None,
+            admission_fee: None,
         }
     }
 
@@ -226,6 +231,38 @@ mod tests {
         assert_eq!(result.full_name, "Ahmad Khan");
         assert!(result.member_number.starts_with("GYM-"));
         assert!(!result.is_archived);
+    }
+
+    #[test]
+    fn should_create_member_with_admission_fee() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                full_name: "Ahmad Khan".to_string(),
+                admission_fee: Some(500),
+                ..valid_request("Ahmad Khan")
+            },
+        )
+        .unwrap();
+        assert_eq!(result.admission_fee, Some(500));
+        assert!(!result.admission_fee_collected);
+        assert!(!result.is_archived);
+    }
+
+    #[test]
+    fn should_ignore_zero_or_negative_admission_fee() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                full_name: "Ahmad Khan".to_string(),
+                admission_fee: Some(0),
+                ..valid_request("Ahmad Khan")
+            },
+        )
+        .unwrap();
+        assert_eq!(result.admission_fee, None);
     }
 
     #[test]
@@ -250,6 +287,7 @@ mod tests {
             CreateMemberRequest {
                 full_name: "Test".to_string(),
                 phone: Some("123".to_string()),
+                admission_fee: None,
                 ..valid_request("Test")
             },
         );
@@ -307,6 +345,7 @@ mod tests {
                 date_of_birth: None,
                 gender: None,
                 notes: None,
+                admission_fee: None,
             },
         )
         .unwrap();

@@ -5,69 +5,78 @@ use crate::dto::expense::{CreateExpenseRequest, ExpenseResponse, UpdateExpenseRe
 use crate::errors::AppError;
 use crate::services::expense_service;
 
+use super::db::run_db;
+
 #[tauri::command]
-pub fn create_expense(
+pub async fn create_expense(
     state: State<'_, Database>,
     request: CreateExpenseRequest,
 ) -> Result<ExpenseResponse, AppError> {
-    expense_service::create_expense(&state.conn(), request)
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| expense_service::create_expense(c, request)).await
 }
 
 #[tauri::command]
-pub fn get_expense(
+pub async fn get_expense(
     state: State<'_, Database>,
     id: String,
 ) -> Result<ExpenseResponse, AppError> {
-    expense_service::get_expense(&state.conn(), &id)
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| expense_service::get_expense(c, &id)).await
 }
 
 #[tauri::command]
-pub fn update_expense(
+pub async fn update_expense(
     state: State<'_, Database>,
     id: String,
     request: UpdateExpenseRequest,
 ) -> Result<ExpenseResponse, AppError> {
-    expense_service::update_expense(&state.conn(), &id, request)
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| expense_service::update_expense(c, &id, request)).await
 }
 
 #[tauri::command]
-pub fn delete_expense(
-    state: State<'_, Database>,
-    id: String,
-) -> Result<(), AppError> {
-    expense_service::delete_expense(&state.conn(), &id)
+pub async fn delete_expense(state: State<'_, Database>, id: String) -> Result<(), AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| expense_service::delete_expense(c, &id)).await
 }
 
 #[tauri::command]
-pub fn list_expenses(
+pub async fn list_expenses(
     state: State<'_, Database>,
     search: Option<String>,
     category: Option<String>,
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<Vec<ExpenseResponse>, AppError> {
-    expense_service::list_expenses(
-        &state.conn(),
-        search.as_deref().unwrap_or(""),
-        category.as_deref(),
-        date_from.as_deref(),
-        date_to.as_deref(),
-    )
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| {
+        expense_service::list_expenses(
+            c,
+            search.as_deref().unwrap_or(""),
+            category.as_deref(),
+            date_from.as_deref(),
+            date_to.as_deref(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn total_expenses(
+pub async fn total_expenses(
     state: State<'_, Database>,
     date_from: String,
     date_to: String,
 ) -> Result<i64, AppError> {
-    expense_service::total_expenses(&state.conn(), &date_from, &date_to)
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| expense_service::total_expenses(c, &date_from, &date_to)).await
 }
 
 #[tauri::command]
-pub fn restore_expense(
+pub async fn restore_expense(
     state: State<'_, Database>,
     id: String,
 ) -> Result<ExpenseResponse, AppError> {
-    expense_service::restore_expense(&state.conn(), &id)
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| expense_service::restore_expense(c, &id)).await
 }

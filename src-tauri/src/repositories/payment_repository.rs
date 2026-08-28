@@ -3,12 +3,16 @@ use rusqlite::{params, Connection};
 use crate::errors::AppError;
 use crate::models::Payment;
 
+const SELECT_COLS: &str = "id, receipt_number, member_id, amount, payment_method, payment_date, \
+     membership_plan_id, membership_start_date, membership_expiry_date, description, reference, \
+     notes, is_voided, voided_at, void_reason, created_at, updated_at";
+
 pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
     conn.execute(
         "INSERT INTO payments (id, receipt_number, member_id, amount, payment_method, \
          payment_date, membership_plan_id, membership_start_date, membership_expiry_date, \
-         notes, is_voided, voided_at, void_reason, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, NULL, NULL, ?11, ?12)",
+         description, reference, notes, is_voided, voided_at, void_reason, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, NULL, NULL, ?13, ?14)",
         params![
             payment.id,
             payment.receipt_number,
@@ -19,6 +23,8 @@ pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
             payment.membership_plan_id,
             payment.membership_start_date,
             payment.membership_expiry_date,
+            payment.description,
+            payment.reference,
             payment.notes,
             payment.created_at,
             payment.updated_at,
@@ -28,12 +34,10 @@ pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
 }
 
 pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Payment>, AppError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, receipt_number, member_id, amount, payment_method, payment_date, \
-         membership_plan_id, membership_start_date, membership_expiry_date, notes, \
-         is_voided, voided_at, void_reason, created_at, updated_at \
-         FROM payments WHERE id = ?1",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM payments WHERE id = ?1",
+        SELECT_COLS
+    ))?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
         Ok(Some(row_to_payment(row)?))
@@ -42,18 +46,23 @@ pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Payment>, AppErro
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list(
     conn: &Connection,
     search: &str,
     date_from: Option<&str>,
     date_to: Option<&str>,
+    member_id: Option<&str>,
+    plan_id: Option<&str>,
+    status: Option<&str>,
 ) -> Result<Vec<Payment>, AppError> {
     let mut conditions = Vec::new();
     let mut param_values: Vec<String> = Vec::new();
 
     if !search.is_empty() {
         conditions.push(
-            "(p.receipt_number LIKE ?1 OR m.full_name LIKE ?1 OR m.member_number LIKE ?1 OR m.phone LIKE ?1)"
+            "(p.receipt_number LIKE ?1 OR m.full_name LIKE ?1 OR m.member_number LIKE ?1 \
+             OR m.phone LIKE ?1 OR p.reference LIKE ?1 OR p.description LIKE ?1)"
                 .to_string(),
         );
         param_values.push(format!("%{}%", search));
@@ -69,6 +78,24 @@ pub fn list(
         param_values.push(to.to_string());
     }
 
+    if let Some(member) = member_id {
+        conditions.push("p.member_id = ?".to_string());
+        param_values.push(member.to_string());
+    }
+
+    if let Some(plan) = plan_id {
+        conditions.push("p.membership_plan_id = ?".to_string());
+        param_values.push(plan.to_string());
+    }
+
+    if let Some(status) = status {
+        match status {
+            "valid" => conditions.push("p.is_voided = 0".to_string()),
+            "voided" => conditions.push("p.is_voided = 1".to_string()),
+            _ => {}
+        }
+    }
+
     let where_clause = if conditions.is_empty() {
         String::new()
     } else {
@@ -78,8 +105,8 @@ pub fn list(
     let sql = format!(
         "SELECT p.id, p.receipt_number, p.member_id, p.amount, p.payment_method, \
          p.payment_date, p.membership_plan_id, p.membership_start_date, \
-         p.membership_expiry_date, p.notes, p.is_voided, p.voided_at, p.void_reason, \
-         p.created_at, p.updated_at \
+         p.membership_expiry_date, p.description, p.reference, p.notes, p.is_voided, \
+         p.voided_at, p.void_reason, p.created_at, p.updated_at \
          FROM payments p \
          LEFT JOIN members m ON m.id = p.member_id \
          {} \
@@ -103,19 +130,39 @@ pub fn list(
 }
 
 pub fn list_by_member(conn: &Connection, member_id: &str) -> Result<Vec<Payment>, AppError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, receipt_number, member_id, amount, payment_method, payment_date, \
-         membership_plan_id, membership_start_date, membership_expiry_date, notes, \
-         is_voided, voided_at, void_reason, created_at, updated_at \
-         FROM payments WHERE member_id = ?1 \
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM payments WHERE member_id = ?1 \
          ORDER BY payment_date DESC, created_at DESC",
-    )?;
+        SELECT_COLS
+    ))?;
     let mut payments = Vec::new();
     let mut rows = stmt.query(params![member_id])?;
     while let Some(row) = rows.next()? {
         payments.push(row_to_payment(row)?);
     }
     Ok(payments)
+}
+
+pub fn update_fields(
+    conn: &Connection,
+    id: &str,
+    description: Option<String>,
+    reference: Option<String>,
+    notes: Option<String>,
+    updated_at: &str,
+) -> Result<(), AppError> {
+    let rows = conn.execute(
+        "UPDATE payments SET description = ?2, reference = ?3, notes = ?4, updated_at = ?5 \
+         WHERE id = ?1",
+        params![id, description, reference, notes, updated_at],
+    )?;
+    if rows == 0 {
+        return Err(AppError::NotFoundError(format!(
+            "Payment '{}' not found",
+            id
+        )));
+    }
+    Ok(())
 }
 
 pub fn total_paid_for_period(
@@ -131,21 +178,6 @@ pub fn total_paid_for_period(
          AND membership_start_date = ?3 AND membership_expiry_date = ?4 \
          AND is_voided = 0",
         params![member_id, plan_id, start_date, expiry_date],
-        |row| row.get(0),
-    )?;
-    Ok(total)
-}
-
-#[allow(dead_code)]
-pub fn total_paid_for_plan(
-    conn: &Connection,
-    member_id: &str,
-    plan_id: &str,
-) -> Result<i64, AppError> {
-    let total: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments \
-         WHERE member_id = ?1 AND membership_plan_id = ?2 AND is_voided = 0",
-        params![member_id, plan_id],
         |row| row.get(0),
     )?;
     Ok(total)
@@ -245,12 +277,14 @@ fn row_to_payment(row: &rusqlite::Row) -> Result<Payment, rusqlite::Error> {
         membership_plan_id: row.get(6)?,
         membership_start_date: row.get(7)?,
         membership_expiry_date: row.get(8)?,
-        notes: row.get(9)?,
-        is_voided: row.get::<_, i32>(10)? != 0,
-        voided_at: row.get(11)?,
-        void_reason: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        description: row.get(9)?,
+        reference: row.get(10)?,
+        notes: row.get(11)?,
+        is_voided: row.get::<_, i32>(12)? != 0,
+        voided_at: row.get(13)?,
+        void_reason: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
     })
 }
 
@@ -258,6 +292,7 @@ fn row_to_payment(row: &rusqlite::Row) -> Result<Payment, rusqlite::Error> {
 mod tests {
     use super::*;
     use crate::database::migrations;
+    use crate::utils::dates::now_iso8601;
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -304,6 +339,8 @@ mod tests {
             membership_plan_id: plan_id.to_string(),
             membership_start_date: "2025-01-15".to_string(),
             membership_expiry_date: "2025-02-15".to_string(),
+            description: None,
+            reference: None,
             notes: None,
             is_voided: false,
             voided_at: None,
@@ -355,7 +392,7 @@ mod tests {
         create(&conn, &make_payment(&member_id, &plan_id, 2000)).unwrap();
         create(&conn, &make_payment(&member_id, &plan_id, 1000)).unwrap();
 
-        let payments = list(&conn, "", None, None).unwrap();
+        let payments = list(&conn, "", None, None, None, None, None).unwrap();
         assert_eq!(payments.len(), 2);
     }
 
@@ -367,27 +404,32 @@ mod tests {
         create(&conn, &make_payment(&member_id, &plan_id, 2000)).unwrap();
         create(&conn, &make_payment(&member_id, &plan_id, 500)).unwrap();
 
-        let payments = list_by_member(&conn, &member_id).unwrap();
+        let payments = list(
+            &conn,
+            "",
+            None,
+            None,
+            Some(&member_id),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(payments.len(), 2);
     }
 
     #[test]
-    fn should_calculate_total_paid_for_plan() {
+    fn should_calculate_total_paid_for_period() {
         let conn = test_db();
         let member_id = insert_test_member(&conn, "Ahmad");
         let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
         create(&conn, &make_payment(&member_id, &plan_id, 500)).unwrap();
         create(&conn, &make_payment(&member_id, &plan_id, 700)).unwrap();
 
-        let total = total_paid_for_plan(&conn, &member_id, &plan_id).unwrap();
+        let total = total_paid_for_period(
+            &conn, &member_id, &plan_id, "2025-01-15", "2025-02-15",
+        )
+        .unwrap();
         assert_eq!(total, 1200);
-    }
-
-    #[test]
-    fn should_return_zero_for_no_payments() {
-        let conn = test_db();
-        let total = total_paid_for_plan(&conn, "nonexistent", "nonexistent").unwrap();
-        assert_eq!(total, 0);
     }
 
     #[test]
@@ -415,7 +457,7 @@ mod tests {
         payment.receipt_number = "RCP-000123".to_string();
         create(&conn, &payment).unwrap();
 
-        let results = list(&conn, "000123", None, None).unwrap();
+        let results = list(&conn, "000123", None, None, None, None, None).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].receipt_number, "RCP-000123");
     }
@@ -434,9 +476,73 @@ mod tests {
         p2.payment_date = "2025-03-20".to_string();
         create(&conn, &p2).unwrap();
 
-        let results = list(&conn, "", Some("2025-03-01"), Some("2025-12-31")).unwrap();
+        let results = list(
+            &conn,
+            "",
+            Some("2025-03-01"),
+            Some("2025-12-31"),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].amount, 1000);
+    }
+
+    #[test]
+    fn should_filter_by_plan() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
+        create(&conn, &make_payment(&member_id, &plan_id, 2000)).unwrap();
+
+        let results = list(&conn, "", None, None, None, Some(&plan_id), None).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn should_filter_by_status_valid() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
+        let p1 = make_payment(&member_id, &plan_id, 2000);
+        create(&conn, &p1).unwrap();
+        let p2 = make_payment(&member_id, &plan_id, 1000);
+        create(&conn, &p2).unwrap();
+        void_payment(&conn, &p1.id, "Duplicate", "2025-06-01T00:00:00Z").unwrap();
+
+        let valid = list(&conn, "", None, None, None, None, Some("valid")).unwrap();
+        assert_eq!(valid.len(), 1);
+        assert!(!valid[0].is_voided);
+
+        let voided = list(&conn, "", None, None, None, None, Some("voided")).unwrap();
+        assert_eq!(voided.len(), 1);
+        assert!(voided[0].is_voided);
+    }
+
+    #[test]
+    fn should_update_fields() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30);
+        let payment = make_payment(&member_id, &plan_id, 2000);
+        create(&conn, &payment).unwrap();
+
+        update_fields(
+            &conn,
+            &payment.id,
+            Some("Monthly fee".to_string()),
+            Some("TXN-123".to_string()),
+            Some("Note".to_string()),
+            "2025-06-01T00:00:00Z",
+        )
+        .unwrap();
+
+        let fetched = get_by_id(&conn, &payment.id).unwrap().unwrap();
+        assert_eq!(fetched.description.as_deref(), Some("Monthly fee"));
+        assert_eq!(fetched.reference.as_deref(), Some("TXN-123"));
+        assert_eq!(fetched.notes.as_deref(), Some("Note"));
     }
 
     #[test]

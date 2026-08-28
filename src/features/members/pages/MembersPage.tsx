@@ -20,7 +20,7 @@ import {
   type MemberResponse,
 } from "../../../lib/api/members";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
-import { RecordPaymentModal } from "../components/RecordPaymentModal";
+import { useNavigation } from "../../../components/layout/NavigationContext";
 import { formatCurrency } from "../../../lib/utils/format";
 
 interface FormData {
@@ -31,7 +31,7 @@ interface FormData {
   address: string;
   date_of_birth: string;
   gender: string;
-  notes: string;
+  admission_fee: string;
 }
 
 const EMPTY_FORM: FormData = {
@@ -42,7 +42,7 @@ const EMPTY_FORM: FormData = {
   address: "",
   date_of_birth: "",
   gender: "",
-  notes: "",
+  admission_fee: "",
 };
 
 const STATUS_OPTIONS = [
@@ -88,12 +88,24 @@ function sortMembers(members: MemberResponse[], field: SortField, dir: SortDir):
   return sorted;
 }
 
+function formatCnic(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 13);
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
+function formatPhone(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
 export function MembersPage({
   onMemberClick,
 }: {
   onMemberClick?: (memberId: string) => void;
 } = {}) {
   const { addToast } = useToast();
+  const { openPaymentForMember } = useNavigation();
 
   const [members, setMembers] = useState<MemberResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +129,6 @@ export function MembersPage({
 
   const [archiveTarget, setArchiveTarget] = useState<MemberResponse | null>(null);
   const [reactivateTarget, setReactivateTarget] = useState<MemberResponse | null>(null);
-  const [paymentTarget, setPaymentTarget] = useState<MemberResponse | null>(null);
 
   const loadMembers = useCallback(async () => {
     try {
@@ -192,11 +203,11 @@ export function MembersPage({
       full_name: member.full_name,
       father_name: member.father_name ?? "",
       phone: member.phone ?? "",
-      cnic: member.cnic ?? "",
+      cnic: member.cnic ? formatCnic(member.cnic) : "",
       address: member.address ?? "",
       date_of_birth: member.date_of_birth ?? "",
-      gender: member.gender ?? "",
-      notes: member.notes ?? "",
+      gender: formData.gender ?? "",
+      admission_fee: member.admission_fee != null ? String(member.admission_fee) : "",
     });
     setFormErrors({});
     setFormOpen(true);
@@ -205,8 +216,13 @@ export function MembersPage({
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!formData.full_name.trim()) errors.full_name = "Name is required";
-    if (formData.phone.trim() && formData.phone.trim().length < 10)
-      errors.phone = "Phone must be at least 10 digits";
+    if (formData.phone.trim() && !/^\d{11}$/.test(formData.phone.trim()))
+      errors.phone = "Phone must be exactly 11 digits";
+    if (
+      formData.cnic.trim() &&
+      formData.cnic.replace(/-/g, "").length !== 13
+    )
+      errors.cnic = "CNIC must be exactly 13 digits";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -220,11 +236,16 @@ export function MembersPage({
         full_name: formData.full_name.trim(),
         father_name: formData.father_name.trim() || null,
         phone: formData.phone.trim() || null,
-        cnic: formData.cnic.trim() || null,
+        cnic: formData.cnic.trim()
+          ? formData.cnic.replace(/-/g, "")
+          : null,
         address: formData.address.trim() || null,
         date_of_birth: formData.date_of_birth || null,
         gender: formData.gender || null,
-        notes: formData.notes.trim() || null,
+        notes: null as string | null,
+        admission_fee: formData.admission_fee.trim()
+          ? parseInt(formData.admission_fee, 10) || null
+          : null,
       };
 
       if (editingMember) {
@@ -457,7 +478,7 @@ export function MembersPage({
                           <Button
                             variant="primary"
                             size="sm"
-                            onClick={(e) => { e.stopPropagation(); setPaymentTarget(m); }}
+                            onClick={(e) => { e.stopPropagation(); openPaymentForMember(m.id); }}
                           >
                             Pay
                           </Button>
@@ -560,9 +581,10 @@ export function MembersPage({
             <Input
               label="Phone"
               placeholder="03xxxxxxxxx"
+              type="tel"
               value={formData.phone}
               onChange={(e) =>
-                setFormData((p) => ({ ...p, phone: e.target.value }))
+                setFormData((p) => ({ ...p, phone: formatPhone(e.target.value) }))
               }
               error={formErrors.phone}
             />
@@ -570,11 +592,12 @@ export function MembersPage({
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="CNIC"
-              placeholder="xxxxx-xxxxxxx-x"
+              placeholder="XXXXX-XXXXXXX-X"
               value={formData.cnic}
               onChange={(e) =>
-                setFormData((p) => ({ ...p, cnic: e.target.value }))
+                setFormData((p) => ({ ...p, cnic: formatCnic(e.target.value) }))
               }
+              error={formErrors.cnic}
             />
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-text-primary">
@@ -609,21 +632,18 @@ export function MembersPage({
               setFormData((p) => ({ ...p, address: e.target.value }))
             }
           />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">
-              Notes <span className="text-text-muted">(optional)</span>
-            </label>
-            <textarea
-              name="member_notes"
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
-              rows={3}
-              placeholder="Additional notes about this member"
-              value={formData.notes}
+          {!editingMember && (
+            <Input
+              label="Admission Fee (PKR)"
+              type="number"
+              min={0}
+              value={formData.admission_fee}
               onChange={(e) =>
-                setFormData((p) => ({ ...p, notes: e.target.value }))
+                setFormData((p) => ({ ...p, admission_fee: e.target.value }))
               }
+              placeholder="e.g. 500 (optional)"
             />
-          </div>
+          )}
         </div>
       </Modal>
 
@@ -646,16 +666,6 @@ export function MembersPage({
         variant="info"
         onConfirm={handleReactivate}
       />
-
-      {paymentTarget && (
-        <RecordPaymentModal
-          isOpen={!!paymentTarget}
-          onClose={() => setPaymentTarget(null)}
-          memberId={paymentTarget.id}
-          memberName={paymentTarget.full_name}
-          onPaymentRecorded={loadMembers}
-        />
-      )}
     </div>
   );
 }

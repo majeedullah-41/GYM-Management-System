@@ -212,3 +212,28 @@
 - [x] Database backup using SQLite backup API
 - [x] Tabbed SettingsPage (Gym Info, Plans, Receipts, Data & Backup + About)
 - [x] Rust tests — 154 pass (+2 new: receipt show_phone=false, show_notes=false)
+
+### 07-Payments
+- [x] Migration 004_add_payment_fields (description, reference + index on is_voided)
+- [x] Payment model/DTO — added description, reference fields (CreatePaymentRequest, PaymentResponse, UpdatePaymentRequest)
+- [x] Centralized payment methods (utils/constants.rs): Cash, Bank Transfer, Card, Other — used by payment_service, report_service, and frontend PAYMENT_METHODS
+- [x] list_payments filters: member_id, plan_id, status (valid/voided) + reference/description search
+- [x] update_payment command/service/repository — only editable fields (description, reference, notes); rejects voided payments
+- [x] RecordPaymentModal — searchable member select, plan summary, description/reference fields, payment confirmation
+- [x] Dedicated Payments sidebar section + route (separate from Finances)
+- [x] New PaymentsPage — member/plan/method/status filters, Last Month preset, Paid/Voided status, right-aligned amounts, KPIs (Total, Count, Average), details + edit modal
+- [x] FinancesPage now hosts only Expenses (Payments moved to its own section)
+- [x] Rust tests — 160 pass (+6 new: update fields, update nonexistent, update voided, status filter, prepayment repo filters)
+
+## 08-ADMISSION-FEE (optional per-member one-time fee charged on first payment)
+- [x] Migration 005_add_member_admission_fee (`ALTER TABLE members ADD COLUMN admission_fee INTEGER`) registered
+- [x] Member model + Create/Update/MemberResponse + MembershipInfo updated with `admission_fee` / `admission_fee_collected`
+- [x] member_repository create/get/list/update + row mapping + `has_any_payments` helper
+- [x] member_service maps admission_fee (filtered > 0); computes `admission_fee_collected` via has_any_payments
+- [x] payment_service `get_payment_summary` returns `admission_fee` + `is_first_payment`; `outstanding` includes fee on first payment; `create_payment` validation allows up to plan + fee on first payment
+- [x] payment_service validation: `max_allowed = outstanding + admission_fee`
+- [x] Frontend: types + members api add `admission_fee`; PaymentSummary adds `admission_fee` + `is_first_payment`
+- [x] MembersPage add-member form — optional "Admission Fee (PKR)" number field (create only) + payload
+- [x] RecordPaymentModal — pre-fills amount (plan outstanding + fee), shows Admission Fee breakdown row + "Total Due"
+- [x] MemberDetailPage — shows Admission Fee + "(not collected)" badge until first payment
+- [x] Rust tests — 167 pass (+7 new: member create with fee, ignore zero/negative fee, first-payment summary incl. fee, fee not re-charged after first payment, payment up to plan+fee, partial first payment, no fee when unset)

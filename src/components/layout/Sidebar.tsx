@@ -4,6 +4,7 @@ import {
   Wallet,
   FileText,
   Settings,
+  ReceiptText,
 } from "lucide-react";
 import type { Page } from "../../types";
 
@@ -16,6 +17,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] =
   [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "members", label: "Members", icon: Users },
+    { id: "payments", label: "Payments", icon: ReceiptText },
     { id: "finances", label: "Finances", icon: Wallet },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "settings", label: "Settings", icon: Settings },

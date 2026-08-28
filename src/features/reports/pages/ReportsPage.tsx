@@ -66,7 +66,7 @@ function getDateRange(preset: DatePreset): { date_from: string; date_to: string 
   }
 }
 
-const PAYMENT_METHODS = ["Cash", "Card", "BankTransfer", "Other"];
+const PAYMENT_METHODS = ["Cash", "Bank Transfer", "Card", "Other"];
 const EXPENSE_CATEGORIES = ["Rent", "Electricity", "Equipment", "Maintenance", "Cleaning", "Supplies", "Salary", "Other"];
 
 export function ReportsPage() {

@@ -1,4 +1,5 @@
 pub mod dashboard;
+pub mod db;
 pub mod expenses;
 pub mod members;
 pub mod membership_plans;

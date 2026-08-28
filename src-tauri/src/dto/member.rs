@@ -12,6 +12,7 @@ pub struct CreateMemberRequest {
     pub date_of_birth: Option<String>,
     pub gender: Option<String>,
     pub notes: Option<String>,
+    pub admission_fee: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,6 +25,7 @@ pub struct UpdateMemberRequest {
     pub date_of_birth: Option<String>,
     pub gender: Option<String>,
     pub notes: Option<String>,
+    pub admission_fee: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +41,8 @@ pub struct MemberResponse {
     pub gender: Option<String>,
     pub notes: Option<String>,
     pub is_archived: bool,
+    pub admission_fee: Option<i64>,
+    pub admission_fee_collected: bool,
     pub membership_plan_name: Option<String>,
     pub membership_start_date: Option<String>,
     pub membership_expiry_date: Option<String>,
@@ -62,6 +66,8 @@ impl MemberResponse {
             gender: member.gender,
             notes: member.notes,
             is_archived: member.is_archived,
+            admission_fee: member.admission_fee,
+            admission_fee_collected: membership.admission_fee_collected,
             membership_plan_name: membership.plan_name,
             membership_start_date: membership.start_date,
             membership_expiry_date: membership.expiry_date,
@@ -80,4 +86,5 @@ pub struct MembershipInfo {
     pub expiry_date: Option<String>,
     pub status: Option<String>,
     pub outstanding_balance: i64,
+    pub admission_fee_collected: bool,
 }

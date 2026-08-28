@@ -13,6 +13,7 @@ pub struct Member {
     pub gender: Option<String>,
     pub photo_path: Option<String>,
     pub notes: Option<String>,
+    pub admission_fee: Option<i64>,
     pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,

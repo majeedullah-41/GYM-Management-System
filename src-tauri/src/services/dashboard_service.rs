@@ -89,7 +89,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
     let month_expenses =
         expense_repository::total_by_date_range(conn, &month_start, &month_end)?;
 
-    let recent_payments_raw = payment_repository::list(conn, "", None, None)?;
+    let recent_payments_raw = payment_repository::list(conn, "", None, None, None, None, None)?;
     let recent_limit = recent_payments_raw.into_iter().take(5);
     let mut recent_payments = Vec::new();
     for p in recent_limit {
@@ -116,6 +116,8 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                 gender: m.gender.clone(),
                 notes: m.notes.clone(),
                 is_archived: m.is_archived,
+                admission_fee: m.admission_fee,
+                admission_fee_collected: false,
                 membership_plan_name: membership.0,
                 membership_start_date: membership.1,
                 membership_expiry_date: membership.2,

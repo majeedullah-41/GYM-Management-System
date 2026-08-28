@@ -6,6 +6,7 @@ interface NavigationContextValue {
   navigateToMember: (memberId: string) => void;
   openAddMember: () => void;
   openRecordPayment: () => void;
+  openPaymentForMember: (memberId: string) => void;
 }
 
 export const NavigationContext = createContext<NavigationContextValue>({
@@ -13,6 +14,7 @@ export const NavigationContext = createContext<NavigationContextValue>({
   navigateToMember: () => {},
   openAddMember: () => {},
   openRecordPayment: () => {},
+  openPaymentForMember: () => {},
 });
 
 export function useNavigation() {

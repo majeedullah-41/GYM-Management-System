@@ -52,6 +52,7 @@ pub fn run() {
             commands::payments::create_payment,
             commands::payments::get_payment,
             commands::payments::list_payments,
+            commands::payments::update_payment,
             commands::payments::list_member_payments,
             commands::payments::get_payment_summary,
             commands::payments::void_payment,

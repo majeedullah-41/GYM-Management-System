@@ -9,6 +9,15 @@ pub struct CreatePaymentRequest {
     pub amount: i64,
     pub payment_method: String,
     pub payment_date: String,
+    pub description: Option<String>,
+    pub reference: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePaymentRequest {
+    pub description: Option<String>,
+    pub reference: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -31,6 +40,8 @@ pub struct PaymentResponse {
     pub membership_plan_name: Option<String>,
     pub membership_start_date: String,
     pub membership_expiry_date: String,
+    pub description: Option<String>,
+    pub reference: Option<String>,
     pub notes: Option<String>,
     pub is_voided: bool,
     pub voided_at: Option<String>,
@@ -44,6 +55,8 @@ pub struct PaymentSummary {
     pub plan_price: i64,
     pub previously_paid: i64,
     pub outstanding: i64,
+    pub admission_fee: Option<i64>,
+    pub is_first_payment: bool,
     pub membership_start_date: Option<String>,
     pub membership_expiry_date: Option<String>,
 }
@@ -68,6 +81,8 @@ impl PaymentResponse {
             membership_plan_name: plan_name,
             membership_start_date: payment.membership_start_date,
             membership_expiry_date: payment.membership_expiry_date,
+            description: payment.description,
+            reference: payment.reference,
             notes: payment.notes,
             is_voided: payment.is_voided,
             voided_at: payment.voided_at,

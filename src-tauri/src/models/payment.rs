@@ -11,6 +11,8 @@ pub struct Payment {
     pub membership_plan_id: String,
     pub membership_start_date: String,
     pub membership_expiry_date: String,
+    pub description: Option<String>,
+    pub reference: Option<String>,
     pub notes: Option<String>,
     pub is_voided: bool,
     pub voided_at: Option<String>,

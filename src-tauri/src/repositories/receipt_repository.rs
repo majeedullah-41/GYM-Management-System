@@ -77,6 +77,7 @@ pub fn next_receipt_number(conn: &Connection) -> Result<String, AppError> {
 mod tests {
     use super::*;
     use crate::database::migrations;
+    use crate::utils::dates::now_iso8601;
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();

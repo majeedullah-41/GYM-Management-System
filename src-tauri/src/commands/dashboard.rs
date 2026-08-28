@@ -5,9 +5,12 @@ use crate::dto::dashboard::DashboardSummary;
 use crate::errors::AppError;
 use crate::services::dashboard_service;
 
+use super::db::run_db;
+
 #[tauri::command]
-pub fn get_dashboard_summary(
+pub async fn get_dashboard_summary(
     state: State<'_, Database>,
 ) -> Result<DashboardSummary, AppError> {
-    dashboard_service::get_dashboard_summary(&state.conn())
+    let conn = state.inner().clone_conn();
+    run_db(conn, |c| dashboard_service::get_dashboard_summary(c)).await
 }

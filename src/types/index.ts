@@ -12,6 +12,7 @@ export interface Member {
   membership_expiry_date: string | null;
   status: "active" | "expiring" | "expired";
   notes: string | null;
+  admission_fee: number | null;
   is_archived: boolean;
   archived_at: string | null;
   outstanding_balance: number;
@@ -35,11 +36,13 @@ export interface Payment {
   receipt_number: string;
   member_id: string;
   amount: number;
-  payment_method: "Cash" | "Card" | "BankTransfer" | "Other";
+  payment_method: string;
   payment_date: string;
   membership_plan_id: string | null;
   membership_start_date: string | null;
   membership_expiry_date: string | null;
+  description: string | null;
+  reference: string | null;
   notes: string | null;
   is_voided: boolean;
   voided_at: string | null;
@@ -83,6 +86,7 @@ export interface Receipt {
 export type Page =
   | "dashboard"
   | "members"
+  | "payments"
   | "finances"
   | "reports"
   | "settings"

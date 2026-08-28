@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
@@ -7,19 +7,20 @@ use crate::errors::AppError;
 
 use super::migrations;
 
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
     pub fn new(conn: Connection) -> Self {
         Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         }
     }
 
-    pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
+    pub fn clone_conn(&self) -> Arc<Mutex<Connection>> {
+        self.conn.clone()
     }
 }
 

@@ -7,8 +7,8 @@ pub fn create(conn: &Connection, member: &Member) -> Result<(), AppError> {
     conn.execute(
         "INSERT INTO members \
          (id, member_number, full_name, father_name, phone, cnic, address, \
-          date_of_birth, gender, photo_path, notes, is_archived, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+          date_of_birth, gender, photo_path, notes, admission_fee, is_archived, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             member.id,
             member.member_number,
@@ -21,6 +21,7 @@ pub fn create(conn: &Connection, member: &Member) -> Result<(), AppError> {
             member.gender,
             member.photo_path,
             member.notes,
+            member.admission_fee,
             member.is_archived as i32,
             member.created_at,
             member.updated_at,
@@ -32,7 +33,7 @@ pub fn create(conn: &Connection, member: &Member) -> Result<(), AppError> {
 pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Member>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT id, member_number, full_name, father_name, phone, cnic, address, \
-         date_of_birth, gender, photo_path, notes, is_archived, created_at, updated_at \
+         date_of_birth, gender, photo_path, notes, admission_fee, is_archived, created_at, updated_at \
          FROM members WHERE id = ?1",
     )?;
 
@@ -50,7 +51,7 @@ pub fn list(
 ) -> Result<Vec<Member>, AppError> {
     let mut sql = String::from(
         "SELECT id, member_number, full_name, father_name, phone, cnic, address, \
-         date_of_birth, gender, photo_path, notes, is_archived, created_at, updated_at \
+         date_of_birth, gender, photo_path, notes, admission_fee, is_archived, created_at, updated_at \
          FROM members",
     );
 
@@ -117,6 +118,15 @@ pub fn get_latest_membership_info(
     }
 }
 
+pub fn has_any_payments(conn: &Connection, member_id: &str) -> Result<bool, AppError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM payments WHERE member_id = ?1 AND is_voided = 0",
+        params![member_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 pub fn next_member_number(conn: &Connection) -> Result<String, AppError> {
     let max_num: Option<i64> = conn.query_row(
         "SELECT MAX(CAST(SUBSTR(member_number, 5) AS INTEGER)) FROM members",
@@ -132,7 +142,7 @@ pub fn update(conn: &Connection, member: &Member) -> Result<(), AppError> {
     let rows = conn.execute(
         "UPDATE members \
          SET full_name = ?2, father_name = ?3, phone = ?4, cnic = ?5, address = ?6, \
-             date_of_birth = ?7, gender = ?8, notes = ?9, is_archived = ?10, updated_at = ?11 \
+             date_of_birth = ?7, gender = ?8, notes = ?9, admission_fee = ?10, is_archived = ?11, updated_at = ?12 \
          WHERE id = ?1",
         params![
             member.id,
@@ -144,6 +154,7 @@ pub fn update(conn: &Connection, member: &Member) -> Result<(), AppError> {
             member.date_of_birth,
             member.gender,
             member.notes,
+            member.admission_fee,
             member.is_archived as i32,
             member.updated_at,
         ],
@@ -204,6 +215,7 @@ fn row_to_member(row: &rusqlite::Row<'_>) -> Result<Member, rusqlite::Error> {
         gender: row.get("gender")?,
         photo_path: row.get("photo_path")?,
         notes: row.get("notes")?,
+        admission_fee: row.get("admission_fee")?,
         is_archived: row.get("is_archived")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -235,6 +247,7 @@ mod tests {
             gender: None,
             photo_path: None,
             notes: None,
+            admission_fee: None,
             is_archived: false,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),

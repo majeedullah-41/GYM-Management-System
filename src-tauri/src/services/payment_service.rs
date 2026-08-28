@@ -1,13 +1,16 @@
 use chrono::{Duration, NaiveDate, Utc};
 use rusqlite::Connection;
 
-use crate::dto::payment::{CreatePaymentRequest, PaymentResponse, PaymentSummary};
+use crate::dto::payment::{
+    CreatePaymentRequest, PaymentResponse, PaymentSummary, UpdatePaymentRequest,
+};
 use crate::errors::AppError;
 use crate::models::{Payment, Receipt};
-use crate::repositories::{member_repository, membership_plan_repository, payment_repository, receipt_repository};
+use crate::repositories::{
+    member_repository, membership_plan_repository, payment_repository, receipt_repository,
+};
+use crate::utils::constants::{is_valid_payment_method, PAYMENT_METHODS};
 use crate::utils::dates::now_iso8601;
-
-const VALID_METHODS: &[&str] = &["Cash", "Card", "BankTransfer", "Other"];
 
 pub fn create_payment(
     conn: &Connection,
@@ -19,11 +22,11 @@ pub fn create_payment(
         ));
     }
 
-    if !VALID_METHODS.contains(&request.payment_method.as_str()) {
+    if !is_valid_payment_method(&request.payment_method) {
         return Err(AppError::ValidationError(format!(
             "Invalid payment method '{}'. Must be one of: {}",
             request.payment_method,
-            VALID_METHODS.join(", ")
+            PAYMENT_METHODS.join(", ")
         )));
     }
 
@@ -69,10 +72,17 @@ pub fn create_payment(
     )?;
 
     let outstanding = plan.price - previously_paid;
-    if request.amount > outstanding {
+    let is_first_payment = !member_repository::has_any_payments(conn, &request.member_id)?;
+    let admission_fee = if is_first_payment {
+        member.admission_fee.unwrap_or(0)
+    } else {
+        0
+    };
+    let max_allowed = outstanding + admission_fee;
+    if request.amount > max_allowed {
         return Err(AppError::ValidationError(format!(
             "Payment amount Rs. {} exceeds outstanding balance Rs. {}",
-            request.amount, outstanding
+            request.amount, max_allowed
         )));
     }
 
@@ -89,6 +99,8 @@ pub fn create_payment(
         membership_plan_id: request.membership_plan_id.clone(),
         membership_start_date: start_date.clone(),
         membership_expiry_date: expiry_date.clone(),
+        description: request.description,
+        reference: request.reference,
         notes: request.notes,
         is_voided: false,
         voided_at: None,
@@ -154,10 +166,21 @@ pub fn get_payment_summary(
 
     let outstanding = plan.price - previously_paid;
 
+    let member = member_repository::get_by_id(conn, member_id)?;
+    let is_first_payment = !member_repository::has_any_payments(conn, member_id)?;
+    let admission_fee = if is_first_payment {
+        member.and_then(|m| m.admission_fee)
+    } else {
+        None
+    };
+    let total_outstanding = outstanding + admission_fee.unwrap_or(0);
+
     Ok(PaymentSummary {
         plan_price: plan.price,
         previously_paid,
-        outstanding,
+        outstanding: total_outstanding,
+        admission_fee,
+        is_first_payment,
         membership_start_date: start_date,
         membership_expiry_date: expiry_date,
     })
@@ -169,17 +192,52 @@ pub fn get_payment(conn: &Connection, id: &str) -> Result<PaymentResponse, AppEr
     resolve_payment_response(conn, payment)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_payments(
     conn: &Connection,
     search: &str,
     date_from: Option<&str>,
     date_to: Option<&str>,
+    member_id: Option<&str>,
+    plan_id: Option<&str>,
+    status: Option<&str>,
 ) -> Result<Vec<PaymentResponse>, AppError> {
-    let payments = payment_repository::list(conn, search, date_from, date_to)?;
+    let payments = payment_repository::list(
+        conn, search, date_from, date_to, member_id, plan_id, status,
+    )?;
     payments
         .into_iter()
         .map(|p| resolve_payment_response(conn, p))
         .collect()
+}
+
+pub fn update_payment(
+    conn: &Connection,
+    id: &str,
+    request: UpdatePaymentRequest,
+) -> Result<PaymentResponse, AppError> {
+    let payment = payment_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Payment '{}' not found", id)))?;
+
+    if payment.is_voided {
+        return Err(AppError::ValidationError(
+            "Cannot update a voided payment".into(),
+        ));
+    }
+
+    let now = now_iso8601();
+    payment_repository::update_fields(
+        conn,
+        id,
+        request.description,
+        request.reference,
+        request.notes,
+        &now,
+    )?;
+
+    let updated = payment_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Payment '{}' not found", id)))?;
+    resolve_payment_response(conn, updated)
 }
 
 pub fn list_member_payments(
@@ -274,6 +332,18 @@ mod tests {
         id
     }
 
+    fn insert_test_member_with_fee(conn: &Connection, name: &str, fee: i64) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_iso8601();
+        conn.execute(
+            "INSERT INTO members (id, member_number, full_name, admission_fee, is_archived, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
+            params![id, "GYM-000001", name, fee, now, now],
+        )
+        .unwrap();
+        id
+    }
+
     fn insert_test_plan(conn: &Connection, name: &str, price: i64, days: i32, active: bool) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_iso8601();
@@ -293,6 +363,8 @@ mod tests {
             amount,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
+            description: None,
+            reference: None,
             notes: None,
         }
     }
@@ -423,11 +495,14 @@ mod tests {
             amount: 2000,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
+            description: None,
+            reference: None,
             notes: None,
         };
         let created = create_payment(&conn, req).unwrap();
 
-        let results = list_payments(&conn, &created.receipt_number, None, None).unwrap();
+        let results = list_payments(&conn, &created.receipt_number, None, None, None, None, None)
+            .unwrap();
         assert_eq!(results.len(), 1);
     }
 
@@ -450,7 +525,7 @@ mod tests {
         let conn = test_db();
         let member_id = insert_test_member(&conn, "Ahmad");
 
-        for method in &["Cash", "Card", "BankTransfer", "Other"] {
+        for method in PAYMENT_METHODS {
             let plan_id = insert_test_plan(&conn, &format!("Plan-{}", method), 2000, 30, true);
             let mut req = valid_request(&member_id, &plan_id, 2000);
             req.payment_method = method.to_string();
@@ -522,6 +597,141 @@ mod tests {
         let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
         assert_eq!(summary.plan_price, 2000);
         assert_eq!(summary.previously_paid, 0);
+        assert_eq!(summary.outstanding, 2000);
+    }
+
+    #[test]
+    fn should_update_payment_editable_fields() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let created = create_payment(&conn, valid_request(&member_id, &plan_id, 2000)).unwrap();
+
+        let updated = update_payment(
+            &conn,
+            &created.id,
+            UpdatePaymentRequest {
+                description: Some("Monthly membership".to_string()),
+                reference: Some("TXN-999".to_string()),
+                notes: Some("Paid in cash".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(updated.description.as_deref(), Some("Monthly membership"));
+        assert_eq!(updated.reference.as_deref(), Some("TXN-999"));
+        assert_eq!(updated.notes.as_deref(), Some("Paid in cash"));
+        assert_eq!(updated.amount, 2000);
+    }
+
+    #[test]
+    fn should_fail_updating_nonexistent_payment() {
+        let conn = test_db();
+        let result = update_payment(
+            &conn,
+            "nonexistent",
+            UpdatePaymentRequest {
+                description: None,
+                reference: None,
+                notes: None,
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_fail_updating_voided_payment() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let created = create_payment(&conn, valid_request(&member_id, &plan_id, 2000)).unwrap();
+        void_payment(&conn, &created.id, "Mistake").unwrap();
+
+        let result = update_payment(
+            &conn,
+            &created.id,
+            UpdatePaymentRequest {
+                description: Some("x".to_string()),
+                reference: None,
+                notes: None,
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_filter_payments_by_status() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let p1 = create_payment(&conn, valid_request(&member_id, &plan_id, 1000)).unwrap();
+        create_payment(&conn, valid_request(&member_id, &plan_id, 1000)).unwrap();
+        void_payment(&conn, &p1.id, "Mistake").unwrap();
+
+        let valid = list_payments(&conn, "", None, None, None, None, Some("valid")).unwrap();
+        assert_eq!(valid.len(), 1);
+        let voided = list_payments(&conn, "", None, None, None, None, Some("voided")).unwrap();
+        assert_eq!(voided.len(), 1);
+        assert!(voided[0].is_voided);
+    }
+
+    #[test]
+    fn should_include_admission_fee_in_first_payment_summary() {
+        let conn = test_db();
+        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
+        assert_eq!(summary.plan_price, 2000);
+        assert_eq!(summary.admission_fee, Some(500));
+        assert!(summary.is_first_payment);
+        assert_eq!(summary.outstanding, 2500);
+    }
+
+    #[test]
+    fn should_not_include_admission_fee_after_first_payment() {
+        let conn = test_db();
+        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        create_payment(&conn, valid_request(&member_id, &plan_id, 2500)).unwrap();
+
+        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
+        assert_eq!(summary.admission_fee, None);
+        assert!(!summary.is_first_payment);
+        assert_eq!(summary.outstanding, -500);
+    }
+
+    #[test]
+    fn should_allow_payment_up_to_plan_price_plus_admission_fee() {
+        let conn = test_db();
+        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let result = create_payment(&conn, valid_request(&member_id, &plan_id, 2500)).unwrap();
+        assert_eq!(result.amount, 2500);
+    }
+
+    #[test]
+    fn should_allow_partial_first_payment_covering_fee_and_part_of_plan() {
+        let conn = test_db();
+        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let result = create_payment(&conn, valid_request(&member_id, &plan_id, 1000)).unwrap();
+        assert_eq!(result.amount, 1000);
+    }
+
+    #[test]
+    fn should_not_include_fee_for_member_without_admission_fee() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
+        assert_eq!(summary.admission_fee, None);
+        assert!(summary.is_first_payment);
         assert_eq!(summary.outstanding, 2000);
     }
 }

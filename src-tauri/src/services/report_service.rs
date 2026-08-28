@@ -2,6 +2,7 @@ use rusqlite::Connection;
 
 use crate::dto::report::*;
 use crate::errors::AppError;
+use crate::utils::constants::is_valid_payment_method;
 
 const VALID_REPORT_TYPES: &[&str] = &[
     "financial",
@@ -10,8 +11,6 @@ const VALID_REPORT_TYPES: &[&str] = &[
     "member",
     "membership_status",
 ];
-
-const VALID_PAYMENT_METHODS: &[&str] = &["Cash", "Card", "BankTransfer", "Other"];
 
 pub fn generate_report(conn: &Connection, req: ReportRequest) -> Result<ReportResponse, AppError> {
     if !VALID_REPORT_TYPES.contains(&req.report_type.as_str()) {
@@ -34,11 +33,10 @@ pub fn generate_report(conn: &Connection, req: ReportRequest) -> Result<ReportRe
     }
 
     if let Some(ref pm) = req.payment_method {
-        if !VALID_PAYMENT_METHODS.contains(&pm.as_str()) {
+        if !is_valid_payment_method(pm) {
             return Err(AppError::ValidationError(format!(
-                "Invalid payment_method: {}. Valid methods: {}",
-                pm,
-                VALID_PAYMENT_METHODS.join(", ")
+                "Invalid payment_method: {}",
+                pm
             )));
         }
     }
@@ -209,7 +207,7 @@ mod tests {
     #[test]
     fn should_accept_valid_payment_methods() {
         let conn = test_db();
-        for pm in VALID_PAYMENT_METHODS {
+        for pm in crate::utils::constants::PAYMENT_METHODS {
             let mut req = base_req("payment");
             req.payment_method = Some(pm.to_string());
             assert!(generate_report(&conn, req).is_ok());

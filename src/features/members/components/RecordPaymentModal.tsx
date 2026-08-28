@@ -3,7 +3,7 @@ import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
 import { useToast } from "../../../components/feedback/ToastProvider";
-import { createPayment, getPaymentSummary, type PaymentSummary } from "../../../lib/api/payments";
+import { createPayment, getPaymentSummary, type PaymentSummary, PAYMENT_METHODS } from "../../../lib/api/payments";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { formatCurrency } from "../../../lib/utils/format";
 import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
@@ -15,13 +15,6 @@ interface Props {
   memberName: string;
   onPaymentRecorded: () => void;
 }
-
-const PAYMENT_METHODS = [
-  { value: "Cash", label: "Cash" },
-  { value: "Card", label: "Card" },
-  { value: "BankTransfer", label: "Bank Transfer" },
-  { value: "Other", label: "Other" },
-];
 
 export function RecordPaymentModal({
   isOpen,
@@ -106,6 +99,8 @@ export function RecordPaymentModal({
         amount: amountNum,
         payment_method: method,
         payment_date: paymentDate,
+        description: null,
+        reference: null,
         notes: notes.trim() || null,
       });
       addToast({
@@ -222,7 +217,7 @@ export function RecordPaymentModal({
           </div>
           <Select
             label="Payment Method *"
-            options={PAYMENT_METHODS}
+            options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
             value={method}
             onChange={(e) => setMethod(e.target.value)}
           />

@@ -33,7 +33,7 @@ const STATUS_BADGE: Record<string, "active" | "warning" | "expired" | "info"> = 
 const METHOD_BADGE: Record<string, "active" | "info"> = {
   Cash: "active",
   Card: "info",
-  BankTransfer: "info",
+  "Bank Transfer": "info",
   Other: "info",
 };
 
@@ -121,6 +121,19 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
               <div>
                 <span className="text-text-muted">CNIC</span>
                 <div className="font-mono">{member.cnic}</div>
+              </div>
+            )}
+            {member.admission_fee != null && member.admission_fee > 0 && (
+              <div>
+                <span className="text-text-muted">Admission Fee</span>
+                <div>
+                  {formatCurrency(member.admission_fee)}
+                  {!member.admission_fee_collected && (
+                    <span className="ml-1 text-xs font-medium text-orange-600">
+                      (not collected)
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {member.gender && (

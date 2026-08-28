@@ -6,6 +6,7 @@ import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
 import { MembersPage } from "../../features/members/pages/MembersPage";
 import { MemberDetailPage } from "../../features/members/pages/MemberDetailPage";
 import { FinancesPage } from "../../features/finances/pages/FinancesPage";
+import { PaymentsPage } from "../../features/payments/pages/PaymentsPage";
 import { ReportsPage } from "../../features/reports/pages/ReportsPage";
 import { SettingsPage } from "../../features/settings/pages/SettingsPage";
 import type { Page } from "../../types";
@@ -13,6 +14,7 @@ import type { Page } from "../../types";
 const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   dashboard: DashboardPage,
   members: MembersPage,
+  payments: PaymentsPage,
   finances: FinancesPage,
   reports: ReportsPage,
   settings: SettingsPage,
@@ -22,6 +24,7 @@ const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
 export function AppShell() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [paymentMemberId, setPaymentMemberId] = useState<string | null>(null);
 
   const navigateTo = useCallback((page: Page) => {
     setSelectedMemberId(null);
@@ -40,14 +43,27 @@ export function AppShell() {
 
   const openRecordPayment = useCallback(() => {
     setSelectedMemberId(null);
-    setCurrentPage("finances");
+    setPaymentMemberId(null);
+    setCurrentPage("payments");
+  }, []);
+
+  const openPaymentForMember = useCallback((memberId: string) => {
+    setSelectedMemberId(null);
+    setPaymentMemberId(memberId);
+    setCurrentPage("payments");
   }, []);
 
   const isDetailPage = currentPage === "member-detail";
 
   return (
     <NavigationContext.Provider
-      value={{ navigateTo, navigateToMember, openAddMember, openRecordPayment }}
+      value={{
+        navigateTo,
+        navigateToMember,
+        openAddMember,
+        openRecordPayment,
+        openPaymentForMember,
+      }}
     >
       <ToastProvider>
         <div className="flex h-screen overflow-hidden">
@@ -56,6 +72,7 @@ export function AppShell() {
               currentPage={currentPage}
               onNavigate={(page) => {
                 setSelectedMemberId(null);
+                setPaymentMemberId(null);
                 setCurrentPage(page);
               }}
             />
@@ -78,6 +95,9 @@ export function AppShell() {
                       onMemberClick={navigateToMember}
                     />
                   );
+                }
+                if (currentPage === "payments") {
+                  return <PaymentsPage initialMemberId={paymentMemberId} />;
                 }
                 return <Component />;
               })()
