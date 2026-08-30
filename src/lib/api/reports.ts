@@ -77,10 +77,26 @@ export interface MembershipStatusReport {
   expired: MemberStatusRow[];
 }
 
+export interface ReportPdfResult {
+  mode: string;
+  path: string | null;
+  message: string;
+}
+
 export async function generateReport(
   request: ReportRequest,
 ): Promise<Record<string, unknown>> {
   return invokeCommand<Record<string, unknown>>("generate_report", {
     request,
+  });
+}
+
+export async function downloadReportPdf(
+  dateFrom: string | null,
+  dateTo: string | null,
+): Promise<ReportPdfResult> {
+  return invokeCommand<ReportPdfResult>("generate_report_pdf", {
+    dateFrom: dateFrom || null,
+    dateTo: dateTo || null,
   });
 }

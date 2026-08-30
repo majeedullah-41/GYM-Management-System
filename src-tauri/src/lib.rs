@@ -67,10 +67,13 @@ pub fn run() {
             commands::expenses::restore_expense,
             commands::dashboard::get_dashboard_summary,
             commands::printing::print_receipt_json,
+            commands::printing::save_pdf_bytes,
             commands::reports::generate_report,
+            commands::reports::generate_report_pdf,
             commands::settings::get_all_settings,
             commands::settings::save_gym_settings,
             commands::settings::save_receipt_settings,
+            commands::settings::save_print_settings,
             commands::settings::backup_database,
         ])
         .run(tauri::generate_context!())

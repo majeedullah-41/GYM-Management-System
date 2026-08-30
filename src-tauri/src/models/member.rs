@@ -14,6 +14,7 @@ pub struct Member {
     pub photo_path: Option<String>,
     pub notes: Option<String>,
     pub admission_fee: Option<i64>,
+    pub membership_plan_id: Option<String>,
     pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,

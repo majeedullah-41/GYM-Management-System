@@ -30,6 +30,10 @@ fn get_migrations() -> Vec<Migration> {
             id: "005_add_member_admission_fee",
             sql: include_str!("005_add_member_admission_fee.sql"),
         },
+        Migration {
+            id: "006_add_member_initial_plan",
+            sql: include_str!("006_add_member_initial_plan.sql"),
+        },
     ]
 }
 

@@ -35,8 +35,16 @@ export async function getReceiptByNumber(
   });
 }
 
-export async function printReceipt(receipt: ReceiptResponse): Promise<void> {
-  return invokeCommand<void>("print_receipt_json", {
+export interface PrintDispatchResult {
+  mode: string;
+  path: string | null;
+  message: string;
+}
+
+export async function printReceipt(
+  receipt: ReceiptResponse,
+): Promise<PrintDispatchResult> {
+  return invokeCommand<PrintDispatchResult>("print_receipt_json", {
     receiptJson: JSON.stringify(receipt),
   });
 }

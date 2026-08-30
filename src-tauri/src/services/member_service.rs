@@ -6,7 +6,7 @@ use crate::dto::member::{
 };
 use crate::errors::AppError;
 use crate::models::Member;
-use crate::repositories::member_repository;
+use crate::repositories::{member_repository, membership_plan_repository};
 use crate::utils::dates::now_iso8601;
 
 pub fn create_member(
@@ -28,6 +28,17 @@ pub fn create_member(
         }
     }
 
+    if let Some(ref plan_id) = request.membership_plan_id {
+        let plan = membership_plan_repository::get_by_id(conn, plan_id)?.ok_or_else(|| {
+            AppError::NotFoundError(format!("Membership plan '{}' not found", plan_id))
+        })?;
+        if !plan.is_active {
+            return Err(AppError::ValidationError(
+                "Cannot assign an inactive membership plan".into(),
+            ));
+        }
+    }
+
     let now = now_iso8601();
     let member_number = member_repository::next_member_number(conn)?;
 
@@ -44,6 +55,7 @@ pub fn create_member(
         photo_path: None,
         notes: request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
         admission_fee: request.admission_fee.filter(|v| *v > 0),
+        membership_plan_id: request.membership_plan_id,
         is_archived: false,
         created_at: now.clone(),
         updated_at: now,
@@ -123,7 +135,19 @@ pub fn update_member(
     member.gender = request.gender;
     member.notes = request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     member.admission_fee = request.admission_fee.filter(|v| *v > 0);
+    member.membership_plan_id = request.membership_plan_id.clone();
     member.updated_at = now_iso8601();
+
+    if let Some(ref plan_id) = member.membership_plan_id {
+        let plan = membership_plan_repository::get_by_id(conn, plan_id)?.ok_or_else(|| {
+            AppError::NotFoundError(format!("Membership plan '{}' not found", plan_id))
+        })?;
+        if !plan.is_active {
+            return Err(AppError::ValidationError(
+                "Cannot assign an inactive membership plan".into(),
+            ));
+        }
+    }
 
     member_repository::update(conn, &member)?;
     log::info!("Updated member: {} ({})", member.full_name, member.member_number);
@@ -221,7 +245,26 @@ mod tests {
             gender: None,
             notes: None,
             admission_fee: None,
+            membership_plan_id: None,
         }
+    }
+
+    fn insert_active_plan(conn: &Connection, id: &str, name: &str) {
+        conn.execute(
+            "INSERT INTO membership_plans (id, name, duration_days, price, description, is_active, created_at, updated_at) \
+             VALUES (?1, ?2, 30, 2000, NULL, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            rusqlite::params![id, name],
+        )
+        .unwrap();
+    }
+
+    fn insert_inactive_plan(conn: &Connection, id: &str, name: &str) {
+        conn.execute(
+            "INSERT INTO membership_plans (id, name, duration_days, price, description, is_active, created_at, updated_at) \
+             VALUES (?1, ?2, 30, 2000, NULL, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            rusqlite::params![id, name],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -263,6 +306,53 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.admission_fee, None);
+    }
+
+    #[test]
+    fn should_create_member_with_initial_plan() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-1", "Monthly");
+
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                full_name: "Ahmad Khan".to_string(),
+                membership_plan_id: Some("plan-1".to_string()),
+                ..valid_request("Ahmad Khan")
+            },
+        )
+        .unwrap();
+        assert_eq!(result.membership_plan_id.as_deref(), Some("plan-1"));
+    }
+
+    #[test]
+    fn should_reject_missing_plan() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                full_name: "Ahmad Khan".to_string(),
+                membership_plan_id: Some("missing".to_string()),
+                ..valid_request("Ahmad Khan")
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_reject_inactive_plan() {
+        let conn = test_db();
+        insert_inactive_plan(&conn, "plan-inactive", "Old");
+
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                full_name: "Ahmad Khan".to_string(),
+                membership_plan_id: Some("plan-inactive".to_string()),
+                ..valid_request("Ahmad Khan")
+            },
+        );
+        assert!(result.is_err());
     }
 
     #[test]
@@ -346,6 +436,7 @@ mod tests {
                 gender: None,
                 notes: None,
                 admission_fee: None,
+                membership_plan_id: None,
             },
         )
         .unwrap();

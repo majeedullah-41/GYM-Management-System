@@ -1,31 +1,22 @@
-import { useState } from "react";
-import { FileText, BarChart3, CreditCard, DollarSign, Users, UserCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { DollarSign, CreditCard, BarChart3, Users, UserCheck, Download } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
-import { Select } from "../../../components/ui/Select";
 import { Input } from "../../../components/ui/Input";
 import { Card } from "../../../components/ui/Card";
 import { LoadingState } from "../../../components/ui/LoadingState";
-import { EmptyState } from "../../../components/ui/EmptyState";
 import { Badge } from "../../../components/ui/Badge";
+import { useToast } from "../../../components/feedback/ToastProvider";
 import { formatCurrency } from "../../../lib/utils/format";
+import { renderReportPdf } from "../../../lib/pdf";
 import {
   generateReport,
-  type ReportType,
   type FinancialReport,
   type PaymentReport,
   type ExpenseReport,
   type MemberReport,
   type MembershipStatusReport,
 } from "../../../lib/api/reports";
-
-const REPORT_TABS: { value: ReportType; label: string; icon: React.ReactNode }[] = [
-  { value: "financial", label: "Financial", icon: <DollarSign size={14} /> },
-  { value: "payment", label: "Payments", icon: <CreditCard size={14} /> },
-  { value: "expense", label: "Expenses", icon: <BarChart3 size={14} /> },
-  { value: "member", label: "Members", icon: <Users size={14} /> },
-  { value: "membership_status", label: "Membership Status", icon: <UserCheck size={14} /> },
-];
 
 type DatePreset = "today" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "custom" | "none";
 
@@ -66,18 +57,22 @@ function getDateRange(preset: DatePreset): { date_from: string; date_to: string 
   }
 }
 
-const PAYMENT_METHODS = ["Cash", "Bank Transfer", "Card", "Other"];
-const EXPENSE_CATEGORIES = ["Rent", "Electricity", "Equipment", "Maintenance", "Cleaning", "Supplies", "Salary", "Other"];
+interface ReportData {
+  financial: FinancialReport;
+  payment: PaymentReport;
+  expense: ExpenseReport;
+  member: MemberReport;
+  membership_status: MembershipStatusReport;
+}
 
 export function ReportsPage() {
-  const [reportType, setReportType] = useState<ReportType>("financial");
+  const { addToast } = useToast();
   const [datePreset, setDatePreset] = useState<DatePreset>("this_month");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [expenseCategory, setExpenseCategory] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [result, setResult] = useState<ReportData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handlePresetChange = (preset: DatePreset) => {
@@ -93,27 +88,68 @@ export function ReportsPage() {
     }
   };
 
-  const handleGenerate = async () => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    setResult(null);
 
+    const requestBase = {
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    };
+
+    Promise.all([
+      generateReport({ ...requestBase, report_type: "financial" }) as unknown as Promise<FinancialReport>,
+      generateReport({ ...requestBase, report_type: "payment" }) as unknown as Promise<PaymentReport>,
+      generateReport({ ...requestBase, report_type: "expense" }) as unknown as Promise<ExpenseReport>,
+      generateReport({ report_type: "member" }) as unknown as Promise<MemberReport>,
+      generateReport({ report_type: "membership_status" }) as unknown as Promise<MembershipStatusReport>,
+    ])
+      .then(([finData, payData, expData, memData, statusData]) => {
+        if (!cancelled) {
+          setResult({
+            financial: finData,
+            payment: payData,
+            expense: expData,
+            member: memData,
+            membership_status: statusData,
+          });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load report");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [dateFrom, dateTo]);
+
+  const handleDownloadPdf = async () => {
+    if (!result) return;
+    setPdfLoading(true);
     try {
-      const request: Record<string, unknown> = {
-        report_type: reportType,
-      };
-
-      if (dateFrom) request.date_from = dateFrom;
-      if (dateTo) request.date_to = dateTo;
-      if (reportType === "payment" && paymentMethod) request.payment_method = paymentMethod;
-      if (reportType === "expense" && expenseCategory) request.expense_category = expenseCategory;
-
-      const data = await generateReport(request as unknown as Parameters<typeof generateReport>[0]);
-      setResult(data);
+      const res = await renderReportPdf({
+        financial: result.financial,
+        payment: result.payment,
+        expense: result.expense,
+        member: result.member,
+        membership_status: result.membership_status,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
+      if (res.mode === "pdf") {
+        addToast({ variant: "success", title: "Report saved as PDF", message: res.path || undefined });
+      } else {
+        addToast({ variant: "info", title: "Save cancelled" });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate report");
+      addToast({ variant: "error", title: "Failed to save PDF", message: err instanceof Error ? err.message : undefined });
     } finally {
-      setLoading(false);
+      setPdfLoading(false);
     }
   };
 
@@ -121,28 +157,8 @@ export function ReportsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Reports"
-        description="Generate financial and membership reports."
+        description="View a combined report of financial, payment, expense, member, and membership status data."
       />
-
-      <div className="flex gap-1 rounded-lg border border-border bg-secondary-bg p-1">
-        {REPORT_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => {
-              setReportType(tab.value);
-              setResult(null);
-            }}
-            className={`flex items-center gap-1.5 flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-              reportType === tab.value
-                ? "bg-surface text-text-primary shadow-sm"
-                : "text-text-muted hover:text-text-primary"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
 
       <Card>
         <div className="space-y-4">
@@ -183,132 +199,113 @@ export function ReportsPage() {
             </div>
           )}
 
-          {reportType === "payment" && (
-            <Select
-              label="Payment Method"
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              options={[
-                { value: "", label: "All Methods" },
-                ...PAYMENT_METHODS.map((m) => ({ value: m, label: m })),
-              ]}
-            />
-          )}
-
-          {reportType === "expense" && (
-            <Select
-              label="Expense Category"
-              value={expenseCategory}
-              onChange={(e) => setExpenseCategory(e.target.value)}
-              options={[
-                { value: "", label: "All Categories" },
-                ...EXPENSE_CATEGORIES.map((c) => ({ value: c, label: c })),
-              ]}
-            />
-          )}
-
-          <Button onClick={handleGenerate} loading={loading}>
-            <FileText size={14} />
-            Generate Report
-          </Button>
+          <div>
+            <Button onClick={handleDownloadPdf} loading={pdfLoading} variant="secondary">
+              <Download size={14} />
+              Download PDF
+            </Button>
+          </div>
         </div>
       </Card>
 
-      {loading && <LoadingState message="Generating report..." />}
+      {loading && <LoadingState message="Loading report..." />}
       {error && (
         <Card>
           <p className="text-sm text-danger">{error}</p>
         </Card>
       )}
 
-      {!loading && !error && !result && (
-        <EmptyState
-          title="No report generated"
-          message="Select filters above and click Generate Report to view results."
-        />
-      )}
-
       {!loading && result && (
-        <>
-          {reportType === "financial" && <FinancialResults data={result as unknown as FinancialReport} />}
-          {reportType === "payment" && <PaymentResults data={result as unknown as PaymentReport} />}
-          {reportType === "expense" && <ExpenseResults data={result as unknown as ExpenseReport} />}
-          {reportType === "member" && <MemberResults data={result as unknown as MemberReport} />}
-          {reportType === "membership_status" && <MembershipStatusResults data={result as unknown as MembershipStatusReport} />}
-        </>
+        <div className="space-y-6">
+          <SummarySection data={result} />
+          <FinancialSection data={result.financial} />
+          <PaymentSection data={result.payment} />
+          <ExpenseSection data={result.expense} />
+          <MemberSection data={result.member} />
+          <MembershipStatusSection data={result.membership_status} />
+        </div>
       )}
     </div>
   );
 }
 
-function FinancialResults({ data }: { data: FinancialReport }) {
+function SummarySection({ data }: { data: ReportData }) {
   return (
-    <div className="space-y-4">
+    <>
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <DollarSign size={18} />
+        Financial Summary
+      </h3>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card>
           <p className="text-xs text-text-muted">Total Revenue</p>
-          <p className="mt-1 text-lg font-bold text-success">{formatCurrency(data.total_revenue)}</p>
+          <p className="mt-1 text-lg font-bold text-success">{formatCurrency(data.financial.total_revenue)}</p>
         </Card>
         <Card>
           <p className="text-xs text-text-muted">Total Expenses</p>
-          <p className="mt-1 text-lg font-bold text-danger">{formatCurrency(data.total_expenses)}</p>
+          <p className="mt-1 text-lg font-bold text-danger">{formatCurrency(data.financial.total_expenses)}</p>
         </Card>
         <Card>
           <p className="text-xs text-text-muted">Net Income</p>
-          <p className={`mt-1 text-lg font-bold ${data.net_income >= 0 ? "text-success" : "text-danger"}`}>
-            {formatCurrency(data.net_income)}
+          <p className={`mt-1 text-lg font-bold ${data.financial.net_income >= 0 ? "text-success" : "text-danger"}`}>
+            {formatCurrency(data.financial.net_income)}
           </p>
         </Card>
         <Card>
           <p className="text-xs text-text-muted">Transactions</p>
-          <p className="mt-1 text-lg font-bold text-text-primary">{data.payment_count + data.expense_count}</p>
+          <p className="mt-1 text-lg font-bold text-text-primary">{data.financial.payment_count + data.financial.expense_count}</p>
         </Card>
       </div>
+    </>
+  );
+}
 
-      {data.revenue_by_method.length > 0 && (
-        <Card title="Revenue by Payment Method">
-          <div className="space-y-2">
-            {data.revenue_by_method.map((item) => (
-              <div key={item.category} className="flex justify-between text-sm">
-                <span className="text-text-muted">{item.category}</span>
-                <span className="font-medium">{formatCurrency(item.amount)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+function FinancialSection({ data }: { data: FinancialReport }) {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <DollarSign size={18} />
+        Revenue & Expenses Breakdown
+      </h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {data.revenue_by_method.length > 0 && (
+          <Card title="Revenue by Payment Method">
+            <div className="space-y-2">
+              {data.revenue_by_method.map((item) => (
+                <div key={item.category} className="flex justify-between text-sm">
+                  <span className="text-text-muted">{item.category}</span>
+                  <span className="font-medium">{formatCurrency(item.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
-      {data.expenses_by_category.length > 0 && (
-        <Card title="Expenses by Category">
-          <div className="space-y-2">
-            {data.expenses_by_category.map((item) => (
-              <div key={item.category} className="flex justify-between text-sm">
-                <span className="text-text-muted">{item.category}</span>
-                <span className="font-medium">{formatCurrency(item.amount)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+        {data.expenses_by_category.length > 0 && (
+          <Card title="Expenses by Category">
+            <div className="space-y-2">
+              {data.expenses_by_category.map((item) => (
+                <div key={item.category} className="flex justify-between text-sm">
+                  <span className="text-text-muted">{item.category}</span>
+                  <span className="font-medium">{formatCurrency(item.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
 
-function PaymentResults({ data }: { data: PaymentReport }) {
+function PaymentSection({ data }: { data: PaymentReport }) {
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <p className="text-xs text-text-muted">Total Payments</p>
-          <p className="mt-1 text-lg font-bold text-text-primary">{data.total_count}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-text-muted">Total Amount</p>
-          <p className="mt-1 text-lg font-bold text-success">{formatCurrency(data.total_amount)}</p>
-        </Card>
-      </div>
-
-      <Card title="Payment Details">
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <CreditCard size={18} />
+        Payments ({data.total_count})
+      </h3>
+      <Card>
         {data.payments.length === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">No payments found for the selected filters.</p>
         ) : (
@@ -344,21 +341,14 @@ function PaymentResults({ data }: { data: PaymentReport }) {
   );
 }
 
-function ExpenseResults({ data }: { data: ExpenseReport }) {
+function ExpenseSection({ data }: { data: ExpenseReport }) {
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <p className="text-xs text-text-muted">Total Expenses</p>
-          <p className="mt-1 text-lg font-bold text-danger">{formatCurrency(data.total_amount)}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-text-muted">Expense Count</p>
-          <p className="mt-1 text-lg font-bold text-text-primary">{data.total_count}</p>
-        </Card>
-      </div>
-
-      <Card title="Expense Details">
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <BarChart3 size={18} />
+        Expenses ({data.total_count})
+      </h3>
+      <Card>
         {data.expenses.length === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">No expenses found for the selected filters.</p>
         ) : (
@@ -392,34 +382,40 @@ function ExpenseResults({ data }: { data: ExpenseReport }) {
   );
 }
 
-function MemberResults({ data }: { data: MemberReport }) {
+function MemberSection({ data }: { data: MemberReport }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      <Card>
-        <p className="text-xs text-text-muted">Total Members</p>
-        <p className="mt-1 text-2xl font-bold text-text-primary">{data.total_members}</p>
-      </Card>
-      <Card>
-        <p className="text-xs text-text-muted">Active</p>
-        <p className="mt-1 text-2xl font-bold text-success">{data.active_members}</p>
-      </Card>
-      <Card>
-        <p className="text-xs text-text-muted">Expiring Soon</p>
-        <p className="mt-1 text-2xl font-bold text-warning">{data.expiring_soon}</p>
-      </Card>
-      <Card>
-        <p className="text-xs text-text-muted">Expired</p>
-        <p className="mt-1 text-2xl font-bold text-danger">{data.expired_members}</p>
-      </Card>
-      <Card>
-        <p className="text-xs text-text-muted">Archived</p>
-        <p className="mt-1 text-2xl font-bold text-text-muted">{data.archived_members}</p>
-      </Card>
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <Users size={18} />
+        Members Overview
+      </h3>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Card>
+          <p className="text-xs text-text-muted">Total Members</p>
+          <p className="mt-1 text-2xl font-bold text-text-primary">{data.total_members}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-text-muted">Active</p>
+          <p className="mt-1 text-2xl font-bold text-success">{data.active_members}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-text-muted">Expiring Soon</p>
+          <p className="mt-1 text-2xl font-bold text-warning">{data.expiring_soon}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-text-muted">Expired</p>
+          <p className="mt-1 text-2xl font-bold text-danger">{data.expired_members}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-text-muted">Archived</p>
+          <p className="mt-1 text-2xl font-bold text-text-muted">{data.archived_members}</p>
+        </Card>
+      </div>
     </div>
   );
 }
 
-function MembershipStatusResults({ data }: { data: MembershipStatusReport }) {
+function MembershipStatusSection({ data }: { data: MembershipStatusReport }) {
   const sections = [
     { title: "Active Members", items: data.active, variant: "active" as const },
     { title: "Expiring Soon", items: data.expiring_soon, variant: "expiring" as const },
@@ -427,7 +423,11 @@ function MembershipStatusResults({ data }: { data: MembershipStatusReport }) {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+        <UserCheck size={18} />
+        Membership Status
+      </h3>
       {sections.map((section) => (
         <Card key={section.title} title={`${section.title} (${section.items.length})`}>
           {section.items.length === 0 ? (
@@ -449,10 +449,10 @@ function MembershipStatusResults({ data }: { data: MembershipStatusReport }) {
                     <tr key={i} className="border-b border-border/50">
                       <td className="py-2 font-mono text-xs">{m.member_number}</td>
                       <td className="py-2">{m.full_name}</td>
-                      <td className="py-2 text-text-muted">{m.phone || "—"}</td>
-                      <td className="py-2">{m.plan_name || "—"}</td>
+                      <td className="py-2 text-text-muted">{m.phone || "\u2014"}</td>
+                      <td className="py-2">{m.plan_name || "\u2014"}</td>
                       <td className="py-2">
-                        <Badge variant={section.variant}>{m.expiry_date || "—"}</Badge>
+                        <Badge variant={section.variant}>{m.expiry_date || "\u2014"}</Badge>
                       </td>
                     </tr>
                   ))}

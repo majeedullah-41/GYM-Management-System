@@ -3,7 +3,9 @@ use rusqlite::backup::Backup;
 
 use crate::database::Database;
 use crate::errors::AppError;
-use crate::repositories::settings_repository::{self, GymSettings, ReceiptSettings, AllSettings};
+use crate::repositories::settings_repository::{
+    self, GymSettings, ReceiptSettings, PrintSettings, AllSettings,
+};
 
 use super::db::run_db;
 
@@ -29,6 +31,15 @@ pub async fn save_receipt_settings(
 ) -> Result<(), AppError> {
     let conn = state.inner().clone_conn();
     run_db(conn, move |c| settings_repository::save_receipt_settings(c, &receipt)).await
+}
+
+#[tauri::command]
+pub async fn save_print_settings(
+    state: State<'_, Database>,
+    print: PrintSettings,
+) -> Result<(), AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| settings_repository::save_print_settings(c, &print)).await
 }
 
 #[tauri::command]

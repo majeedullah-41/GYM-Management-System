@@ -9,6 +9,7 @@ pub struct CreatePaymentRequest {
     pub amount: i64,
     pub payment_method: String,
     pub payment_date: String,
+    pub admission_fee: Option<i64>,
     pub description: Option<String>,
     pub reference: Option<String>,
     pub notes: Option<String>,

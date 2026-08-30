@@ -12,6 +12,26 @@ use crate::repositories::{
 use crate::utils::constants::{is_valid_payment_method, PAYMENT_METHODS};
 use crate::utils::dates::now_iso8601;
 
+/// Returns the current active (non-expired) membership period for a member+plan.
+/// A period whose expiry is in the past is treated as expired and ignored, so a
+/// renewal starts a brand-new period instead of reusing the old, fully-paid one.
+fn active_period(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+) -> Result<Option<(String, String)>, AppError> {
+    let Some((start, expiry)) =
+        payment_repository::get_current_period(conn, member_id, plan_id)?
+    else {
+        return Ok(None);
+    };
+    let today = Utc::now().date_naive();
+    match NaiveDate::parse_from_str(&expiry, "%Y-%m-%d") {
+        Ok(e) if e >= today => Ok(Some((start, expiry))),
+        _ => Ok(None),
+    }
+}
+
 pub fn create_payment(
     conn: &Connection,
     request: CreatePaymentRequest,
@@ -53,15 +73,15 @@ pub fn create_payment(
         ));
     }
 
-    let (start_date, expiry_date) =
-        match payment_repository::get_current_period(conn, &request.member_id, &request.membership_plan_id)? {
-            Some((s, e)) => (s, e),
-            None => {
-                let s = Utc::now().date_naive();
-                let e = s + Duration::days(plan.duration_days as i64);
-                (s.format("%Y-%m-%d").to_string(), e.format("%Y-%m-%d").to_string())
-            }
-        };
+    let (start_date, expiry_date) = match active_period(conn, &request.member_id, &request.membership_plan_id)?
+    {
+        Some((s, e)) => (s, e),
+        None => {
+            let s = Utc::now().date_naive();
+            let e = s + Duration::days(plan.duration_days as i64);
+            (s.format("%Y-%m-%d").to_string(), e.format("%Y-%m-%d").to_string())
+        }
+    };
 
     let previously_paid = payment_repository::total_paid_for_period(
         conn,
@@ -74,7 +94,7 @@ pub fn create_payment(
     let outstanding = plan.price - previously_paid;
     let is_first_payment = !member_repository::has_any_payments(conn, &request.member_id)?;
     let admission_fee = if is_first_payment {
-        member.admission_fee.unwrap_or(0)
+        request.admission_fee.unwrap_or_else(|| member.admission_fee.unwrap_or(0))
     } else {
         0
     };
@@ -151,11 +171,10 @@ pub fn get_payment_summary(
         ));
     }
 
-    let (start_date, expiry_date) =
-        match payment_repository::get_current_period(conn, member_id, plan_id)? {
-            Some((s, e)) => (Some(s), Some(e)),
-            None => (None, None),
-        };
+    let (start_date, expiry_date) = match active_period(conn, member_id, plan_id)? {
+        Some((s, e)) => (Some(s), Some(e)),
+        None => (None, None),
+    };
 
     let previously_paid = match (&start_date, &expiry_date) {
         (Some(s), Some(e)) => {
@@ -363,6 +382,7 @@ mod tests {
             amount,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
+            admission_fee: None,
             description: None,
             reference: None,
             notes: None,
@@ -495,6 +515,7 @@ mod tests {
             amount: 2000,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
+            admission_fee: None,
             description: None,
             reference: None,
             notes: None,
@@ -549,6 +570,80 @@ mod tests {
 
         let result = create_payment(&conn, valid_request(&member_id, &plan_id, 500)).unwrap();
         assert_eq!(result.amount, 500);
+    }
+
+    #[test]
+    fn should_start_new_period_when_renewing_expired_plan() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let now = now_iso8601();
+
+        let expired_start = "2020-01-01";
+        let expired_expiry = "2020-02-01";
+        conn.execute(
+            "INSERT INTO payments \
+             (id, receipt_number, member_id, amount, payment_method, payment_date, \
+              membership_plan_id, membership_start_date, membership_expiry_date, \
+              is_voided, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                "RCP-000001",
+                member_id,
+                2000,
+                "Cash",
+                "2020-01-01",
+                plan_id,
+                expired_start,
+                expired_expiry,
+                now,
+                now,
+            ],
+        )
+        .unwrap();
+
+        let renewal = create_payment(&conn, valid_request(&member_id, &plan_id, 2000)).unwrap();
+
+        assert_eq!(renewal.amount, 2000);
+        assert_ne!(renewal.membership_start_date, expired_start);
+        assert_ne!(renewal.membership_expiry_date, expired_expiry);
+        assert!(!renewal.membership_start_date.is_empty());
+        assert!(!renewal.membership_expiry_date.is_empty());
+    }
+
+    #[test]
+    fn should_report_full_price_for_expired_plan_summary() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let now = now_iso8601();
+
+        conn.execute(
+            "INSERT INTO payments \
+             (id, receipt_number, member_id, amount, payment_method, payment_date, \
+              membership_plan_id, membership_start_date, membership_expiry_date, \
+              is_voided, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                "RCP-000001",
+                member_id,
+                2000,
+                "Cash",
+                "2020-01-01",
+                plan_id,
+                "2020-01-01",
+                "2020-02-01",
+                now,
+                now,
+            ],
+        )
+        .unwrap();
+
+        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
+        assert_eq!(summary.previously_paid, 0);
+        assert_eq!(summary.outstanding, 2000);
     }
 
     #[test]
@@ -711,6 +806,30 @@ mod tests {
 
         let result = create_payment(&conn, valid_request(&member_id, &plan_id, 2500)).unwrap();
         assert_eq!(result.amount, 2500);
+    }
+
+    #[test]
+    fn should_respect_user_entered_admission_fee_higher_than_configured() {
+        let conn = test_db();
+        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let mut req = valid_request(&member_id, &plan_id, 2000);
+        req.admission_fee = Some(1000);
+        let result = create_payment(&conn, req).unwrap();
+        assert_eq!(result.amount, 2000);
+    }
+
+    #[test]
+    fn should_reject_amount_above_plan_price_plus_entered_fee() {
+        let conn = test_db();
+        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let mut req = valid_request(&member_id, &plan_id, 3100);
+        req.admission_fee = Some(1000);
+        let result = create_payment(&conn, req);
+        assert!(result.is_err());
     }
 
     #[test]

@@ -14,6 +14,7 @@ export interface MemberResponse {
   is_archived: boolean;
   admission_fee: number | null;
   admission_fee_collected: boolean;
+  membership_plan_id: string | null;
   membership_plan_name: string | null;
   membership_start_date: string | null;
   membership_expiry_date: string | null;
@@ -33,6 +34,7 @@ export interface CreateMemberRequest {
   gender: string | null;
   notes: string | null;
   admission_fee: number | null;
+  membership_plan_id?: string | null;
 }
 
 export interface UpdateMemberRequest {
@@ -45,6 +47,7 @@ export interface UpdateMemberRequest {
   gender: string | null;
   notes: string | null;
   admission_fee: number | null;
+  membership_plan_id?: string | null;
 }
 
 export async function createMember(

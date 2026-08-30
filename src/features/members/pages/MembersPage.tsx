@@ -32,6 +32,7 @@ interface FormData {
   date_of_birth: string;
   gender: string;
   admission_fee: string;
+  membership_plan_id: string;
 }
 
 const EMPTY_FORM: FormData = {
@@ -43,6 +44,7 @@ const EMPTY_FORM: FormData = {
   date_of_birth: "",
   gender: "",
   admission_fee: "",
+  membership_plan_id: "",
 };
 
 const STATUS_OPTIONS = [
@@ -208,6 +210,7 @@ export function MembersPage({
       date_of_birth: member.date_of_birth ?? "",
       gender: formData.gender ?? "",
       admission_fee: member.admission_fee != null ? String(member.admission_fee) : "",
+      membership_plan_id: member.membership_plan_id ?? "",
     });
     setFormErrors({});
     setFormOpen(true);
@@ -246,6 +249,7 @@ export function MembersPage({
         admission_fee: formData.admission_fee.trim()
           ? parseInt(formData.admission_fee, 10) || null
           : null,
+        membership_plan_id: formData.membership_plan_id || null,
       };
 
       if (editingMember) {
@@ -469,7 +473,7 @@ export function MembersPage({
                           {formatCurrency(m.outstanding_balance)}
                         </span>
                       ) : (
-                        <span className="text-green-600">\u2014</span>
+                        <span className="text-green-600">{formatCurrency(0)}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -632,18 +636,23 @@ export function MembersPage({
               setFormData((p) => ({ ...p, address: e.target.value }))
             }
           />
-          {!editingMember && (
-            <Input
-              label="Admission Fee (PKR)"
-              type="number"
-              min={0}
-              value={formData.admission_fee}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, admission_fee: e.target.value }))
-              }
-              placeholder="e.g. 500 (optional)"
-            />
-          )}
+          <Select
+            label="Membership Plan"
+            options={[
+              { value: "", label: "Select a plan (optional)..." },
+              ...plans.map((p) => ({
+                value: p.id,
+                label: `${p.name} — ${formatCurrency(p.price)} (${p.duration_days} days)`,
+              })),
+            ]}
+            value={formData.membership_plan_id}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                membership_plan_id: e.target.value,
+              }))
+            }
+          />
         </div>
       </Modal>
 

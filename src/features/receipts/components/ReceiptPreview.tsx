@@ -4,12 +4,13 @@ import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
+import { useToast } from "../../../components/feedback/ToastProvider";
 import {
   getReceiptByPaymentId,
-  printReceipt,
   type ReceiptResponse,
 } from "../../../lib/api/receipts";
 import { formatCurrency } from "../../../lib/utils/format";
+import { renderReceiptPdf } from "../../../lib/pdf";
 
 interface Props {
   isOpen: boolean;
@@ -18,9 +19,11 @@ interface Props {
 }
 
 export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
+  const { addToast } = useToast();
   const [receipt, setReceipt] = useState<ReceiptResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     if (isOpen && paymentId) {
@@ -37,11 +40,23 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
   }, [isOpen, paymentId]);
 
   const handlePrint = async () => {
-    if (!receipt) return;
+    if (!receipt || printing) return;
     try {
-      await printReceipt(receipt);
+      setPrinting(true);
+      const res = await renderReceiptPdf(receipt);
+      if (res.mode === "pdf") {
+        addToast({ variant: "success", title: "Receipt saved as PDF", message: res.path || undefined });
+      } else {
+        addToast({ variant: "info", title: "Print cancelled" });
+      }
     } catch (err) {
-      console.error("Print failed:", err);
+      addToast({
+        variant: "error",
+        title: "Print failed",
+        message: err instanceof Error ? err.message : "Could not print receipt",
+      });
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -55,7 +70,11 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={handlePrint} disabled={!receipt}>
+          <Button
+            onClick={handlePrint}
+            loading={printing}
+            disabled={!receipt || printing}
+          >
             <Printer size={14} className="mr-1.5" />
             Print Receipt
           </Button>
@@ -65,7 +84,7 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
       {loading && <LoadingState message="Loading receipt..." />}
       {error && <ErrorState message={error} />}
       {receipt && (
-        <div className="receipt-preview rounded-md border border-border bg-white p-6 text-sm text-gray-900 print:border-none print:p-0">
+        <div className="receipt-preview rounded-md border border-border bg-white p-6 text-sm text-gray-900">
           <style>{`
             @media print {
               .receipt-preview { border: none !important; padding: 0 !important; }

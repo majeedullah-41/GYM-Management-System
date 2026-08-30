@@ -39,6 +39,7 @@ export interface CreatePaymentRequest {
   amount: number;
   payment_method: string;
   payment_date: string;
+  admission_fee?: number | null;
   description?: string | null;
   reference?: string | null;
   notes?: string | null;
