@@ -59,6 +59,7 @@ export function RecordPaymentModal({
   const [admissionFee, setAdmissionFee] = useState<string>("");
   const [currentPlanLoading, setCurrentPlanLoading] = useState(false);
   const [hasCurrentPlan, setHasCurrentPlan] = useState(false);
+  const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -102,6 +103,7 @@ export function RecordPaymentModal({
     }
     let cancelled = false;
     setCurrentPlanLoading(true);
+    setLastPayment(null);
     listMemberPayments(selectedMember.id)
       .then((ps) => {
         if (cancelled) return;
@@ -112,6 +114,7 @@ export function RecordPaymentModal({
               a.payment_date + a.created_at,
             ),
           )[0] as PaymentResponse | undefined;
+        setLastPayment(latest ?? null);
         const planId =
           (latest ? latest.membership_plan_id : null) ??
           selectedMember.membership_plan_id;
@@ -390,6 +393,30 @@ export function RecordPaymentModal({
 
             {summary && selectedMember && (
               <div className="space-y-1.5 rounded-md bg-secondary-bg p-3 text-sm">
+                {lastPayment && (
+                  <div className="rounded border border-border bg-surface px-2.5 py-2">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                      Last Fee Paid
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">
+                        {lastPayment.payment_date?.slice(0, 10)}
+                      </span>
+                      <span className="font-medium text-green-600">
+                        {formatCurrency(lastPayment.amount)}
+                      </span>
+                    </div>
+                    {(lastPayment.membership_start_date ||
+                      lastPayment.membership_expiry_date) && (
+                      <div className="text-xs text-text-muted">
+                        Covers{" "}
+                        {lastPayment.membership_start_date?.slice(0, 10)}
+                        {" → "}
+                        {lastPayment.membership_expiry_date?.slice(0, 10)}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-text-muted">Plan:</span>
                   <span className="font-medium">{selectedPlan?.name}</span>

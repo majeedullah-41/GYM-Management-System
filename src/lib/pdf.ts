@@ -1,6 +1,5 @@
 import { jsPDF } from "jspdf";
 import { invokeCommand } from "./tauri";
-import type { ReceiptResponse } from "./api/receipts";
 import type {
   FinancialReport,
   PaymentReport,
@@ -32,83 +31,7 @@ async function savePdf(payload: string, name: string): Promise<SavePdfResult> {
   });
 }
 
-// ─────────────────────────── RECEIPT ───────────────────────────
-export async function renderReceiptPdf(
-  r: ReceiptResponse,
-): Promise<SavePdfResult> {
-  const pdf = new jsPDF({ unit: "mm", format: "a4" });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const m = 20;
-  let y = 25;
-
-  // Gym header
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(20);
-  pdf.setTextColor(...INDIGO);
-  pdf.text(r.gym_name, pageW / 2, y, { align: "center" });
-  y += 7;
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(10);
-  pdf.setTextColor(...SLATE);
-  if (r.gym_address) {
-    pdf.text(r.gym_address, pageW / 2, y, { align: "center" });
-    y += 5;
-  }
-  if (r.gym_phone) {
-    pdf.text(r.gym_phone, pageW / 2, y, { align: "center" });
-    y += 5;
-  }
-  y += 4;
-  // header rule
-  pdf.setDrawColor(...INDIGO);
-  pdf.setLineWidth(0.8);
-  pdf.line(m, y, pageW - m, y);
-  y += 6;
-
-  // Title
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(14);
-  pdf.setTextColor(...SLATE);
-  pdf.text("PAYMENT RECEIPT", pageW / 2, y, { align: "center" });
-  y += 8;
-
-  pdf.setFontSize(10);
-  y = row(pdf, m, y, "Receipt #", r.receipt_number);
-  y = row(pdf, m, y, "Date", r.payment_date);
-  y += 3;
-  y = row(pdf, m, y, "Member", r.member_name);
-  y = row(pdf, m, y, "Member #", r.member_number);
-  y = row(pdf, m, y, "Plan", r.plan_name);
-  y = row(pdf, m, y, "Period", `${r.membership_start_date} → ${r.membership_expiry_date}`);
-  y += 3;
-  y = row(pdf, m, y, "Payment Method", r.payment_method);
-  y = rowAmount(pdf, m, y, "Amount Paid", fmt(r.amount), GREEN);
-  if (r.remaining_balance > 0) {
-    y = rowAmount(pdf, m, y, "Remaining Balance", fmt(r.remaining_balance), RED);
-  }
-  y += 3;
-  if (r.notes) {
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    pdf.setTextColor(...SLATE);
-    pdf.text(`Notes: ${r.notes}`, m, y);
-    y += 10;
-  }
-
-  // Footer
-  y = Math.max(y + 2, 260);
-  pdf.setDrawColor(200, 200, 200);
-  pdf.setLineWidth(0.3);
-  pdf.line(m, y, pageW - m, y);
-  pdf.setFontSize(9);
-  pdf.setTextColor(150, 150, 150);
-  pdf.text("Thank you for your payment!", pageW / 2, y + 6, { align: "center" });
-
-  const bytes = pdf.output("arraybuffer");
-  const name = `Receipt-${r.receipt_number.replace(/[^a-zA-Z0-9-_]/g, "_")}`;
-  return savePdf(uint8(bytes), name);
-}
-
+// ─────────────────────────── REPORT ───────────────────────────
 function row(pdf: jsPDF, m: number, y: number, label: string, value: string): number {
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
@@ -119,17 +42,6 @@ function row(pdf: jsPDF, m: number, y: number, label: string, value: string): nu
   const rightX = pdf.internal.pageSize.getWidth() - m;
   pdf.text(value.length > 40 ? value.slice(0, 40) : value, rightX, y, { align: "right" });
   return y + 6;
-}
-
-function rowAmount(pdf: jsPDF, m: number, y: number, label: string, value: string, color: [number, number, number]): number {
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(11);
-  pdf.setTextColor(...SLATE);
-  pdf.text(label, m, y);
-  pdf.setFont("helvetica", "bold");
-  pdf.setTextColor(...color);
-  pdf.text(value, pdf.internal.pageSize.getWidth() - m, y, { align: "right" });
-  return y + 7;
 }
 
 function uint8(buf: ArrayBuffer): string {

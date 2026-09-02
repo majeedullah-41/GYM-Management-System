@@ -88,7 +88,10 @@ pub fn list_members(
         let membership = get_membership_info(conn, &member.id)?;
 
         if let Some(filter) = status_filter {
+            let is_paid = membership.admission_fee_collected && membership.outstanding_balance <= 0;
             match filter {
+                "paid" if !is_paid => continue,
+                "unpaid" if is_paid => continue,
                 "active" if membership.status.as_deref() != Some("active") => continue,
                 "expiring" if membership.status.as_deref() != Some("expiring") => continue,
                 "expired" if membership.status.as_deref() != Some("expired") => continue,

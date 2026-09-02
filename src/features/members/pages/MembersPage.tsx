@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
@@ -22,6 +22,7 @@ import {
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { useNavigation } from "../../../components/layout/NavigationContext";
 import { formatCurrency } from "../../../lib/utils/format";
+import { MemberDetailRow } from "../components/MemberDetailRow";
 
 interface FormData {
   full_name: string;
@@ -32,6 +33,7 @@ interface FormData {
   date_of_birth: string;
   gender: string;
   admission_fee: string;
+  charge_admission_fee: boolean;
   membership_plan_id: string;
 }
 
@@ -44,23 +46,15 @@ const EMPTY_FORM: FormData = {
   date_of_birth: "",
   gender: "",
   admission_fee: "",
+  charge_admission_fee: false,
   membership_plan_id: "",
 };
 
 const STATUS_OPTIONS = [
   { value: "", label: "All Statuses" },
-  { value: "active", label: "Active" },
-  { value: "expiring", label: "Expiring Soon" },
-  { value: "expired", label: "Expired" },
-  { value: "none", label: "No Membership" },
+  { value: "paid", label: "Paid" },
+  { value: "unpaid", label: "Unpaid" },
 ];
-
-const STATUS_BADGE: Record<string, "active" | "warning" | "expired" | "info"> = {
-  active: "active",
-  expiring: "warning",
-  expired: "expired",
-  none: "info",
-};
 
 const PAGE_SIZE = 20;
 
@@ -102,9 +96,9 @@ function formatPhone(value: string): string {
 }
 
 export function MembersPage({
-  onMemberClick,
+  initialExpandedId,
 }: {
-  onMemberClick?: (memberId: string) => void;
+  initialExpandedId?: string | null;
 } = {}) {
   const { addToast } = useToast();
   const { openPaymentForMember } = useNavigation();
@@ -128,6 +122,13 @@ export function MembersPage({
   const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(
+    initialExpandedId ?? null,
+  );
+
+  useEffect(() => {
+    if (initialExpandedId) setExpandedId(initialExpandedId);
+  }, [initialExpandedId]);
 
   const [archiveTarget, setArchiveTarget] = useState<MemberResponse | null>(null);
   const [reactivateTarget, setReactivateTarget] = useState<MemberResponse | null>(null);
@@ -210,6 +211,8 @@ export function MembersPage({
       date_of_birth: member.date_of_birth ?? "",
       gender: formData.gender ?? "",
       admission_fee: member.admission_fee != null ? String(member.admission_fee) : "",
+      charge_admission_fee:
+        member.admission_fee != null && member.admission_fee > 0,
       membership_plan_id: member.membership_plan_id ?? "",
     });
     setFormErrors({});
@@ -246,9 +249,10 @@ export function MembersPage({
         date_of_birth: formData.date_of_birth || null,
         gender: formData.gender || null,
         notes: null as string | null,
-        admission_fee: formData.admission_fee.trim()
-          ? parseInt(formData.admission_fee, 10) || null
-          : null,
+        admission_fee:
+          formData.charge_admission_fee && formData.admission_fee.trim()
+            ? parseInt(formData.admission_fee, 10) || null
+            : null,
         membership_plan_id: formData.membership_plan_id || null,
       };
 
@@ -433,17 +437,25 @@ export function MembersPage({
               </thead>
               <tbody>
                 {pagedMembers.map((m) => (
+                  <Fragment key={m.id}>
                   <tr
-                    key={m.id}
-                    onClick={() => onMemberClick?.(m.id)}
-                    className={`border-b border-border last:border-b-0 ${
-                      onMemberClick
-                        ? "cursor-pointer hover:bg-secondary-bg"
-                        : ""
+                    onClick={() =>
+                      setExpandedId((cur) => (cur === m.id ? null : m.id))
+                    }
+                    className={`border-b border-border cursor-pointer hover:bg-secondary-bg ${
+                      expandedId === m.id ? "bg-secondary-bg" : ""
                     }`}
                   >
-                    <td className="px-4 py-3 font-mono text-xs text-text-muted">
-                      {m.member_number}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 font-mono text-xs text-text-muted">
+                        <ChevronDown
+                          size={14}
+                          className={`transition-transform ${
+                            expandedId === m.id ? "rotate-180" : ""
+                          }`}
+                        />
+                        {m.member_number}
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-medium text-text-primary">
                       {m.full_name}
@@ -458,13 +470,8 @@ export function MembersPage({
                       {m.membership_expiry_date || "\u2014"}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge
-                        variant={STATUS_BADGE[m.membership_status ?? "none"] ?? "info"}
-                      >
-                        {m.membership_status
-                          ? m.membership_status.charAt(0).toUpperCase() +
-                            m.membership_status.slice(1)
-                          : "No Plan"}
+                      <Badge variant={m.is_paid ? "success" : "danger"}>
+                        {m.is_paid ? "Paid" : "Unpaid"}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -514,6 +521,14 @@ export function MembersPage({
                       </div>
                     </td>
                   </tr>
+                  {expandedId === m.id && (
+                    <tr className="border-b border-border bg-secondary-bg/40">
+                      <td colSpan={8} className="px-0 py-0">
+                        <MemberDetailRow member={m} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -653,6 +668,43 @@ export function MembersPage({
               }))
             }
           />
+          <div className="rounded-md border border-border p-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-text-primary">
+              <input
+                type="checkbox"
+                name="charge_admission_fee"
+                checked={formData.charge_admission_fee}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    charge_admission_fee: e.target.checked,
+                  }))
+                }
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              Charge Admission Fee
+            </label>
+            <p className="mt-1 text-xs text-text-muted">
+              One-time fee charged at enrollment.
+            </p>
+            {formData.charge_admission_fee && (
+              <div className="mt-3">
+                <Input
+                  label="Admission Fee Amount (PKR)"
+                  type="number"
+                  min={0}
+                  value={formData.admission_fee}
+                  onChange={(e) =>
+                    setFormData((p) => ({
+                      ...p,
+                      admission_fee: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 500"
+                />
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
 

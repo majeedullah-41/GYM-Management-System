@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Save, Download, FolderOpen } from "lucide-react";
+import { Save, Download, Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
+import { Modal } from "../../../components/ui/Modal";
 import { Select } from "../../../components/ui/Select";
 import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
@@ -16,8 +17,16 @@ import {
   type AllSettings,
   type PrintSettings,
 } from "../../../lib/api/settings";
-import { listPlans } from "../../../lib/api/membership-plans";
-import type { PlanResponse } from "../../../lib/api/membership-plans";
+import {
+  createPlan,
+  listPlans,
+  updatePlan,
+  deactivatePlan,
+  reactivatePlan,
+  type CreatePlanRequest,
+  type UpdatePlanRequest,
+  type PlanResponse,
+} from "../../../lib/api/membership-plans";
 
 type Tab = "gym" | "plans" | "receipts" | "data";
 
@@ -184,24 +193,141 @@ function PlansTab() {
   const { addToast } = useToast();
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<PlanResponse | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    price: "",
+    duration_days: "",
+    description: "",
+  });
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
     listPlans()
       .then(setPlans)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ name: "", price: "", duration_days: "", description: "" });
+    setFormError(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (p: PlanResponse) => {
+    setEditing(p);
+    setForm({
+      name: p.name,
+      price: String(p.price),
+      duration_days: String(p.duration_days),
+      description: p.description ?? "",
+    });
+    setFormError(null);
+    setModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    const name = form.name.trim();
+    const price = parseInt(form.price, 10);
+    const duration_days = parseInt(form.duration_days, 10);
+    if (!name) {
+      setFormError("Plan name is required.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setFormError("Enter a valid price (0+).");
+      return;
+    }
+    if (!Number.isFinite(duration_days) || duration_days <= 0) {
+      setFormError("Enter a valid duration in days (1+).");
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const description = form.description.trim() || null;
+      if (editing) {
+        const req: UpdatePlanRequest = {
+          name,
+          price,
+          duration_days,
+          description,
+        };
+        await updatePlan(editing.id, req);
+        addToast({ variant: "success", title: "Plan updated" });
+      } else {
+        const req: CreatePlanRequest = {
+          name,
+          price,
+          duration_days,
+          description,
+        };
+        await createPlan(req);
+        addToast({ variant: "success", title: "Plan created" });
+      }
+      setModalOpen(false);
+      load();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to save plan.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleActive = async (p: PlanResponse) => {
+    try {
+      if (p.is_active) {
+        if (p.member_count > 0) {
+          addToast({
+            variant: "warning",
+            title: "Cannot deactivate",
+            message: `${p.member_count} member(s) are using this plan.`,
+          });
+          return;
+        }
+        await deactivatePlan(p.id);
+        addToast({ variant: "success", title: "Plan deactivated" });
+      } else {
+        await reactivatePlan(p.id);
+        addToast({ variant: "success", title: "Plan activated" });
+      }
+      load();
+    } catch (err) {
+      addToast({
+        variant: "error",
+        title: "Failed",
+        message: err instanceof Error ? err.message : "Operation failed.",
+      });
+    }
+  };
+
   if (loading) return <LoadingState message="Loading plans..." />;
 
   return (
     <div className="rounded-lg border border-border bg-surface p-6">
-      <h3 className="text-base font-semibold text-text-primary mb-4">
-        Membership Plans
-      </h3>
-      <p className="text-sm text-text-muted mb-4">
-        Manage your membership plans in the dedicated plans section.
-      </p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-text-primary">
+            Membership Plans
+          </h3>
+          <p className="text-sm text-text-muted">
+            Add, edit, and manage your membership plans.
+          </p>
+        </div>
+        <Button size="sm" onClick={openCreate}>
+          <Plus size={14} /> Add Plan
+        </Button>
+      </div>
+
       {plans.length === 0 ? (
         <p className="text-sm text-text-muted">No plans configured yet.</p>
       ) : (
@@ -223,6 +349,9 @@ function PlansTab() {
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-text-muted">
                   Status
+                </th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-text-muted">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -255,12 +384,124 @@ function PlansTab() {
                       {p.is_active ? "Active" : "Inactive"}
                     </span>
                   </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openEdit(p)}
+                      >
+                        <Pencil size={12} /> Edit
+                      </Button>
+                      {p.is_active ? (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={p.member_count > 0}
+                          title={
+                            p.member_count > 0
+                              ? "Plan is in use by members"
+                              : "Deactivate plan"
+                          }
+                          onClick={() => handleToggleActive(p)}
+                        >
+                          <Trash2 size={12} /> Deactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleToggleActive(p)}
+                        >
+                          <RefreshCw size={12} /> Activate
+                        </Button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? "Edit Plan" : "Add Plan"}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setModalOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} loading={submitting}>
+              {editing ? "Save Changes" : "Create Plan"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {formError && (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
+              {formError}
+            </p>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-text-primary">
+              Plan Name *
+            </label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Monthly"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-text-primary">
+                Price (PKR) *
+              </label>
+              <Input
+                type="number"
+                min={0}
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="e.g. 3000"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-text-primary">
+                Duration (days) *
+              </label>
+              <Input
+                type="number"
+                min={1}
+                value={form.duration_days}
+                onChange={(e) =>
+                  setForm({ ...form, duration_days: e.target.value })
+                }
+                placeholder="e.g. 30"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-text-primary">
+              Description
+            </label>
+            <Input
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+              placeholder="Optional description"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -350,7 +591,7 @@ function PrintSettingsSection({
               value={form.destination}
               onChange={(e) => update({ destination: e.target.value })}
               options={[
-                { value: "print_window", label: "Print (opens print dialog)" },
+                { value: "print_window", label: "Print Window (send to printer)" },
                 { value: "pdf", label: "Save as PDF" },
               ]}
             />

@@ -345,11 +345,6 @@ pub fn render_report_pdf(
                             ((A4_WIDTH - text_w) / 2.0).max(A4_MARGIN)
                         }
                         Align::Left => A4_MARGIN,
-                        Align::Right => {
-                            let char_w = item.size * 0.55;
-                            let text_w = item.text.chars().count() as f32 * char_w;
-                            (A4_WIDTH - A4_MARGIN - text_w).max(A4_MARGIN)
-                        }
                     };
                     if item.bold {
                         layer.set_fill_color(c(0.08, 0.08, 0.08));
@@ -438,7 +433,6 @@ enum LineKind {
 enum Align {
     Left,
     Center,
-    Right,
 }
 
 #[derive(Clone)]

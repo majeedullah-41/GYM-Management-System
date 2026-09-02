@@ -7,8 +7,6 @@ use crate::errors::AppError;
 use crate::repositories::settings_repository::{self, PrintSettings};
 use crate::services::printing_service;
 
-use base64::Engine;
-
 #[derive(Serialize)]
 pub struct PrintDispatchResult {
     pub mode: String,

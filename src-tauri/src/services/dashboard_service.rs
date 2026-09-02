@@ -124,6 +124,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                 membership_expiry_date: membership.2,
                 membership_status: Some(status),
                 outstanding_balance: membership.3,
+                is_paid: membership.3 <= 0,
                 created_at: m.created_at.clone(),
                 updated_at: m.updated_at.clone(),
             })

@@ -1,34 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { PageHeader } from "../../../components/ui/PageHeader";
-import { Card } from "../../../components/ui/Card";
+import { useEffect, useState } from "react";
 import { Badge } from "../../../components/ui/Badge";
-import { Button } from "../../../components/ui/Button";
 import { LoadingState } from "../../../components/ui/LoadingState";
-import { ErrorState } from "../../../components/ui/ErrorState";
 import { formatCurrency } from "../../../lib/utils/format";
-import {
-  getMember,
-  type MemberResponse,
-} from "../../../lib/api/members";
 import {
   listMemberPayments,
   getPaymentSummary,
   type PaymentResponse,
   type PaymentSummary,
 } from "../../../lib/api/payments";
-
-interface Props {
-  memberId: string;
-  onBack: () => void;
-}
-
-const STATUS_BADGE: Record<string, "active" | "warning" | "expired" | "info"> = {
-  active: "active",
-  expiring: "warning",
-  expired: "expired",
-  none: "info",
-};
+import type { MemberResponse } from "../../../lib/api/members";
 
 const METHOD_BADGE: Record<string, "active" | "info"> = {
   Cash: "active",
@@ -37,63 +17,51 @@ const METHOD_BADGE: Record<string, "active" | "info"> = {
   Other: "info",
 };
 
-export function MemberDetailPage({ memberId, onBack }: Props) {
-  const [member, setMember] = useState<MemberResponse | null>(null);
+export function MemberDetailRow({ member }: { member: MemberResponse }) {
   const [payments, setPayments] = useState<PaymentResponse[]>([]);
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [m, p] = await Promise.all([
-        getMember(memberId),
-        listMemberPayments(memberId),
-      ]);
-      setMember(m);
-      setPayments(p);
-      if (m.membership_plan_name) {
-        const planId = p.length > 0 ? p[0].membership_plan_id : null;
-        if (planId) {
-          const s = await getPaymentSummary(memberId, planId).catch(() => null);
-          setSummary(s);
-        }
-      }
-    } catch (err) {
-      console.error("MemberDetailPage load error:", err);
-      setError(err instanceof Error ? err.message : "Failed to load member");
-    } finally {
-      setLoading(false);
-    }
-  }, [memberId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const p = await listMemberPayments(member.id);
+        if (cancelled) return;
+        setPayments(p);
+        const planId =
+          p.length > 0 ? p[0].membership_plan_id : member.membership_plan_id;
+        if (planId) {
+          const s = await getPaymentSummary(member.id, planId).catch(
+            () => null,
+          );
+          if (!cancelled) setSummary(s);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [member.id, member.membership_plan_id]);
 
-  if (loading) return <LoadingState message="Loading member..." />;
-  if (error) return <ErrorState message={error} onRetry={load} />;
-  if (!member) return null;
+  if (loading) {
+    return (
+      <div className="px-4 py-6">
+        <LoadingState message="Loading member details..." />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="secondary" size="sm" onClick={onBack}>
-          <ArrowLeft size={14} className="mr-1" />
-          Back to Members
-        </Button>
-      </div>
-
-      <PageHeader
-        title={member.full_name}
-        description={`Member ${member.member_number}`}
-      />
-
-      <div className="grid grid-cols-3 gap-6">
-        <Card className="col-span-2 p-5">
-          <h3 className="mb-4 text-sm font-semibold text-text-primary">
+    <div className="space-y-4 p-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="rounded-md border border-border bg-surface p-4 md:col-span-2">
+          <h3 className="mb-3 text-sm font-semibold text-text-primary">
             Member Information
           </h3>
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
@@ -161,11 +129,11 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
               </div>
             )}
           </div>
-        </Card>
+        </div>
 
-        <Card className="p-5">
-          <h3 className="mb-4 text-sm font-semibold text-text-primary">
-            Membership
+        <div className="rounded-md border border-border bg-surface p-4">
+          <h3 className="mb-3 text-sm font-semibold text-text-primary">
+            Membership & Dues
           </h3>
           <div className="space-y-3 text-sm">
             <div>
@@ -177,15 +145,8 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
             <div>
               <span className="text-text-muted">Status</span>
               <div>
-                <Badge
-                  variant={
-                    STATUS_BADGE[member.membership_status ?? "none"] ?? "info"
-                  }
-                >
-                  {member.membership_status
-                    ? member.membership_status.charAt(0).toUpperCase() +
-                      member.membership_status.slice(1)
-                    : "No Plan"}
+                <Badge variant={member.is_paid ? "success" : "danger"}>
+                  {member.is_paid ? "Paid" : "Unpaid"}
                 </Badge>
               </div>
             </div>
@@ -201,41 +162,41 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
                 <div>{member.membership_expiry_date}</div>
               </div>
             )}
-            {summary && (
-              <>
-                <div className="border-t border-border pt-3">
-                  <span className="text-text-muted">Plan Price</span>
-                  <div>{formatCurrency(summary.plan_price)}</div>
-                </div>
-                {summary.previously_paid > 0 && (
-                  <div>
-                    <span className="text-text-muted">Paid So Far</span>
-                    <div className="text-green-600">
-                      {formatCurrency(summary.previously_paid)}
-                    </div>
-                  </div>
+            <div className="border-t border-border pt-3">
+              <span className="text-text-muted">Total Paid</span>
+              <div className="font-medium text-green-600">
+                {formatCurrency(
+                  payments.reduce((sum, p) => sum + p.amount, 0),
                 )}
-                <div>
-                  <span className="text-text-muted">Outstanding</span>
-                  <div
-                    className={
-                      summary.outstanding > 0
-                        ? "font-semibold text-orange-600"
-                        : "text-green-600"
-                    }
-                  >
-                    {formatCurrency(summary.outstanding)}
-                  </div>
+              </div>
+            </div>
+            <div>
+              <span className="text-text-muted">Pending Dues</span>
+              <div
+                className={
+                  member.outstanding_balance > 0
+                    ? "font-semibold text-orange-600"
+                    : "text-green-600"
+                }
+              >
+                {formatCurrency(member.outstanding_balance)}
+              </div>
+            </div>
+            {summary && summary.is_first_payment && summary.admission_fee && (
+              <div>
+                <span className="text-text-muted">Admission Fee Due</span>
+                <div className="text-orange-600">
+                  {formatCurrency(summary.admission_fee)}
                 </div>
-              </>
+              </div>
             )}
           </div>
-        </Card>
+        </div>
       </div>
 
-      <Card className="p-5">
-        <h3 className="mb-4 text-sm font-semibold text-text-primary">
-          Payment History
+      <div className="rounded-md border border-border bg-surface p-4">
+        <h3 className="mb-3 text-sm font-semibold text-text-primary">
+          Fee / Payment History
         </h3>
         {payments.length === 0 ? (
           <p className="text-sm text-text-muted">No payments recorded yet.</p>
@@ -259,9 +220,6 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
                   <th className="pb-2 text-left text-xs font-medium text-text-muted">
                     Period
                   </th>
-                  <th className="pb-2 text-right text-xs font-medium text-text-muted">
-                    Outstanding
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -273,7 +231,9 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
                     <td className="py-2.5 font-mono text-xs text-text-muted">
                       {p.receipt_number}
                     </td>
-                    <td className="py-2.5 text-text-primary">{p.payment_date}</td>
+                    <td className="py-2.5 text-text-primary">
+                      {p.payment_date}
+                    </td>
                     <td className="py-2.5 text-right font-medium text-text-primary">
                       {formatCurrency(p.amount)}
                     </td>
@@ -282,17 +242,16 @@ export function MemberDetailPage({ memberId, onBack }: Props) {
                         {p.payment_method}
                       </Badge>
                     </td>
-                    <td className="py-2.5 text-text-muted text-xs">
+                    <td className="py-2.5 text-xs text-text-muted">
                       {p.membership_start_date} → {p.membership_expiry_date}
                     </td>
-                    <td className="py-2.5 text-right text-text-muted">—</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
