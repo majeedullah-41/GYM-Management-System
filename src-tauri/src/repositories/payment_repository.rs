@@ -1,11 +1,24 @@
+use chrono::{Duration, NaiveDate, Utc};
 use rusqlite::{params, Connection};
 
 use crate::errors::AppError;
 use crate::models::Payment;
+use crate::utils::dates::now_iso8601;
 
 const SELECT_COLS: &str = "id, receipt_number, member_id, amount, payment_method, payment_date, \
      membership_plan_id, membership_start_date, membership_expiry_date, description, reference, \
      notes, is_voided, voided_at, void_reason, created_at, updated_at";
+
+/// Represents a distinct membership period for a member (one cycle of a plan):
+/// the plan, its start/expiry window, the plan's full price, and how much has
+/// been paid toward that period (via direct payments and/or ledger allocations).
+pub struct MemberPeriod {
+    pub plan_id: String,
+    pub start_date: String,
+    pub expiry_date: String,
+    pub price: i64,
+    pub paid: i64,
+}
 
 pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
     conn.execute(
@@ -172,15 +185,287 @@ pub fn total_paid_for_period(
     start_date: &str,
     expiry_date: &str,
 ) -> Result<i64, AppError> {
+    // A payment that has ledger allocations is counted through those
+    // allocations only (FIFO-settled across periods). A payment with no
+    // allocations is counted directly by its own period (legacy behavior).
+    // This avoids double-counting when a single payment settles several
+    // lapsed periods.
     let total: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments \
-         WHERE member_id = ?1 AND membership_plan_id = ?2 \
-         AND membership_start_date = ?3 AND membership_expiry_date = ?4 \
-         AND is_voided = 0",
+        "SELECT COALESCE( \
+            (SELECT COALESCE(SUM(p.amount), 0) FROM payments p \
+             WHERE p.member_id = ?1 AND p.membership_plan_id = ?2 \
+               AND p.membership_start_date = ?3 AND p.membership_expiry_date = ?4 \
+               AND p.is_voided = 0 \
+               AND NOT EXISTS (SELECT 1 FROM payment_allocations a WHERE a.payment_id = p.id)) \
+            + \
+            (SELECT COALESCE(SUM(a.amount), 0) FROM payment_allocations a \
+             JOIN payments p2 ON p2.id = a.payment_id \
+             WHERE p2.member_id = ?1 AND a.membership_plan_id = ?2 \
+               AND a.membership_start_date = ?3 AND a.membership_expiry_date = ?4 \
+               AND p2.is_voided = 0), \
+            0)",
         params![member_id, plan_id, start_date, expiry_date],
         |row| row.get(0),
     )?;
     Ok(total)
+}
+
+/// Returns the member's distinct membership periods (one per plan cycle),
+/// ordered oldest-expiry-first, each with the plan's full price and the amount
+/// already paid toward it. If `plan_id` is `Some`, only that plan's periods are
+/// returned.
+pub fn get_member_periods(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: Option<&str>,
+) -> Result<Vec<MemberPeriod>, AppError> {
+    let (where_sql, param_values): (&str, Vec<String>) = match plan_id {
+        Some(pid) => (
+            "WHERE member_id = ?1 AND is_voided = 0 AND membership_plan_id = ?2",
+            vec![member_id.to_string(), pid.to_string()],
+        ),
+        None => (
+            "WHERE member_id = ?1 AND is_voided = 0",
+            vec![member_id.to_string()],
+        ),
+    };
+    let sql = format!(
+        "SELECT p.membership_plan_id, p.membership_start_date, p.membership_expiry_date, mp.price, mp.duration_days \
+         FROM (SELECT DISTINCT membership_plan_id, membership_start_date, membership_expiry_date \
+               FROM payments {where_sql}) p \
+         JOIN membership_plans mp ON mp.id = p.membership_plan_id \
+         ORDER BY p.membership_expiry_date ASC"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(param_values.iter()),
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i32>(4)?,
+            ))
+        },
+    )?;
+
+    let mut out: Vec<MemberPeriod> = Vec::new();
+    let mut keys: std::collections::HashSet<(String, String, String)> =
+        std::collections::HashSet::new();
+    let mut plan_meta: std::collections::HashMap<String, (i64, i32)> =
+        std::collections::HashMap::new();
+    let mut latest_expiry: std::collections::HashMap<String, NaiveDate> =
+        std::collections::HashMap::new();
+
+    // 1. Real periods (distinct windows recorded by payment rows).
+    for row in rows {
+        let (plan, start, expiry, price, _duration) = row?;
+        plan_meta.insert(plan.clone(), (price, _duration));
+        let paid = total_paid_for_period(conn, member_id, &plan, &start, &expiry)?;
+        if let Ok(d) = NaiveDate::parse_from_str(&expiry, "%Y-%m-%d") {
+            let e = latest_expiry.entry(plan.clone()).or_insert(d);
+            if d > *e {
+                *e = d;
+            }
+        }
+        keys.insert((plan.clone(), start.clone(), expiry.clone()));
+        out.push(MemberPeriod {
+            plan_id: plan,
+            start_date: start,
+            expiry_date: expiry,
+            price,
+            paid,
+        });
+    }
+
+    // 2. Allocation-only windows. A payment settles lapsed cycles through the
+    // ledger; that credit must stay visible even after a later renewal period
+    // (which would otherwise hide the partially-settled lapsed cycle).
+    let (alloc_where, alloc_params): (&str, Vec<String>) = match plan_id {
+        Some(pid) => (
+            "WHERE p.member_id = ?1 AND p.is_voided = 0 AND a.membership_plan_id = ?2",
+            vec![member_id.to_string(), pid.to_string()],
+        ),
+        None => (
+            "WHERE p.member_id = ?1 AND p.is_voided = 0",
+            vec![member_id.to_string()],
+        ),
+    };
+    let alloc_sql = format!(
+        "SELECT DISTINCT a.membership_plan_id, a.membership_start_date, a.membership_expiry_date \
+         FROM payment_allocations a JOIN payments p ON p.id = a.payment_id {alloc_where}"
+    );
+    let mut astmt = conn.prepare(&alloc_sql)?;
+    let arows = astmt.query_map(rusqlite::params_from_iter(alloc_params.iter()), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    for arow in arows {
+        let (plan, start, expiry) = arow?;
+        if keys.contains(&(plan.clone(), start.clone(), expiry.clone())) {
+            continue;
+        }
+        keys.insert((plan.clone(), start.clone(), expiry.clone()));
+        let price = plan_meta.get(&plan).map(|m| m.0).unwrap_or(0);
+        let paid = total_paid_for_period(conn, member_id, &plan, &start, &expiry)?;
+        out.push(MemberPeriod {
+            plan_id: plan,
+            start_date: start,
+            expiry_date: expiry,
+            price,
+            paid,
+        });
+    }
+
+    // 3. Roll forward lapsed (fully-skipped) cycles for each plan whose last
+    // paid coverage has ended. Each skipped cycle is an unpaid due cycle, so a
+    // member who stops paying accrues a cycle of dues per plan period. The
+    // current cycle anchors at *today* (renewals always re-start today).
+    let today = Utc::now().date_naive();
+    for (pid, last_expiry) in &latest_expiry {
+        if *last_expiry > today {
+            continue;
+        }
+        let (price, duration) = *plan_meta.get(pid).unwrap_or(&(0, 30));
+        let dur = Duration::days(duration as i64);
+        if duration <= 0 {
+            continue;
+        }
+
+        let push_synthetic =
+            |start: NaiveDate, end: NaiveDate, keys: &mut std::collections::HashSet<(String, String, String)>,
+             out: &mut Vec<MemberPeriod>|
+             -> Result<(), AppError> {
+                let start_str = start.format("%Y-%m-%d").to_string();
+                let end_str = end.format("%Y-%m-%d").to_string();
+                if keys.contains(&(pid.clone(), start_str.clone(), end_str.clone())) {
+                    return Ok(());
+                }
+                keys.insert((pid.clone(), start_str.clone(), end_str.clone()));
+                let paid = total_paid_for_period(conn, member_id, pid, &start_str, &end_str)?;
+                out.push(MemberPeriod {
+                    plan_id: pid.clone(),
+                    start_date: start_str,
+                    expiry_date: end_str,
+                    price,
+                    paid,
+                });
+                Ok(())
+            };
+
+        // Full cycles that ended entirely before today (definitely missed).
+        let mut cursor = *last_expiry;
+        while cursor + dur <= today {
+            push_synthetic(cursor, cursor + dur, &mut keys, &mut out)?;
+            cursor = cursor + dur;
+        }
+        // The current cycle owed right now (starts today).
+        push_synthetic(today, today + dur, &mut keys, &mut out)?;
+    }
+
+    out.sort_by(|a, b| a.expiry_date.cmp(&b.expiry_date));
+    Ok(out)
+}
+
+/// Total accumulated dues for a member: the sum of shortfalls across every
+/// membership period (expired-unpaid cycles AND the current cycle).
+pub fn get_member_total_outstanding(conn: &Connection, member_id: &str) -> Result<i64, AppError> {
+    let total: i64 = get_member_periods(conn, member_id, None)?
+        .iter()
+        .filter(|p| p.paid < p.price)
+        .map(|p| p.price - p.paid)
+        .sum();
+    Ok(total)
+}
+
+/// Total accumulated dues for a member on a single plan.
+pub fn get_member_total_outstanding_for_plan(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+) -> Result<i64, AppError> {
+    let total: i64 = get_member_periods(conn, member_id, Some(plan_id))?
+        .iter()
+        .filter(|p| p.paid < p.price)
+        .map(|p| p.price - p.paid)
+        .sum();
+    Ok(total)
+}
+
+/// Returns the unpaid periods for a member (optionally filtered by plan)
+/// ordered oldest-first, along with how much is still owed on each. Used for
+/// FIFO settlement of a payment across lapsed cycles.
+pub fn get_member_unpaid_periods(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: Option<&str>,
+) -> Result<Vec<MemberPeriod>, AppError> {
+    let periods = get_member_periods(conn, member_id, plan_id)?;
+    Ok(periods
+        .into_iter()
+        .filter(|p| p.paid < p.price)
+        .collect())
+}
+
+/// Whether the member has at least one real (non-voided) payment period for the
+/// given plan. Used to distinguish a first-time purchase (no prior period) from
+/// a renewal.
+pub fn has_member_plan_periods(
+    conn: &Connection,
+    member_id: &str,
+    plan_id: &str,
+) -> Result<bool, AppError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM payments WHERE member_id = ?1 AND is_voided = 0 AND membership_plan_id = ?2",
+        params![member_id, plan_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// Records how much of a payment is applied to each specific membership
+/// period. Used for FIFO settlement of accumulated back-dues.
+pub fn create_allocations(
+    conn: &Connection,
+    payment_id: &str,
+    allocations: &[(String, String, String, i64)],
+) -> Result<(), AppError> {
+    let now = now_iso8601();
+    let mut stmt = conn.prepare(
+        "INSERT INTO payment_allocations \
+         (id, payment_id, membership_plan_id, membership_start_date, membership_expiry_date, amount, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )?;
+    for (plan_id, start, expiry, amount) in allocations {
+        if *amount <= 0 {
+            continue;
+        }
+        stmt.execute(params![
+            uuid::Uuid::new_v4().to_string(),
+            payment_id,
+            plan_id,
+            start,
+            expiry,
+            amount,
+            now,
+        ])?;
+    }
+    Ok(())
+}
+
+/// Removes all ledger allocations for a payment (used when a payment is voided,
+/// so its effect on dues is fully reversed).
+pub fn delete_allocations_for_payment(conn: &Connection, payment_id: &str) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM payment_allocations WHERE payment_id = ?1",
+        params![payment_id],
+    )?;
+    Ok(())
 }
 
 pub fn get_current_period(

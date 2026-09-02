@@ -73,9 +73,9 @@ pub fn create_payment(
         ));
     }
 
-    let (start_date, expiry_date) = match active_period(conn, &request.member_id, &request.membership_plan_id)?
-    {
-        Some((s, e)) => (s, e),
+    let active = active_period(conn, &request.member_id, &request.membership_plan_id)?;
+    let (start_date, expiry_date) = match &active {
+        Some((s, e)) => (s.clone(), e.clone()),
         None => {
             let s = Utc::now().date_naive();
             let e = s + Duration::days(plan.duration_days as i64);
@@ -83,27 +83,71 @@ pub fn create_payment(
         }
     };
 
-    let previously_paid = payment_repository::total_paid_for_period(
-        conn,
-        &request.member_id,
-        &request.membership_plan_id,
-        &start_date,
-        &expiry_date,
-    )?;
-
-    let outstanding = plan.price - previously_paid;
     let is_first_payment = !member_repository::has_any_payments(conn, &request.member_id)?;
     let admission_fee = if is_first_payment {
         request.admission_fee.unwrap_or_else(|| member.admission_fee.unwrap_or(0))
     } else {
         0
     };
-    let max_allowed = outstanding + admission_fee;
+
+    // Total dues = accumulated shortfall across the member's lapsed/current
+    // cycles for this plan (which includes the current cycle once its previous
+    // coverage has lapsed), plus the price of a brand-new period only for a
+    // first-time purchase (no prior period exists to roll forward).
+    let accumulated = payment_repository::get_member_total_outstanding_for_plan(
+        conn,
+        &request.member_id,
+        &request.membership_plan_id,
+    )?;
+    let has_prior_period = payment_repository::has_member_plan_periods(
+        conn,
+        &request.member_id,
+        &request.membership_plan_id,
+    )?;
+    let new_period_owed = if has_prior_period { 0 } else { plan.price };
+    let max_allowed = accumulated + new_period_owed + admission_fee;
     if request.amount > max_allowed {
         return Err(AppError::ValidationError(format!(
-            "Payment amount Rs. {} exceeds outstanding balance Rs. {}",
+            "Payment amount Rs. {} exceeds total dues Rs. {}",
             request.amount, max_allowed
         )));
+    }
+
+    // FIFO settlement: apply the payment to the member's unpaid periods for
+    // this plan (oldest-first), then to any newly opened period.
+    let mut targets = payment_repository::get_member_unpaid_periods(
+        conn,
+        &request.member_id,
+        Some(&request.membership_plan_id),
+    )?;
+    if new_period_owed > 0 {
+        targets.push(payment_repository::MemberPeriod {
+            plan_id: request.membership_plan_id.clone(),
+            start_date: start_date.clone(),
+            expiry_date: expiry_date.clone(),
+            price: plan.price,
+            paid: 0,
+        });
+    }
+
+    let mut remaining = request.amount;
+    let mut allocations: Vec<(String, String, String, i64)> = Vec::new();
+    for target in &targets {
+        if remaining <= 0 {
+            break;
+        }
+        let shortfall = target.price - target.paid;
+        if shortfall <= 0 {
+            continue;
+        }
+        let alloc = remaining.min(shortfall);
+        allocations.push((
+            target.plan_id.clone(),
+            target.start_date.clone(),
+            target.expiry_date.clone(),
+            alloc,
+        ));
+        remaining -= alloc;
     }
 
     let now = now_iso8601();
@@ -130,6 +174,7 @@ pub fn create_payment(
     };
 
     payment_repository::create(conn, &payment)?;
+    payment_repository::create_allocations(conn, &payment.id, &allocations)?;
 
     let receipt = Receipt {
         id: uuid::Uuid::new_v4().to_string(),
@@ -141,12 +186,11 @@ pub fn create_payment(
     receipt_repository::create(conn, &receipt)?;
 
     log::info!(
-        "Payment {} recorded: Rs. {} from {} ({}) [outstanding: Rs. {}]",
+        "Payment {} recorded: Rs. {} from {} ({})",
         receipt_number,
         payment.amount,
         member.full_name,
-        member.member_number,
-        outstanding - payment.amount
+        member.member_number
     );
 
     Ok(PaymentResponse::from_payment(
@@ -171,37 +215,48 @@ pub fn get_payment_summary(
         ));
     }
 
-    let (start_date, expiry_date) = match active_period(conn, member_id, plan_id)? {
-        Some((s, e)) => (Some(s), Some(e)),
-        None => (None, None),
+    let is_first_payment = !member_repository::has_any_payments(conn, member_id)?;
+    let admission_fee = if is_first_payment {
+        member_repository::get_by_id(conn, member_id)?.and_then(|m| m.admission_fee)
+    } else {
+        None
     };
 
-    let previously_paid = match (&start_date, &expiry_date) {
+    let back_due =
+        payment_repository::get_member_total_outstanding_for_plan(conn, member_id, plan_id)?;
+
+    let (membership_start_date, membership_expiry_date) =
+        match active_period(conn, member_id, plan_id)? {
+            Some((s, e)) => (Some(s), Some(e)),
+            None => (None, None),
+        };
+
+    let previously_paid = match (&membership_start_date, &membership_expiry_date) {
         (Some(s), Some(e)) => {
             payment_repository::total_paid_for_period(conn, member_id, plan_id, s, e)?
         }
         _ => 0,
     };
 
-    let outstanding = plan.price - previously_paid;
-
-    let member = member_repository::get_by_id(conn, member_id)?;
-    let is_first_payment = !member_repository::has_any_payments(conn, member_id)?;
-    let admission_fee = if is_first_payment {
-        member.and_then(|m| m.admission_fee)
-    } else {
-        None
-    };
-    let total_outstanding = outstanding + admission_fee.unwrap_or(0);
+    let has_prior_period =
+        payment_repository::has_member_plan_periods(conn, member_id, plan_id)?;
+    // A first-time purchase (no prior period) owes a full new period on top of
+    // back-due; otherwise the current cycle is already part of back_due via the
+    // roll-forward of lapsed cycles.
+    let new_period_due = if has_prior_period { 0 } else { plan.price };
+    let total_period_due = back_due + new_period_due;
+    let outstanding = total_period_due + admission_fee.unwrap_or(0);
 
     Ok(PaymentSummary {
         plan_price: plan.price,
+        back_due,
+        new_period_due,
         previously_paid,
-        outstanding: total_outstanding,
+        outstanding,
         admission_fee,
         is_first_payment,
-        membership_start_date: start_date,
-        membership_expiry_date: expiry_date,
+        membership_start_date,
+        membership_expiry_date,
     })
 }
 
@@ -299,6 +354,7 @@ pub fn void_payment(
 
     let now = now_iso8601();
     payment_repository::void_payment(conn, id, reason.trim(), &now)?;
+    payment_repository::delete_allocations_for_payment(conn, id)?;
 
     log::info!("Voided payment {}: {}", payment.receipt_number, reason);
 
@@ -579,8 +635,8 @@ mod tests {
         let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
         let now = now_iso8601();
 
-        let expired_start = "2020-01-01";
-        let expired_expiry = "2020-02-01";
+        let expired_start = days_ago(31);
+        let expired_expiry = days_ago(1);
         conn.execute(
             "INSERT INTO payments \
              (id, receipt_number, member_id, amount, payment_method, payment_date, \
@@ -593,10 +649,10 @@ mod tests {
                 member_id,
                 2000,
                 "Cash",
-                "2020-01-01",
+                &days_ago(31),
                 plan_id,
-                expired_start,
-                expired_expiry,
+                expired_start.clone(),
+                expired_expiry.clone(),
                 now,
                 now,
             ],
@@ -631,10 +687,10 @@ mod tests {
                 member_id,
                 2000,
                 "Cash",
-                "2020-01-01",
+                &days_ago(31),
                 plan_id,
-                "2020-01-01",
-                "2020-02-01",
+                &days_ago(31),
+                &days_ago(1),
                 now,
                 now,
             ],
@@ -795,7 +851,7 @@ mod tests {
         let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
         assert_eq!(summary.admission_fee, None);
         assert!(!summary.is_first_payment);
-        assert_eq!(summary.outstanding, -500);
+        assert_eq!(summary.outstanding, 0);
     }
 
     #[test]
@@ -852,5 +908,170 @@ mod tests {
         assert_eq!(summary.admission_fee, None);
         assert!(summary.is_first_payment);
         assert_eq!(summary.outstanding, 2000);
+    }
+
+    fn insert_payment(
+        conn: &Connection,
+        receipt_number: &str,
+        member_id: &str,
+        plan_id: &str,
+        amount: i64,
+        payment_date: &str,
+        start_date: &str,
+        expiry_date: &str,
+    ) {
+        let now = now_iso8601();
+        conn.execute(
+            "INSERT INTO payments \
+             (id, receipt_number, member_id, amount, payment_method, payment_date, \
+              membership_plan_id, membership_start_date, membership_expiry_date, \
+              is_voided, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                receipt_number,
+                member_id,
+                amount,
+                "Cash",
+                payment_date,
+                plan_id,
+                start_date,
+                expiry_date,
+                now,
+                now,
+            ],
+        )
+        .unwrap();
+    }
+
+    fn days_ago(n: i64) -> String {
+        (chrono::Utc::now().date_naive() - chrono::Duration::days(n))
+            .format("%Y-%m-%d")
+            .to_string()
+    }
+
+    #[test]
+    fn should_accumulate_dues_across_lapsed_unpaid_cycle() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        // An expired cycle that was only partially paid (Rs. 1000 of Rs. 2000),
+        // ending 31 days ago. Since the member has not renewed, the lapsed full
+        // cycle that followed AND the current cycle both accrue as dues.
+        insert_payment(
+            &conn,
+            "RCP-000001",
+            &member_id,
+            &plan_id,
+            1000,
+            &days_ago(61),
+            &days_ago(61),
+            &days_ago(31),
+        );
+
+        let accumulated = payment_repository::get_member_total_outstanding(&conn, &member_id).unwrap();
+        // 1000 (partial shortfall) + 2000 (lapsed full cycle) + 2000 (current) = 5000.
+        assert_eq!(accumulated, 5000);
+    }
+
+    #[test]
+    fn should_accrue_dues_for_fully_skipped_membership_months() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        // Member paid month one in full (ending 40 days ago) then stopped paying
+        // entirely — no further payment rows exist. The completely skipped month
+        // and the current month must still accrue as dues.
+        insert_payment(
+            &conn,
+            "RCP-000001",
+            &member_id,
+            &plan_id,
+            2000,
+            &days_ago(70),
+            &days_ago(70),
+            &days_ago(40),
+        );
+
+        let accumulated = payment_repository::get_member_total_outstanding(&conn, &member_id).unwrap();
+        // 0 (paid month) + 2000 (fully skipped month) + 2000 (current) = 4000.
+        assert_eq!(accumulated, 4000);
+    }
+
+    #[test]
+    fn should_not_count_fully_paid_expired_cycle_as_due() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        // The member is currently covered (last paid period extends past today),
+        // so no lapsed or current cycles are owed.
+        insert_payment(
+            &conn,
+            "RCP-000001",
+            &member_id,
+            &plan_id,
+            2000,
+            &days_ago(10),
+            &days_ago(10),
+            &days_ago(-20),
+        );
+
+        let accumulated = payment_repository::get_member_total_outstanding(&conn, &member_id).unwrap();
+        assert_eq!(accumulated, 0);
+    }
+
+    #[test]
+    fn should_settle_back_dues_first_on_renewal_payment() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        // An expired, partially-paid cycle (ending 31 days ago) leaving a
+        // shortfall, plus a lapsed full cycle and the current cycle.
+        insert_payment(
+            &conn,
+            "RCP-000001",
+            &member_id,
+            &plan_id,
+            1000,
+            &days_ago(61),
+            &days_ago(61),
+            &days_ago(31),
+        );
+
+        // Renew with a payment covering the oldest shortfall (1000) plus 1500
+        // of the next (lapsed) cycle.
+        create_payment(&conn, valid_request(&member_id, &plan_id, 2500)).unwrap();
+
+        let accumulated = payment_repository::get_member_total_outstanding(&conn, &member_id).unwrap();
+        // Lapsed cycle left 500 + current cycle 2000 = 2500; the oldest was settled first.
+        assert_eq!(accumulated, 2500);
+    }
+
+    #[test]
+    fn should_treat_member_with_unpaid_lapsed_cycle_as_unpaid() {
+        let conn = test_db();
+        let member_id = insert_test_member(&conn, "Ahmad");
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        // Member stopped paying after a partial first cycle: 1000 shortfall +
+        // lapsed full cycle (2000) + current cycle (2000) = 5000 due.
+        insert_payment(
+            &conn,
+            "RCP-000001",
+            &member_id,
+            &plan_id,
+            1000,
+            &days_ago(61),
+            &days_ago(61),
+            &days_ago(31),
+        );
+
+        let response = crate::services::member_service::get_member(&conn, &member_id).unwrap();
+        assert!(!response.is_paid);
+        assert_eq!(response.outstanding_balance, 5000);
     }
 }

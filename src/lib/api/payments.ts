@@ -25,6 +25,8 @@ export interface PaymentResponse {
 
 export interface PaymentSummary {
   plan_price: number;
+  back_due: number;
+  new_period_due: number;
   previously_paid: number;
   outstanding: number;
   admission_fee: number | null;

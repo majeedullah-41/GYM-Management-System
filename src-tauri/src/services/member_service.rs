@@ -6,7 +6,9 @@ use crate::dto::member::{
 };
 use crate::errors::AppError;
 use crate::models::Member;
-use crate::repositories::{member_repository, membership_plan_repository};
+use crate::repositories::{
+    member_repository, membership_plan_repository, payment_repository,
+};
 use crate::utils::dates::now_iso8601;
 
 pub fn create_member(
@@ -193,8 +195,9 @@ fn get_membership_info(
     conn: &Connection,
     member_id: &str,
 ) -> Result<MembershipInfo, AppError> {
-    let (plan_name, start_date, expiry_date, outstanding) =
+    let (plan_name, start_date, expiry_date, _latest_outstanding) =
         member_repository::get_latest_membership_info(conn, member_id)?;
+    let outstanding = payment_repository::get_member_total_outstanding(conn, member_id)?;
 
     let status = compute_membership_status(expiry_date.as_deref());
     let admission_fee_collected = member_repository::has_any_payments(conn, member_id)?;

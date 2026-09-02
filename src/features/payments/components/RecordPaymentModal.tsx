@@ -182,22 +182,21 @@ export function RecordPaymentModal({
         setSummary(s);
         const fee = s.admission_fee && s.is_first_payment ? s.admission_fee : 0;
         setAdmissionFee(String(fee));
-        const planOnly = s.plan_price - s.previously_paid;
-        setAmount(String(planOnly + fee));
+        setAmount(String(s.outstanding));
       })
       .catch(() => { setSummary(null); setAdmissionFee(""); })
       .finally(() => setSummaryLoading(false));
   }, [selectedMember, selectedPlanId, isOpen]);
 
-  const planOnlyOutstanding = summary
-    ? Math.max(0, summary.plan_price - summary.previously_paid)
+  const periodDue = summary
+    ? Math.max(0, summary.back_due + summary.new_period_due)
     : 0;
 
   useEffect(() => {
     if (!summary) return;
     const fee = summary.is_first_payment ? (parseInt(admissionFee, 10) || 0) : 0;
-    setAmount(String(planOnlyOutstanding + fee));
-  }, [admissionFee, planOnlyOutstanding]);
+    setAmount(String(periodDue + fee));
+  }, [admissionFee, periodDue]);
 
   const handleSubmit = async () => {
     if (!selectedMember) {
@@ -429,6 +428,22 @@ export function RecordPaymentModal({
                   <span className="text-text-muted">Plan Price:</span>
                   <span>{formatCurrency(summary.plan_price)}</span>
                 </div>
+                {summary.back_due > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Back Dues:</span>
+                    <span className="text-red-600">
+                      {formatCurrency(summary.back_due)}
+                    </span>
+                  </div>
+                )}
+                {summary.new_period_due > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">New Period:</span>
+                    <span className="text-orange-600">
+                      {formatCurrency(summary.new_period_due)}
+                    </span>
+                  </div>
+                )}
                 {summary.previously_paid > 0 && (
                   <div className="flex justify-between">
                     <span className="text-text-muted">Previously Paid:</span>
@@ -450,11 +465,7 @@ export function RecordPaymentModal({
                   </div>
                 )}
                 <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
-                  <span className="text-text-muted">
-                    {summary.is_first_payment
-                      ? "Total Due:"
-                      : "Outstanding:"}
-                  </span>
+                  <span className="text-text-muted">Total Due:</span>
                   <span
                     className={
                       parseInt(amount, 10) > 0

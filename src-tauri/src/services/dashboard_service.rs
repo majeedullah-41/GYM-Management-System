@@ -49,6 +49,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
     for member in &all_members {
         let membership =
             crate::repositories::member_repository::get_latest_membership_info(conn, &member.id)?;
+        let outstanding = payment_repository::get_member_total_outstanding(conn, &member.id)?;
         if let Some(ref expiry_str) = membership.2 {
             if let Ok(expiry) = chrono::NaiveDate::parse_from_str(expiry_str, "%Y-%m-%d") {
                 if expiry < today {
@@ -63,7 +64,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                         plan_name: membership.0.clone(),
                         membership_expiry_date: membership.2.clone(),
                         days_remaining: days,
-                        outstanding: membership.3,
+                        outstanding,
                     });
                 } else {
                     active_members += 1;
@@ -103,6 +104,8 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
         .map(|m| {
             let membership =
                 crate::repositories::member_repository::get_latest_membership_info(conn, &m.id)?;
+            let outstanding =
+                payment_repository::get_member_total_outstanding(conn, &m.id)?;
             let status = compute_status(&membership.2, today);
             Ok(MemberResponse {
                 id: m.id.clone(),
@@ -123,8 +126,8 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                 membership_start_date: membership.1,
                 membership_expiry_date: membership.2,
                 membership_status: Some(status),
-                outstanding_balance: membership.3,
-                is_paid: membership.3 <= 0,
+                outstanding_balance: outstanding,
+                is_paid: outstanding <= 0,
                 created_at: m.created_at.clone(),
                 updated_at: m.updated_at.clone(),
             })

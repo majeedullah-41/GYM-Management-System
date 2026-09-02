@@ -54,6 +54,12 @@ pub struct PaymentResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct PaymentSummary {
     pub plan_price: i64,
+    /// Back-due: the accumulated shortfall across the member's lapsed/current
+    /// cycles for this plan (periods whose shortfall has not yet been settled).
+    pub back_due: i64,
+    /// The price of a brand-new period that will be opened by this payment
+    /// (0 when an active period is being extended/reused).
+    pub new_period_due: i64,
     pub previously_paid: i64,
     pub outstanding: i64,
     pub admission_fee: Option<i64>,
