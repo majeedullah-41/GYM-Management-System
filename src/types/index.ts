@@ -12,7 +12,6 @@ export interface Member {
   membership_expiry_date: string | null;
   status: "active" | "expiring" | "expired";
   notes: string | null;
-  admission_fee: number | null;
   is_archived: boolean;
   archived_at: string | null;
   outstanding_balance: number;

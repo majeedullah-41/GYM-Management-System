@@ -11,13 +11,9 @@ pub fn get_receipt_by_payment_id(
     conn: &Connection,
     payment_id: &str,
 ) -> Result<ReceiptResponse, AppError> {
-    let receipt = receipt_repository::get_by_payment_id(conn, payment_id)?
-        .ok_or_else(|| {
-            AppError::NotFoundError(format!(
-                "No receipt found for payment '{}'",
-                payment_id
-            ))
-        })?;
+    let receipt = receipt_repository::get_by_payment_id(conn, payment_id)?.ok_or_else(|| {
+        AppError::NotFoundError(format!("No receipt found for payment '{}'", payment_id))
+    })?;
 
     let payment = payment_repository::get_by_id(conn, &receipt.payment_id)?
         .ok_or_else(|| AppError::NotFoundError("Payment not found".into()))?;
@@ -29,12 +25,9 @@ pub fn get_receipt_by_number(
     conn: &Connection,
     receipt_number: &str,
 ) -> Result<ReceiptResponse, AppError> {
-    let receipt = receipt_repository::get_by_receipt_number(conn, receipt_number)?
-        .ok_or_else(|| {
-            AppError::NotFoundError(format!(
-                "Receipt '{}' not found",
-                receipt_number
-            ))
+    let receipt =
+        receipt_repository::get_by_receipt_number(conn, receipt_number)?.ok_or_else(|| {
+            AppError::NotFoundError(format!("Receipt '{}' not found", receipt_number))
         })?;
 
     let payment = payment_repository::get_by_id(conn, &receipt.payment_id)?
@@ -53,33 +46,55 @@ fn assemble_receipt(
     let receipt_settings = settings_repository::get_receipt_settings(conn)?;
 
     let member = member_repository::get_by_id(conn, &payment.member_id)?;
-    let member_name = member.as_ref().map(|m| m.full_name.clone()).unwrap_or_default();
-    let member_number = member.as_ref().map(|m| m.member_number.clone()).unwrap_or_default();
+    let member_name = member
+        .as_ref()
+        .map(|m| m.full_name.clone())
+        .unwrap_or_default();
+    let member_number = member
+        .as_ref()
+        .map(|m| m.member_number.clone())
+        .unwrap_or_default();
 
     let plan = membership_plan_repository::get_by_id(conn, &payment.membership_plan_id)?;
     let plan_name = plan.as_ref().map(|p| p.name.clone()).unwrap_or_default();
 
-    let remaining_balance = if let Some(ref p) = plan {
-        let total_paid = payment_repository::total_paid_for_period(
-            conn,
-            &payment.member_id,
-            &payment.membership_plan_id,
-            &payment.membership_start_date,
-            &payment.membership_expiry_date,
-        )?;
-        p.price - total_paid
-    } else {
-        0
-    };
+    crate::services::billing_service::ensure_monthly_billing_generated(conn, &payment.member_id)?;
+    let remaining_balance =
+        crate::services::billing_service::get_billing_summary(conn, &payment.member_id)?
+            .total_outstanding;
+    let allocations =
+        crate::repositories::billing_repository::list_payment_allocations(conn, &payment.id)?
+            .into_iter()
+            .map(|(billing_period, period_start, period_end, amount)| {
+                crate::dto::billing::PaymentAllocationResponse {
+                    billing_period,
+                    period_start,
+                    period_end,
+                    amount,
+                }
+            })
+            .collect();
 
     Ok(ReceiptResponse {
         id: uuid::Uuid::new_v4().to_string(),
         receipt_number: receipt_number.to_string(),
         issued_at,
         gym_name: settings.gym_name,
-        gym_address: if receipt_settings.show_address { settings.gym_address } else { None },
-        gym_phone: if receipt_settings.show_phone { settings.gym_phone } else { None },
-        member_name: if receipt_settings.show_member_id { member_name } else { String::new() },
+        gym_address: if receipt_settings.show_address {
+            settings.gym_address
+        } else {
+            None
+        },
+        gym_phone: if receipt_settings.show_phone {
+            settings.gym_phone
+        } else {
+            None
+        },
+        member_name: if receipt_settings.show_member_id {
+            member_name
+        } else {
+            String::new()
+        },
         member_number,
         plan_name,
         amount: payment.amount,
@@ -87,13 +102,20 @@ fn assemble_receipt(
         payment_date: payment.payment_date.clone(),
         membership_start_date: payment.membership_start_date.clone(),
         membership_expiry_date: payment.membership_expiry_date.clone(),
-        notes: if receipt_settings.show_notes { payment.notes.clone() } else { None },
+        notes: if receipt_settings.show_notes {
+            payment.notes.clone()
+        } else {
+            None
+        },
         remaining_balance,
+        allocations,
     })
 }
 
 #[allow(dead_code)]
-pub fn get_receipt_settings(conn: &Connection) -> Result<settings_repository::ReceiptSettings, AppError> {
+pub fn get_receipt_settings(
+    conn: &Connection,
+) -> Result<settings_repository::ReceiptSettings, AppError> {
     settings_repository::get_receipt_settings(conn)
 }
 

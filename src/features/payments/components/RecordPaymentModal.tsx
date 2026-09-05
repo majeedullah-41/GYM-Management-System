@@ -13,10 +13,7 @@ import {
   PAYMENT_METHODS,
 } from "../../../lib/api/payments";
 import { listMembers, type MemberResponse } from "../../../lib/api/members";
-import {
-  listActivePlans,
-  type PlanResponse,
-} from "../../../lib/api/membership-plans";
+import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { formatCurrency } from "../../../lib/utils/format";
 import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
 
@@ -27,20 +24,14 @@ interface Props {
   onPaymentRecorded: () => void;
 }
 
-export function RecordPaymentModal({
-  isOpen,
-  onClose,
-  initialMemberId,
-  onPaymentRecorded,
-}: Props) {
+export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPaymentRecorded }: Props) {
   const { addToast } = useToast();
   const [members, setMembers] = useState<MemberResponse[]>([]);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberDropdownOpen, setMemberDropdownOpen] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<MemberResponse | null>(
-    null,
-  );
+  const [selectedMember, setSelectedMember] = useState<MemberResponse | null>(null);
   const memberDropdownRef = useRef<HTMLDivElement>(null);
+  const requestKeyRef = useRef(crypto.randomUUID());
 
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -51,12 +42,9 @@ export function RecordPaymentModal({
     return d.toISOString().split("T")[0];
   });
   const [submitting, setSubmitting] = useState(false);
-  const [completedPaymentId, setCompletedPaymentId] = useState<string | null>(
-    null,
-  );
+  const [completedPaymentId, setCompletedPaymentId] = useState<string | null>(null);
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [admissionFee, setAdmissionFee] = useState<string>("");
   const [currentPlanLoading, setCurrentPlanLoading] = useState(false);
   const [hasCurrentPlan, setHasCurrentPlan] = useState(false);
   const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
@@ -83,8 +71,8 @@ export function RecordPaymentModal({
       setCompletedPaymentId(null);
       setSummary(null);
       setMemberDropdownOpen(false);
+      requestKeyRef.current = crypto.randomUUID();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialMemberId]);
 
   useEffect(() => {
@@ -110,17 +98,12 @@ export function RecordPaymentModal({
         const latest = ps
           .filter((p) => !p.is_voided)
           .sort((a, b) =>
-            (b.payment_date + b.created_at).localeCompare(
-              a.payment_date + a.created_at,
-            ),
+            (b.payment_date + b.created_at).localeCompare(a.payment_date + a.created_at),
           )[0] as PaymentResponse | undefined;
         setLastPayment(latest ?? null);
         const planId =
-          (latest ? latest.membership_plan_id : null) ??
-          selectedMember.membership_plan_id;
-        const plan = planId
-          ? plans.find((p) => p.id === planId)
-          : undefined;
+          selectedMember.membership_plan_id ?? (latest ? latest.membership_plan_id : null);
+        const plan = planId ? plans.find((p) => p.id === planId) : undefined;
         if (plan) {
           setSelectedPlanId(plan.id);
           setHasCurrentPlan(true);
@@ -146,10 +129,7 @@ export function RecordPaymentModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (
-        memberDropdownRef.current &&
-        !memberDropdownRef.current.contains(e.target as Node)
-      ) {
+      if (memberDropdownRef.current && !memberDropdownRef.current.contains(e.target as Node)) {
         setMemberDropdownOpen(false);
       }
     };
@@ -169,34 +149,24 @@ export function RecordPaymentModal({
   }, [members, memberSearch]);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const outstandingBills = summary?.bills.filter((bill) => bill.remaining_amount > 0) ?? [];
 
   useEffect(() => {
     if (!selectedMember || !selectedPlanId || !isOpen) {
       setSummary(null);
-      setAdmissionFee("");
       return;
     }
     setSummaryLoading(true);
     getPaymentSummary(selectedMember.id, selectedPlanId)
       .then((s) => {
         setSummary(s);
-        const fee = s.admission_fee && s.is_first_payment ? s.admission_fee : 0;
-        setAdmissionFee(String(fee));
         setAmount(String(s.outstanding));
       })
-      .catch(() => { setSummary(null); setAdmissionFee(""); })
+      .catch(() => {
+        setSummary(null);
+      })
       .finally(() => setSummaryLoading(false));
   }, [selectedMember, selectedPlanId, isOpen]);
-
-  const periodDue = summary
-    ? Math.max(0, summary.back_due + summary.new_period_due)
-    : 0;
-
-  useEffect(() => {
-    if (!summary) return;
-    const fee = summary.is_first_payment ? (parseInt(admissionFee, 10) || 0) : 0;
-    setAmount(String(periodDue + fee));
-  }, [admissionFee, periodDue]);
 
   const handleSubmit = async () => {
     if (!selectedMember) {
@@ -221,13 +191,10 @@ export function RecordPaymentModal({
         amount: amountNum,
         payment_method: method,
         payment_date: paymentDate,
-        admission_fee:
-          summary && summary.is_first_payment
-            ? parseInt(admissionFee, 10) || 0
-            : null,
         description: null,
         reference: null,
         notes: null,
+        idempotency_key: requestKeyRef.current,
       });
       addToast({
         variant: "success",
@@ -286,11 +253,9 @@ export function RecordPaymentModal({
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Member *
-              </label>
+              <label className="text-sm font-medium text-text-primary">Member *</label>
               <div className="relative" ref={memberDropdownRef}>
                 <Search
                   size={16}
@@ -311,9 +276,7 @@ export function RecordPaymentModal({
                 {memberDropdownOpen && (
                   <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-surface shadow-lg">
                     {filteredMembers.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-text-muted">
-                        No members found
-                      </div>
+                      <div className="px-3 py-2 text-sm text-text-muted">No members found</div>
                     ) : (
                       filteredMembers.slice(0, 20).map((m) => (
                         <button
@@ -330,12 +293,8 @@ export function RecordPaymentModal({
                           className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-secondary-bg"
                         >
                           <span>
-                            <span className="font-medium text-text-primary">
-                              {m.full_name}
-                            </span>
-                            <span className="ml-2 text-xs text-text-muted">
-                              {m.member_number}
-                            </span>
+                            <span className="font-medium text-text-primary">{m.full_name}</span>
+                            <span className="ml-2 text-xs text-text-muted">{m.member_number}</span>
                           </span>
                           {selectedMember?.id === m.id && (
                             <Check size={16} className="text-primary" />
@@ -350,16 +309,11 @@ export function RecordPaymentModal({
 
             {hasCurrentPlan && selectedPlan ? (
               <div className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-text-primary">
-                  Membership Plan
-                </span>
+                <span className="text-sm font-medium text-text-primary">Membership Plan</span>
                 <div className="flex items-center justify-between rounded-md border border-border bg-secondary-bg px-3 py-2 text-sm">
-                  <span className="font-medium text-text-primary">
-                    {selectedPlan.name}
-                  </span>
+                  <span className="font-medium text-text-primary">{selectedPlan.name}</span>
                   <span className="text-text-muted">
-                    {formatCurrency(selectedPlan.price)} ·{" "}
-                    {selectedPlan.duration_days} days
+                    {formatCurrency(selectedPlan.price)} · {selectedPlan.duration_days} days
                   </span>
                 </div>
               </div>
@@ -379,111 +333,64 @@ export function RecordPaymentModal({
             )}
 
             {currentPlanLoading && (
-              <div className="py-2 text-center text-sm text-text-muted">
-                Loading member plan...
-              </div>
+              <div className="py-2 text-center text-sm text-text-muted">Loading member plan...</div>
             )}
 
             {summaryLoading && selectedPlanId && (
-              <div className="py-2 text-center text-sm text-text-muted">
-                Loading plan info...
-              </div>
+              <div className="py-2 text-center text-sm text-text-muted">Loading plan info...</div>
             )}
 
             {summary && selectedMember && (
-              <div className="space-y-1.5 rounded-md bg-secondary-bg p-3 text-sm">
+              <div className="space-y-1 rounded-md bg-secondary-bg p-2.5 text-sm">
                 {lastPayment && (
-                  <div className="rounded border border-border bg-surface px-2.5 py-2">
-                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                      Last Fee Paid
+                  <div className="flex items-center justify-between rounded border border-border bg-surface px-2.5 py-1.5">
+                    <span className="text-text-muted">
+                      Last paid: {lastPayment.payment_date?.slice(0, 10)}
+                    </span>
+                    <span className="font-medium text-green-600">
+                      {formatCurrency(lastPayment.amount)}
+                    </span>
+                  </div>
+                )}
+                {summary.back_due > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Previous Dues:</span>
+                    <span className="text-red-600">{formatCurrency(summary.back_due)}</span>
+                  </div>
+                )}
+                {outstandingBills.length > 0 && (
+                  <div className="border-t border-border pt-1.5">
+                    <div className="mb-0.5 text-xs font-medium text-text-muted">
+                      Due periods ({outstandingBills.length})
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">
-                        {lastPayment.payment_date?.slice(0, 10)}
-                      </span>
-                      <span className="font-medium text-green-600">
-                        {formatCurrency(lastPayment.amount)}
-                      </span>
-                    </div>
-                    {(lastPayment.membership_start_date ||
-                      lastPayment.membership_expiry_date) && (
+                    {outstandingBills.slice(0, 2).map((bill) => (
+                      <div key={bill.id} className="flex justify-between text-xs">
+                        <span>
+                          {bill.period_start} to {bill.period_end} ·{" "}
+                          {bill.status.replace("PARTIALLY_PAID", "PARTIAL")}
+                        </span>
+                        <span>{formatCurrency(bill.remaining_amount)}</span>
+                      </div>
+                    ))}
+                    {outstandingBills.length > 2 && (
                       <div className="text-xs text-text-muted">
-                        Covers{" "}
-                        {lastPayment.membership_start_date?.slice(0, 10)}
-                        {" → "}
-                        {lastPayment.membership_expiry_date?.slice(0, 10)}
+                        + {outstandingBills.length - 2} more periods
                       </div>
                     )}
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Plan:</span>
-                  <span className="font-medium">{selectedPlan?.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Duration:</span>
-                  <span>{selectedPlan?.duration_days} days</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Plan Price:</span>
-                  <span>{formatCurrency(summary.plan_price)}</span>
-                </div>
-                {summary.back_due > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Back Dues:</span>
-                    <span className="text-red-600">
-                      {formatCurrency(summary.back_due)}
-                    </span>
-                  </div>
-                )}
-                {summary.new_period_due > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">New Period:</span>
-                    <span className="text-orange-600">
-                      {formatCurrency(summary.new_period_due)}
-                    </span>
-                  </div>
-                )}
-                {summary.previously_paid > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Previously Paid:</span>
-                    <span className="text-green-600">
-                      {formatCurrency(summary.previously_paid)}
-                    </span>
-                  </div>
-                )}
-                {summary.is_first_payment && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-text-muted">Admission Fee:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={admissionFee}
-                      onChange={(e) => setAdmissionFee(e.target.value)}
-                      className="w-24 rounded border border-border bg-surface px-2 py-0.5 text-right text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                )}
                 <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
                   <span className="text-text-muted">Total Due:</span>
-                  <span
-                    className={
-                      parseInt(amount, 10) > 0
-                        ? "text-orange-600"
-                        : "text-green-600"
-                    }
-                  >
+                  <span className={parseInt(amount, 10) > 0 ? "text-orange-600" : "text-green-600"}>
                     {formatCurrency(parseInt(amount, 10) || 0)}
                   </span>
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-text-primary">
-                  Amount (PKR) *
-                </label>
+                <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
                 <input
                   type="number"
                   name="payment_amount"
@@ -506,9 +413,7 @@ export function RecordPaymentModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Payment Date *
-              </label>
+              <label className="text-sm font-medium text-text-primary">Payment Date *</label>
               <input
                 type="date"
                 name="payment_date"
@@ -517,29 +422,6 @@ export function RecordPaymentModal({
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
-
-            {summary && amount && parseInt(amount, 10) > 0 && (
-              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-blue-700">Payment Now:</span>
-                  <span className="font-medium text-blue-800">
-                    {formatCurrency(parseInt(amount, 10) || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-blue-700">Remaining After Payment:</span>
-                  <span className="font-medium text-blue-800">
-                    {formatCurrency(
-                      Math.max(
-                        0,
-                        summary.outstanding - (parseInt(amount, 10) || 0),
-                      ),
-                    )}
-                  </span>
-                </div>
-              </div>
-            )}
-
           </div>
         )}
       </Modal>

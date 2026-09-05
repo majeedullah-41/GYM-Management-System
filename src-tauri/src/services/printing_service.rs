@@ -10,7 +10,11 @@ pub fn render_receipt_pdf(
     print: &PrintSettings,
     footer: Option<&str>,
 ) -> Result<Vec<u8>, AppError> {
-    let paper_width_mm: f32 = if print.paper_width == "58" { 58.0 } else { 80.0 };
+    let paper_width_mm: f32 = if print.paper_width == "58" {
+        58.0
+    } else {
+        80.0
+    };
     let base_size: f32 = print.font_size.clamp(8, 16) as f32;
     let margin: f32 = 4.0;
 
@@ -20,12 +24,20 @@ pub fn render_receipt_pdf(
         push_centered(&mut lines, receipt.gym_name.trim(), true, base_size + 1.0);
     }
     if print.show_gym_phone {
-        if let Some(p) = receipt.gym_phone.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Some(p) = receipt
+            .gym_phone
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+        {
             push_centered(&mut lines, p.trim(), false, base_size * 0.9);
         }
     }
     if print.show_gym_address {
-        if let Some(a) = receipt.gym_address.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Some(a) = receipt
+            .gym_address
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+        {
             for piece in wrap(a.trim(), paper_width_mm - margin * 2.0, base_size * 0.9) {
                 push_centered(&mut lines, &piece, false, base_size * 0.9);
             }
@@ -44,13 +56,21 @@ pub fn render_receipt_pdf(
         );
     }
     if print.show_date {
-        push_left(&mut lines, format!("Date: {}", receipt.payment_date), base_size);
+        push_left(
+            &mut lines,
+            format!("Date: {}", receipt.payment_date),
+            base_size,
+        );
     }
     push_divider(&mut lines);
 
     if print.show_member_info {
         if !receipt.member_name.trim().is_empty() {
-            push_left(&mut lines, format!("Member: {}", receipt.member_name), base_size);
+            push_left(
+                &mut lines,
+                format!("Member: {}", receipt.member_name),
+                base_size,
+            );
         }
         if !receipt.member_number.trim().is_empty() {
             push_left(
@@ -64,7 +84,11 @@ pub fn render_receipt_pdf(
 
     if print.show_plan_info {
         if !receipt.plan_name.trim().is_empty() {
-            push_left(&mut lines, format!("Plan: {}", receipt.plan_name), base_size);
+            push_left(
+                &mut lines,
+                format!("Plan: {}", receipt.plan_name),
+                base_size,
+            );
         }
     }
     if print.show_period {
@@ -92,7 +116,10 @@ pub fn render_receipt_pdf(
     if print.show_remaining_balance && receipt.remaining_balance > 0 {
         push_left(
             &mut lines,
-            format!("Remaining: Rs. {}", format_amount(receipt.remaining_balance)),
+            format!(
+                "Remaining: Rs. {}",
+                format_amount(receipt.remaining_balance)
+            ),
             base_size,
         );
     }
@@ -115,15 +142,15 @@ pub fn render_receipt_pdf(
         }
     }
 
-    let content_height_mm = lines
-        .iter()
-        .map(|(_, s)| s.height_mm)
-        .sum::<f32>()
-        + margin * 2.0
-        + 8.0;
+    let content_height_mm =
+        lines.iter().map(|(_, s)| s.height_mm).sum::<f32>() + margin * 2.0 + 8.0;
 
-    let (doc, page1, layer1) =
-        printpdf::PdfDocument::new("Receipt", Mm(paper_width_mm), Mm(content_height_mm), "Layer1");
+    let (doc, page1, layer1) = printpdf::PdfDocument::new(
+        "Receipt",
+        Mm(paper_width_mm),
+        Mm(content_height_mm),
+        "Layer1",
+    );
 
     let font = doc
         .add_builtin_font(BuiltinFont::Helvetica)
@@ -282,6 +309,7 @@ mod tests {
             membership_expiry_date: "2026-09-28".to_string(),
             notes: Some("Paid in full".to_string()),
             remaining_balance: 0,
+            allocations: Vec::new(),
         }
     }
 
@@ -308,7 +336,8 @@ mod tests {
 
     #[test]
     fn renders_a_valid_pdf_for_80mm() {
-        let bytes = render_receipt_pdf(&sample_receipt(), &default_print(), Some("Thank you!")).unwrap();
+        let bytes =
+            render_receipt_pdf(&sample_receipt(), &default_print(), Some("Thank you!")).unwrap();
         assert!(bytes.starts_with(b"%PDF"));
         assert!(bytes.len() > 500);
         assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
@@ -344,4 +373,3 @@ mod tests {
         assert_eq!(format_amount(0), "0");
     }
 }
-

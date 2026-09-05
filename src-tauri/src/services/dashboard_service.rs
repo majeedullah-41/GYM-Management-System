@@ -4,9 +4,7 @@ use rusqlite::{params, Connection};
 use crate::dto::dashboard::{DashboardSummary, ExpiringMember};
 use crate::dto::member::MemberResponse;
 use crate::errors::AppError;
-use crate::repositories::{
-    expense_repository, member_repository, payment_repository,
-};
+use crate::repositories::{expense_repository, member_repository, payment_repository};
 
 pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppError> {
     let today = Utc::now().date_naive();
@@ -40,6 +38,9 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
     )?;
 
     let all_members = member_repository::list(conn, "", false)?;
+    for member in &all_members {
+        crate::services::billing_service::ensure_monthly_billing_generated(conn, &member.id)?;
+    }
 
     let mut active_members: i64 = 0;
     let mut expiring_soon: i64 = 0;
@@ -47,10 +48,12 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
     let mut expiring_members_list: Vec<ExpiringMember> = Vec::new();
 
     for member in &all_members {
-        let membership =
-            crate::repositories::member_repository::get_latest_membership_info(conn, &member.id)?;
-        let outstanding = payment_repository::get_member_total_outstanding(conn, &member.id)?;
-        if let Some(ref expiry_str) = membership.2 {
+        let billing = crate::services::billing_service::get_billing_summary(conn, &member.id)?;
+        let membership = member_repository::get_latest_membership_info(conn, &member.id)?;
+        let outstanding = billing.total_outstanding;
+        if billing.membership_status.as_deref() == Some("active") {
+            active_members += 1;
+        } else if let Some(ref expiry_str) = membership.2 {
             if let Ok(expiry) = chrono::NaiveDate::parse_from_str(expiry_str, "%Y-%m-%d") {
                 if expiry < today {
                     expired_members += 1;
@@ -76,19 +79,18 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
     expiring_members_list.sort_by(|a, b| a.days_remaining.cmp(&b.days_remaining));
 
     let today_revenue: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payment_date = ?1",
+        "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payment_date = ?1 AND is_voided=0",
         params![today_str],
         |row| row.get(0),
     )?;
 
     let month_revenue: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payment_date >= ?1 AND payment_date <= ?2",
+        "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE payment_date >= ?1 AND payment_date <= ?2 AND is_voided=0",
         params![month_start, month_end],
         |row| row.get(0),
     )?;
 
-    let month_expenses =
-        expense_repository::total_by_date_range(conn, &month_start, &month_end)?;
+    let month_expenses = expense_repository::total_by_date_range(conn, &month_start, &month_end)?;
 
     let recent_payments_raw = payment_repository::list(conn, "", None, None, None, None, None)?;
     let recent_limit = recent_payments_raw.into_iter().take(5);
@@ -104,9 +106,11 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
         .map(|m| {
             let membership =
                 crate::repositories::member_repository::get_latest_membership_info(conn, &m.id)?;
-            let outstanding =
-                payment_repository::get_member_total_outstanding(conn, &m.id)?;
-            let status = compute_status(&membership.2, today);
+            let billing = crate::services::billing_service::get_billing_summary(conn, &m.id)?;
+            let outstanding = billing.total_outstanding;
+            let status = billing
+                .membership_status
+                .unwrap_or_else(|| compute_status(&membership.2, today));
             Ok(MemberResponse {
                 id: m.id.clone(),
                 member_number: m.member_number.clone(),
@@ -134,7 +138,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
-    let total_outstanding = payment_repository::get_total_outstanding(conn)?;
+    let total_outstanding = crate::repositories::billing_repository::total_outstanding(conn)?;
 
     Ok(DashboardSummary {
         total_members,
@@ -293,7 +297,16 @@ mod tests {
              payment_date, membership_plan_id, membership_start_date, membership_expiry_date, \
              created_at, updated_at) \
              VALUES (?1, ?2, ?3, 2000, 'Cash', ?4, ?5, ?4, ?6, ?7, ?8)",
-            params!["pay1", "RCP-000001", member_id, now, plan_id, expiry, now, now],
+            params![
+                "pay1",
+                "RCP-000001",
+                member_id,
+                now,
+                plan_id,
+                expiry,
+                now,
+                now
+            ],
         )
         .unwrap();
 

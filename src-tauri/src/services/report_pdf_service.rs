@@ -29,7 +29,12 @@ pub fn render_report_pdf(
     let mut lines: Vec<LineItem> = Vec::new();
 
     // ── HEADER ──
-    lines.push(LineItem::text(&gym.gym_name, title_size, true, Align::Center));
+    lines.push(LineItem::text(
+        &gym.gym_name,
+        title_size,
+        true,
+        Align::Center,
+    ));
     if let Some(ref phone) = gym.gym_phone {
         if !phone.is_empty() {
             lines.push(LineItem::text(phone, small_size, false, Align::Center));
@@ -41,7 +46,12 @@ pub fn render_report_pdf(
         }
     }
     lines.push(LineItem::divider());
-    lines.push(LineItem::text("GYM REPORT", section_size, true, Align::Center));
+    lines.push(LineItem::text(
+        "GYM REPORT",
+        section_size,
+        true,
+        Align::Center,
+    ));
 
     let date_range = match (date_from, date_to) {
         (Some(f), Some(t)) => format!("Period: {} to {}", f, t),
@@ -61,23 +71,52 @@ pub fn render_report_pdf(
 
     // ── SUMMARY ──
     lines.push(LineItem::text("SUMMARY", section_size, true, Align::Left));
-    lines.push(LineItem::kv("Total Revenue", &format!("Rs. {}", fmt_amt(financial.total_revenue))));
-    lines.push(LineItem::kv("Total Expenses", &format!("Rs. {}", fmt_amt(financial.total_expenses))));
+    lines.push(LineItem::kv(
+        "Total Revenue",
+        &format!("Rs. {}", fmt_amt(financial.total_revenue)),
+    ));
+    lines.push(LineItem::kv(
+        "Total Expenses",
+        &format!("Rs. {}", fmt_amt(financial.total_expenses)),
+    ));
     lines.push(LineItem::kv(
         "Net Income",
         &format!("Rs. {}", fmt_amt(financial.net_income)),
     ));
-    lines.push(LineItem::kv("Total Payments", &financial.payment_count.to_string()));
-    lines.push(LineItem::kv("Total Expenses Count", &financial.expense_count.to_string()));
-    lines.push(LineItem::kv("Total Members", &members.total_members.to_string()));
-    lines.push(LineItem::kv("Active Members", &members.active_members.to_string()));
-    lines.push(LineItem::kv("Expiring Soon", &members.expiring_soon.to_string()));
-    lines.push(LineItem::kv("Expired Members", &members.expired_members.to_string()));
+    lines.push(LineItem::kv(
+        "Total Payments",
+        &financial.payment_count.to_string(),
+    ));
+    lines.push(LineItem::kv(
+        "Total Expenses Count",
+        &financial.expense_count.to_string(),
+    ));
+    lines.push(LineItem::kv(
+        "Total Members",
+        &members.total_members.to_string(),
+    ));
+    lines.push(LineItem::kv(
+        "Active Members",
+        &members.active_members.to_string(),
+    ));
+    lines.push(LineItem::kv(
+        "Expiring Soon",
+        &members.expiring_soon.to_string(),
+    ));
+    lines.push(LineItem::kv(
+        "Expired Members",
+        &members.expired_members.to_string(),
+    ));
     lines.push(LineItem::divider());
 
     // ── REVENUE BY PAYMENT METHOD ──
     if !financial.revenue_by_method.is_empty() {
-        lines.push(LineItem::text("REVENUE BY PAYMENT METHOD", section_size, true, Align::Left));
+        lines.push(LineItem::text(
+            "REVENUE BY PAYMENT METHOD",
+            section_size,
+            true,
+            Align::Left,
+        ));
         for item in &financial.revenue_by_method {
             lines.push(LineItem::kv(
                 &item.category,
@@ -89,7 +128,12 @@ pub fn render_report_pdf(
 
     // ── EXPENSES BY CATEGORY ──
     if !financial.expenses_by_category.is_empty() {
-        lines.push(LineItem::text("EXPENSES BY CATEGORY", section_size, true, Align::Left));
+        lines.push(LineItem::text(
+            "EXPENSES BY CATEGORY",
+            section_size,
+            true,
+            Align::Left,
+        ));
         for item in &financial.expenses_by_category {
             lines.push(LineItem::kv(
                 &item.category,
@@ -100,12 +144,26 @@ pub fn render_report_pdf(
     }
 
     // ── PAYMENT DETAILS TABLE ──
-    lines.push(LineItem::text("PAYMENT DETAILS", section_size, true, Align::Left));
+    lines.push(LineItem::text(
+        "PAYMENT DETAILS",
+        section_size,
+        true,
+        Align::Left,
+    ));
     if payments.payments.is_empty() {
-        lines.push(LineItem::text("No payments found.", font_size, false, Align::Left));
+        lines.push(LineItem::text(
+            "No payments found.",
+            font_size,
+            false,
+            Align::Left,
+        ));
     } else {
         lines.push(LineItem::text(
-            &format!("Total: {} payments  |  Rs. {}", payments.total_count, fmt_amt(payments.total_amount)),
+            &format!(
+                "Total: {} payments  |  Rs. {}",
+                payments.total_count,
+                fmt_amt(payments.total_amount)
+            ),
             font_size,
             true,
             Align::Left,
@@ -132,12 +190,26 @@ pub fn render_report_pdf(
     lines.push(LineItem::divider());
 
     // ── EXPENSE DETAILS TABLE ──
-    lines.push(LineItem::text("EXPENSE DETAILS", section_size, true, Align::Left));
+    lines.push(LineItem::text(
+        "EXPENSE DETAILS",
+        section_size,
+        true,
+        Align::Left,
+    ));
     if expenses.expenses.is_empty() {
-        lines.push(LineItem::text("No expenses found.", font_size, false, Align::Left));
+        lines.push(LineItem::text(
+            "No expenses found.",
+            font_size,
+            false,
+            Align::Left,
+        ));
     } else {
         lines.push(LineItem::text(
-            &format!("Total: {} expenses  |  Rs. {}", expenses.total_count, fmt_amt(expenses.total_amount)),
+            &format!(
+                "Total: {} expenses  |  Rs. {}",
+                expenses.total_count,
+                fmt_amt(expenses.total_amount)
+            ),
             font_size,
             true,
             Align::Left,
@@ -162,7 +234,12 @@ pub fn render_report_pdf(
     lines.push(LineItem::divider());
 
     // ── MEMBERSHIP STATUS ──
-    lines.push(LineItem::text("MEMBERSHIP STATUS", section_size, true, Align::Left));
+    lines.push(LineItem::text(
+        "MEMBERSHIP STATUS",
+        section_size,
+        true,
+        Align::Left,
+    ));
 
     // Active members
     lines.push(LineItem::text(
@@ -282,18 +359,19 @@ pub fn render_report_pdf(
     }
 
     if pages.is_empty() {
-        pages.push(vec![LineItem::text("Empty Report", font_size, false, Align::Center)]);
+        pages.push(vec![LineItem::text(
+            "Empty Report",
+            font_size,
+            false,
+            Align::Center,
+        )]);
     }
 
     let page_count = pages.len() as u32;
 
     // ── BUILD PDF ──
-    let (doc, page1, layer1) = printpdf::PdfDocument::new(
-        "Gym Report",
-        Mm(A4_WIDTH),
-        Mm(A4_PAGE_HEIGHT),
-        "Layer1",
-    );
+    let (doc, page1, layer1) =
+        printpdf::PdfDocument::new("Gym Report", Mm(A4_WIDTH), Mm(A4_PAGE_HEIGHT), "Layer1");
 
     let font = doc
         .add_builtin_font(BuiltinFont::Helvetica)
@@ -302,8 +380,7 @@ pub fn render_report_pdf(
         .add_builtin_font(BuiltinFont::HelveticaBold)
         .map_err(|e| AppError::InternalError(e.to_string()))?;
 
-    let mut page_indices: Vec<(printpdf::PdfPageIndex, printpdf::PdfLayerIndex)> =
-        Vec::new();
+    let mut page_indices: Vec<(printpdf::PdfPageIndex, printpdf::PdfLayerIndex)> = Vec::new();
     page_indices.push((page1, layer1));
 
     for i in 1..page_count {
@@ -312,7 +389,9 @@ pub fn render_report_pdf(
     }
 
     for (page_idx, page_lines) in pages.iter().enumerate() {
-        let layer = doc.get_page(page_indices[page_idx].0).get_layer(page_indices[page_idx].1);
+        let layer = doc
+            .get_page(page_indices[page_idx].0)
+            .get_layer(page_indices[page_idx].1);
         let mut cur_y = A4_TOP;
 
         for item in page_lines {
@@ -348,7 +427,13 @@ pub fn render_report_pdf(
                     };
                     if item.bold {
                         layer.set_fill_color(c(0.08, 0.08, 0.08));
-                        layer.use_text(item.text.as_str(), item.size, Mm(x), Mm(baseline_y), &font_bold);
+                        layer.use_text(
+                            item.text.as_str(),
+                            item.size,
+                            Mm(x),
+                            Mm(baseline_y),
+                            &font_bold,
+                        );
                     } else {
                         layer.set_fill_color(c(0.18, 0.18, 0.18));
                         layer.use_text(item.text.as_str(), item.size, Mm(x), Mm(baseline_y), &font);
@@ -368,13 +453,17 @@ pub fn render_report_pdf(
                         let rw = right.chars().count() as f32 * char_w;
                         let rx = (A4_WIDTH - A4_MARGIN - rw).max(A4_MARGIN);
                         layer.set_fill_color(c(0.08, 0.08, 0.08));
-                        layer.use_text(right.as_str(), item.size, Mm(rx), Mm(baseline_y), &font_bold);
+                        layer.use_text(
+                            right.as_str(),
+                            item.size,
+                            Mm(rx),
+                            Mm(baseline_y),
+                            &font_bold,
+                        );
                     }
                 }
                 LineKind::TableRow => {
-                    if let (Some(ref cells), Some(ref widths)) =
-                        (&item.cells, &item.col_widths)
-                    {
+                    if let (Some(ref cells), Some(ref widths)) = (&item.cells, &item.col_widths) {
                         let mut x_offset = A4_MARGIN;
                         layer.set_fill_color(c(0.18, 0.18, 0.18));
                         for (cell_text, col_w) in cells.iter().zip(widths.iter()) {
@@ -402,13 +491,7 @@ pub fn render_report_pdf(
             page_count,
             now
         );
-        layer.use_text(
-            &footer_text,
-            7.0,
-            Mm(A4_MARGIN),
-            Mm(A4_MARGIN - 2.0),
-            &font,
-        );
+        layer.use_text(&footer_text, 7.0, Mm(A4_MARGIN), Mm(A4_MARGIN - 2.0), &font);
     }
 
     doc.save_to_bytes()
@@ -556,28 +639,38 @@ mod tests {
             payment_count: 12,
             expense_count: 5,
             revenue_by_method: vec![
-                CategoryAmount { category: "Cash".to_string(), amount: 35000 },
-                CategoryAmount { category: "Card".to_string(), amount: 20000 },
+                CategoryAmount {
+                    category: "Cash".to_string(),
+                    amount: 35000,
+                },
+                CategoryAmount {
+                    category: "Card".to_string(),
+                    amount: 20000,
+                },
             ],
             expenses_by_category: vec![
-                CategoryAmount { category: "Rent".to_string(), amount: 15000 },
-                CategoryAmount { category: "Electricity".to_string(), amount: 5000 },
+                CategoryAmount {
+                    category: "Rent".to_string(),
+                    amount: 15000,
+                },
+                CategoryAmount {
+                    category: "Electricity".to_string(),
+                    amount: 5000,
+                },
             ],
         }
     }
 
     fn sample_payments() -> PaymentReportResponse {
         PaymentReportResponse {
-            payments: vec![
-                PaymentReportRow {
-                    receipt_number: "RCP-001".to_string(),
-                    member_name: "Ali Khan".to_string(),
-                    member_number: "M-001".to_string(),
-                    amount: 2000,
-                    payment_method: "Cash".to_string(),
-                    payment_date: "2026-08-28".to_string(),
-                },
-            ],
+            payments: vec![PaymentReportRow {
+                receipt_number: "RCP-001".to_string(),
+                member_name: "Ali Khan".to_string(),
+                member_number: "M-001".to_string(),
+                amount: 2000,
+                payment_method: "Cash".to_string(),
+                payment_date: "2026-08-28".to_string(),
+            }],
             total_count: 1,
             total_amount: 2000,
         }
@@ -585,14 +678,12 @@ mod tests {
 
     fn sample_expenses() -> ExpenseReportResponse {
         ExpenseReportResponse {
-            expenses: vec![
-                ExpenseReportRow {
-                    date: "2026-08-28".to_string(),
-                    description: "Monthly rent".to_string(),
-                    category: "Rent".to_string(),
-                    amount: 15000,
-                },
-            ],
+            expenses: vec![ExpenseReportRow {
+                date: "2026-08-28".to_string(),
+                description: "Monthly rent".to_string(),
+                category: "Rent".to_string(),
+                amount: 15000,
+            }],
             total_count: 1,
             total_amount: 15000,
         }
@@ -651,14 +742,31 @@ mod tests {
             revenue_by_method: vec![],
             expenses_by_category: vec![],
         };
-        let pay = PaymentReportResponse { payments: vec![], total_count: 0, total_amount: 0 };
-        let exp = ExpenseReportResponse { expenses: vec![], total_count: 0, total_amount: 0 };
-        let mem = MemberReportResponse { total_members: 0, active_members: 0, expiring_soon: 0, expired_members: 0, archived_members: 0 };
-        let status = MembershipStatusReportResponse { active: vec![], expiring_soon: vec![], expired: vec![] };
+        let pay = PaymentReportResponse {
+            payments: vec![],
+            total_count: 0,
+            total_amount: 0,
+        };
+        let exp = ExpenseReportResponse {
+            expenses: vec![],
+            total_count: 0,
+            total_amount: 0,
+        };
+        let mem = MemberReportResponse {
+            total_members: 0,
+            active_members: 0,
+            expiring_soon: 0,
+            expired_members: 0,
+            archived_members: 0,
+        };
+        let status = MembershipStatusReportResponse {
+            active: vec![],
+            expiring_soon: vec![],
+            expired: vec![],
+        };
 
-        let bytes = render_report_pdf(
-            &sample_gym(), &None, &None, &fin, &pay, &exp, &mem, &status,
-        ).unwrap();
+        let bytes = render_report_pdf(&sample_gym(), &None, &None, &fin, &pay, &exp, &mem, &status)
+            .unwrap();
         assert!(bytes.starts_with(b"%PDF"));
         assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
     }
@@ -675,6 +783,9 @@ mod tests {
     #[test]
     fn truncates_long_strings() {
         assert_eq!(truncate("hello", 10), "hello");
-        assert_eq!(truncate("this is a very long string", 10), "this is a\u{2026}");
+        assert_eq!(
+            truncate("this is a very long string", 10),
+            "this is a\u{2026}"
+        );
     }
 }

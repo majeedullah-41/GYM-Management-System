@@ -5,7 +5,5 @@ pub fn now_iso8601() -> String {
 
 /// Returns current local date in YYYY-MM-DD format.
 pub fn today_iso() -> String {
-    chrono::Local::now()
-        .format("%Y-%m-%d")
-        .to_string()
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }

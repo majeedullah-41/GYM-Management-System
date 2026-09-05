@@ -63,9 +63,8 @@ pub async fn print_receipt_json(
     state: State<'_, Database>,
     receipt_json: String,
 ) -> Result<PrintDispatchResult, AppError> {
-    let receipt: ReceiptResponse = serde_json::from_str(&receipt_json).map_err(|e| {
-        AppError::InternalError(format!("Invalid receipt payload: {}", e))
-    })?;
+    let receipt: ReceiptResponse = serde_json::from_str(&receipt_json)
+        .map_err(|e| AppError::InternalError(format!("Invalid receipt payload: {}", e)))?;
 
     let conn = state.inner().clone_conn();
     let (print, footer) = tauri::async_runtime::spawn_blocking(move || {
@@ -77,8 +76,7 @@ pub async fn print_receipt_json(
     .await
     .map_err(|e| AppError::InternalError(format!("Print task failed: {e}")))??;
 
-    let bytes =
-        printing_service::render_receipt_pdf(&receipt, &print, footer.as_deref())?;
+    let bytes = printing_service::render_receipt_pdf(&receipt, &print, footer.as_deref())?;
 
     if print.destination == "pdf" {
         match save_pdf_dialog(bytes, &receipt.receipt_number) {
@@ -125,17 +123,15 @@ fn save_pdf_dialog(bytes: Vec<u8>, receipt_number: &str) -> PdfSaveResult {
 
 fn open_in_viewer(bytes: Vec<u8>, receipt_number: &str) -> Result<PrintDispatchResult, AppError> {
     let dir = std::env::temp_dir().join("gympos_print");
-    std::fs::create_dir_all(&dir).map_err(|e| {
-        AppError::InternalError(format!("Failed to create print temp dir: {e}"))
-    })?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| AppError::InternalError(format!("Failed to create print temp dir: {e}")))?;
 
     let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
     let file_name = format!("Receipt-{}-{}.pdf", sanitize(receipt_number), ts);
     let path = dir.join(&file_name);
 
-    std::fs::write(&path, bytes).map_err(|e| {
-        AppError::InternalError(format!("Failed to write print file: {e}"))
-    })?;
+    std::fs::write(&path, bytes)
+        .map_err(|e| AppError::InternalError(format!("Failed to write print file: {e}")))?;
 
     let path_str = path.to_string_lossy().to_string();
     let spawned = std::process::Command::new("cmd")
@@ -159,7 +155,13 @@ fn open_in_viewer(bytes: Vec<u8>, receipt_number: &str) -> Result<PrintDispatchR
 fn sanitize(input: &str) -> String {
     let cleaned: String = input
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if cleaned.is_empty() {
         "receipt".to_string()

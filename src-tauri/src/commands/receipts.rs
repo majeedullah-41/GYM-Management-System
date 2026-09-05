@@ -13,7 +13,10 @@ pub async fn get_receipt_by_payment_id(
     payment_id: String,
 ) -> Result<ReceiptResponse, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| receipt_service::get_receipt_by_payment_id(c, &payment_id)).await
+    run_db(conn, move |c| {
+        receipt_service::get_receipt_by_payment_id(c, &payment_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -22,5 +25,8 @@ pub async fn get_receipt_by_number(
     receipt_number: String,
 ) -> Result<ReceiptResponse, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| receipt_service::get_receipt_by_number(c, &receipt_number)).await
+    run_db(conn, move |c| {
+        receipt_service::get_receipt_by_number(c, &receipt_number)
+    })
+    .await
 }

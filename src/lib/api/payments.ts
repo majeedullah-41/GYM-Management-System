@@ -21,6 +21,28 @@ export interface PaymentResponse {
   void_reason: string | null;
   created_at: string;
   updated_at: string;
+  allocations: PaymentAllocation[];
+}
+
+export interface MonthlyBill {
+  id: string;
+  membership_id: string;
+  membership_plan_id: string;
+  billing_period: string;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+  expected_amount: number;
+  paid_amount: number;
+  remaining_amount: number;
+  status: "CURRENT" | "DUE" | "PARTIALLY_PAID" | "PAID";
+}
+
+export interface PaymentAllocation {
+  billing_period: string;
+  period_start: string;
+  period_end: string;
+  amount: number;
 }
 
 export interface PaymentSummary {
@@ -29,10 +51,12 @@ export interface PaymentSummary {
   new_period_due: number;
   previously_paid: number;
   outstanding: number;
-  admission_fee: number | null;
   is_first_payment: boolean;
   membership_start_date: string | null;
   membership_expiry_date: string | null;
+  previous_dues: number;
+  current_month_fee: number;
+  bills: MonthlyBill[];
 }
 
 export interface CreatePaymentRequest {
@@ -41,10 +65,10 @@ export interface CreatePaymentRequest {
   amount: number;
   payment_method: string;
   payment_date: string;
-  admission_fee?: number | null;
   description?: string | null;
   reference?: string | null;
   notes?: string | null;
+  idempotency_key?: string | null;
 }
 
 export interface UpdatePaymentRequest {
@@ -53,16 +77,9 @@ export interface UpdatePaymentRequest {
   notes: string | null;
 }
 
-export const PAYMENT_METHODS = [
-  "Cash",
-  "Bank Transfer",
-  "Card",
-  "Other",
-] as const;
+export const PAYMENT_METHODS = ["Cash", "Bank Transfer", "Card", "Other"] as const;
 
-export async function createPayment(
-  request: CreatePaymentRequest,
-): Promise<PaymentResponse> {
+export async function createPayment(request: CreatePaymentRequest): Promise<PaymentResponse> {
   return invokeCommand<PaymentResponse>("create_payment", { request });
 }
 
@@ -95,28 +112,20 @@ export async function updatePayment(
   return invokeCommand<PaymentResponse>("update_payment", { id, request });
 }
 
-export async function listMemberPayments(
-  memberId: string,
-): Promise<PaymentResponse[]> {
+export async function listMemberPayments(memberId: string): Promise<PaymentResponse[]> {
   return invokeCommand<PaymentResponse[]>("list_member_payments", {
     memberId: memberId,
   });
 }
 
-export async function getPaymentSummary(
-  memberId: string,
-  planId: string,
-): Promise<PaymentSummary> {
+export async function getPaymentSummary(memberId: string, planId: string): Promise<PaymentSummary> {
   return invokeCommand<PaymentSummary>("get_payment_summary", {
     memberId: memberId,
     planId: planId,
   });
 }
 
-export async function voidPayment(
-  id: string,
-  reason: string,
-): Promise<PaymentResponse> {
+export async function voidPayment(id: string, reason: string): Promise<PaymentResponse> {
   return invokeCommand<PaymentResponse>("void_payment", {
     id,
     request: { reason },

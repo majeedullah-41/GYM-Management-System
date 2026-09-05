@@ -1,3 +1,4 @@
+pub mod billing_repository;
 pub mod expense_repository;
 pub mod member_repository;
 pub mod membership_plan_repository;

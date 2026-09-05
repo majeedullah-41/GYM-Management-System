@@ -17,19 +17,21 @@ export interface ReceiptResponse {
   membership_expiry_date: string;
   notes: string | null;
   remaining_balance: number;
+  allocations: {
+    billing_period: string;
+    period_start: string;
+    period_end: string;
+    amount: number;
+  }[];
 }
 
-export async function getReceiptByPaymentId(
-  paymentId: string,
-): Promise<ReceiptResponse> {
+export async function getReceiptByPaymentId(paymentId: string): Promise<ReceiptResponse> {
   return invokeCommand<ReceiptResponse>("get_receipt_by_payment_id", {
     paymentId: paymentId,
   });
 }
 
-export async function getReceiptByNumber(
-  receiptNumber: string,
-): Promise<ReceiptResponse> {
+export async function getReceiptByNumber(receiptNumber: string): Promise<ReceiptResponse> {
   return invokeCommand<ReceiptResponse>("get_receipt_by_number", {
     receiptNumber: receiptNumber,
   });
@@ -41,9 +43,7 @@ export interface PrintDispatchResult {
   message: string;
 }
 
-export async function printReceipt(
-  receipt: ReceiptResponse,
-): Promise<PrintDispatchResult> {
+export async function printReceipt(receipt: ReceiptResponse): Promise<PrintDispatchResult> {
   return invokeCommand<PrintDispatchResult>("print_receipt_json", {
     receiptJson: JSON.stringify(receipt),
   });

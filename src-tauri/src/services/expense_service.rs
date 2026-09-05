@@ -2,8 +2,8 @@ use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::dto::expense::{
-    CreateExpenseRequest, ExpenseResponse, UpdateExpenseRequest,
-    EXPENSE_CATEGORIES, EXPENSE_PAYMENT_METHODS,
+    CreateExpenseRequest, ExpenseResponse, UpdateExpenseRequest, EXPENSE_CATEGORIES,
+    EXPENSE_PAYMENT_METHODS,
 };
 use crate::errors::AppError;
 use crate::models::Expense;
@@ -30,12 +30,21 @@ pub fn create_expense(
     let expense = Expense {
         id: uuid::Uuid::new_v4().to_string(),
         category: request.category,
-        description: request.description.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        description: request
+            .description
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
         amount: request.amount,
         expense_date: request.expense_date,
         payment_method: request.payment_method.filter(|v| !v.trim().is_empty()),
-        vendor: request.vendor.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        notes: request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        vendor: request
+            .vendor
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        notes: request
+            .notes
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
         is_deleted: false,
         deleted_at: None,
         created_at: now.clone(),
@@ -43,7 +52,12 @@ pub fn create_expense(
     };
 
     expense_repository::create(conn, &expense)?;
-    log::info!("Created expense: {} Rs. {} on {}", expense.category, expense.amount, expense.expense_date);
+    log::info!(
+        "Created expense: {} Rs. {} on {}",
+        expense.category,
+        expense.amount,
+        expense.expense_date
+    );
     Ok(ExpenseResponse::from_expense(expense))
 }
 
@@ -74,12 +88,21 @@ pub fn update_expense(
     }
 
     expense.category = request.category;
-    expense.description = request.description.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    expense.description = request
+        .description
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     expense.amount = request.amount;
     expense.expense_date = request.expense_date;
     expense.payment_method = request.payment_method.filter(|v| !v.trim().is_empty());
-    expense.vendor = request.vendor.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-    expense.notes = request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    expense.vendor = request
+        .vendor
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    expense.notes = request
+        .notes
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     expense.updated_at = now_iso8601();
 
     expense_repository::update(conn, &expense)?;
@@ -91,7 +114,10 @@ pub fn delete_expense(conn: &Connection, id: &str) -> Result<(), AppError> {
     let now = now_iso8601();
     let deleted = expense_repository::soft_delete(conn, id, &now)?;
     if !deleted {
-        return Err(AppError::NotFoundError(format!("Expense '{}' not found", id)));
+        return Err(AppError::NotFoundError(format!(
+            "Expense '{}' not found",
+            id
+        )));
     }
     log::info!("Deleted expense: {}", id);
     Ok(())
@@ -102,9 +128,7 @@ pub fn restore_expense(conn: &Connection, id: &str) -> Result<ExpenseResponse, A
         .ok_or_else(|| AppError::NotFoundError(format!("Expense '{}' not found", id)))?;
 
     if !expense.is_deleted {
-        return Err(AppError::ValidationError(
-            "Expense is not deleted".into(),
-        ));
+        return Err(AppError::ValidationError("Expense is not deleted".into()));
     }
 
     let now = now_iso8601();
@@ -124,14 +148,13 @@ pub fn list_expenses(
     date_to: Option<&str>,
 ) -> Result<Vec<ExpenseResponse>, AppError> {
     let expenses = expense_repository::list(conn, search, category, date_from, date_to)?;
-    Ok(expenses.into_iter().map(ExpenseResponse::from_expense).collect())
+    Ok(expenses
+        .into_iter()
+        .map(ExpenseResponse::from_expense)
+        .collect())
 }
 
-pub fn total_expenses(
-    conn: &Connection,
-    date_from: &str,
-    date_to: &str,
-) -> Result<i64, AppError> {
+pub fn total_expenses(conn: &Connection, date_from: &str, date_to: &str) -> Result<i64, AppError> {
     expense_repository::total_by_date_range(conn, date_from, date_to)
 }
 

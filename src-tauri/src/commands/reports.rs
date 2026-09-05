@@ -37,8 +37,9 @@ pub async fn generate_report_pdf(
     let (financial, payments, expenses, members, membership_status, gym) =
         tauri::async_runtime::spawn_blocking(move || {
             let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
-            let financial =
-                report_service::generate_report(&guard, ReportRequest {
+            let financial = report_service::generate_report(
+                &guard,
+                ReportRequest {
                     report_type: "financial".into(),
                     date_from: df.clone(),
                     date_to: dt.clone(),
@@ -46,9 +47,11 @@ pub async fn generate_report_pdf(
                     payment_method: None,
                     membership_plan_id: None,
                     expense_category: None,
-                })?;
-            let payments =
-                report_service::generate_report(&guard, ReportRequest {
+                },
+            )?;
+            let payments = report_service::generate_report(
+                &guard,
+                ReportRequest {
                     report_type: "payment".into(),
                     date_from: df.clone(),
                     date_to: dt.clone(),
@@ -56,9 +59,11 @@ pub async fn generate_report_pdf(
                     payment_method: None,
                     membership_plan_id: None,
                     expense_category: None,
-                })?;
-            let expenses =
-                report_service::generate_report(&guard, ReportRequest {
+                },
+            )?;
+            let expenses = report_service::generate_report(
+                &guard,
+                ReportRequest {
                     report_type: "expense".into(),
                     date_from: df.clone(),
                     date_to: dt.clone(),
@@ -66,9 +71,11 @@ pub async fn generate_report_pdf(
                     payment_method: None,
                     membership_plan_id: None,
                     expense_category: None,
-                })?;
-            let members =
-                report_service::generate_report(&guard, ReportRequest {
+                },
+            )?;
+            let members = report_service::generate_report(
+                &guard,
+                ReportRequest {
                     report_type: "member".into(),
                     date_from: None,
                     date_to: None,
@@ -76,9 +83,11 @@ pub async fn generate_report_pdf(
                     payment_method: None,
                     membership_plan_id: None,
                     expense_category: None,
-                })?;
-            let membership_status =
-                report_service::generate_report(&guard, ReportRequest {
+                },
+            )?;
+            let membership_status = report_service::generate_report(
+                &guard,
+                ReportRequest {
                     report_type: "membership_status".into(),
                     date_from: None,
                     date_to: None,
@@ -86,9 +95,17 @@ pub async fn generate_report_pdf(
                     payment_method: None,
                     membership_plan_id: None,
                     expense_category: None,
-                })?;
+                },
+            )?;
             let gym = settings_repository::get_gym_settings(&guard)?;
-            Ok::<_, AppError>((financial, payments, expenses, members, membership_status, gym))
+            Ok::<_, AppError>((
+                financial,
+                payments,
+                expenses,
+                members,
+                membership_status,
+                gym,
+            ))
         })
         .await
         .map_err(|e| AppError::InternalError(format!("Report task failed: {e}")))??;
@@ -175,7 +192,13 @@ fn save_report_dialog(bytes: &[u8], date_label: &str) -> PdfSaveResult {
 fn sanitize(input: &str) -> String {
     input
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .to_string()
@@ -188,6 +211,10 @@ trait IfEmpty {
 
 impl IfEmpty for String {
     fn if_empty(self, fallback: String) -> String {
-        if self.is_empty() { fallback } else { self }
+        if self.is_empty() {
+            fallback
+        } else {
+            self
+        }
     }
 }

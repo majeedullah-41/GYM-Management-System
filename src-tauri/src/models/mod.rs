@@ -1,9 +1,11 @@
+mod billing;
 mod expense;
 mod member;
 mod membership_plan;
 mod payment;
 mod receipt;
 
+pub use billing::{Membership, MonthlyBill};
 pub use expense::Expense;
 pub use member::Member;
 pub use membership_plan::MembershipPlan;

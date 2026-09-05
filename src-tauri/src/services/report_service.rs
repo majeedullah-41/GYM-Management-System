@@ -23,12 +23,18 @@ pub fn generate_report(conn: &Connection, req: ReportRequest) -> Result<ReportRe
 
     if let Some(ref df) = req.date_from {
         chrono::NaiveDate::parse_from_str(df, "%Y-%m-%d").map_err(|_| {
-            AppError::ValidationError(format!("Invalid date_from format: {}. Expected YYYY-MM-DD", df))
+            AppError::ValidationError(format!(
+                "Invalid date_from format: {}. Expected YYYY-MM-DD",
+                df
+            ))
         })?;
     }
     if let Some(ref dt) = req.date_to {
         chrono::NaiveDate::parse_from_str(dt, "%Y-%m-%d").map_err(|_| {
-            AppError::ValidationError(format!("Invalid date_to format: {}. Expected YYYY-MM-DD", dt))
+            AppError::ValidationError(format!(
+                "Invalid date_to format: {}. Expected YYYY-MM-DD",
+                dt
+            ))
         })?;
     }
 
@@ -43,8 +49,11 @@ pub fn generate_report(conn: &Connection, req: ReportRequest) -> Result<ReportRe
 
     match req.report_type.as_str() {
         "financial" => {
-            let report =
-                crate::repositories::report_repository::financial_report(conn, &req.date_from, &req.date_to)?;
+            let report = crate::repositories::report_repository::financial_report(
+                conn,
+                &req.date_from,
+                &req.date_to,
+            )?;
             Ok(ReportResponse::Financial(report))
         }
         "payment" => {

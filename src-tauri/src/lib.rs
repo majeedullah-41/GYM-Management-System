@@ -21,14 +21,12 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("Failed to resolve app data directory");
-            std::fs::create_dir_all(&app_dir)
-                .expect("Failed to create app data directory");
+            std::fs::create_dir_all(&app_dir).expect("Failed to create app data directory");
 
             let db_path = app_dir.join("gym.db");
             log::info!("Initializing database at {:?}", db_path);
 
-            let conn =
-                database::init_db(&db_path).expect("Failed to initialize database");
+            let conn = database::init_db(&db_path).expect("Failed to initialize database");
 
             app.manage(Database::new(conn));
             log::info!("Database initialized successfully");
@@ -56,6 +54,7 @@ pub fn run() {
             commands::payments::list_member_payments,
             commands::payments::get_payment_summary,
             commands::payments::void_payment,
+            commands::billing::get_membership_billing_summary,
             commands::receipts::get_receipt_by_payment_id,
             commands::receipts::get_receipt_by_number,
             commands::expenses::create_expense,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { DollarSign, CreditCard, BarChart3, Users, UserCheck, Download } from "lucide-react";
+import { DollarSign, CreditCard, BarChart3, UserCheck, Download } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
@@ -14,11 +14,24 @@ import {
   type FinancialReport,
   type PaymentReport,
   type ExpenseReport,
-  type MemberReport,
   type MembershipStatusReport,
 } from "../../../lib/api/reports";
 
-type DatePreset = "today" | "this_week" | "last_week" | "this_month" | "last_month" | "this_year" | "custom" | "none";
+type DatePreset =
+  | "today"
+  | "this_week"
+  | "last_week"
+  | "this_month"
+  | "last_month"
+  | "this_year"
+  | "custom"
+  | "none";
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Failed to load report";
+}
 
 function getDateRange(preset: DatePreset): { date_from: string; date_to: string } {
   const today = new Date();
@@ -61,7 +74,6 @@ interface ReportData {
   financial: FinancialReport;
   payment: PaymentReport;
   expense: ExpenseReport;
-  member: MemberReport;
   membership_status: MembershipStatusReport;
 }
 
@@ -99,33 +111,44 @@ export function ReportsPage() {
     };
 
     Promise.all([
-      generateReport({ ...requestBase, report_type: "financial" }) as unknown as Promise<FinancialReport>,
-      generateReport({ ...requestBase, report_type: "payment" }) as unknown as Promise<PaymentReport>,
-      generateReport({ ...requestBase, report_type: "expense" }) as unknown as Promise<ExpenseReport>,
-      generateReport({ report_type: "member" }) as unknown as Promise<MemberReport>,
-      generateReport({ report_type: "membership_status" }) as unknown as Promise<MembershipStatusReport>,
+      generateReport({
+        ...requestBase,
+        report_type: "financial",
+      }) as unknown as Promise<FinancialReport>,
+      generateReport({
+        ...requestBase,
+        report_type: "payment",
+      }) as unknown as Promise<PaymentReport>,
+      generateReport({
+        ...requestBase,
+        report_type: "expense",
+      }) as unknown as Promise<ExpenseReport>,
+      generateReport({
+        report_type: "membership_status",
+      }) as unknown as Promise<MembershipStatusReport>,
     ])
-      .then(([finData, payData, expData, memData, statusData]) => {
+      .then(([finData, payData, expData, statusData]) => {
         if (!cancelled) {
           setResult({
             financial: finData,
             payment: payData,
             expense: expData,
-            member: memData,
             membership_status: statusData,
           });
         }
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load report");
+          setError(errorMessage(err));
         }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [dateFrom, dateTo]);
 
   const handleDownloadPdf = async () => {
@@ -136,18 +159,25 @@ export function ReportsPage() {
         financial: result.financial,
         payment: result.payment,
         expense: result.expense,
-        member: result.member,
         membership_status: result.membership_status,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       });
       if (res.mode === "pdf") {
-        addToast({ variant: "success", title: "Report saved as PDF", message: res.path || undefined });
+        addToast({
+          variant: "success",
+          title: "Report saved as PDF",
+          message: res.path || undefined,
+        });
       } else {
         addToast({ variant: "info", title: "Save cancelled" });
       }
     } catch (err) {
-      addToast({ variant: "error", title: "Failed to save PDF", message: err instanceof Error ? err.message : undefined });
+      addToast({
+        variant: "error",
+        title: "Failed to save PDF",
+        message: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setPdfLoading(false);
     }
@@ -157,13 +187,24 @@ export function ReportsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Reports"
-        description="View a combined report of financial, payment, expense, member, and membership status data."
+        description="View financial, payment, expense, and active membership reports."
       />
 
       <Card>
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            {(["this_month", "last_month", "this_week", "last_week", "today", "this_year", "custom", "none"] as DatePreset[]).map((preset) => (
+            {(
+              [
+                "this_month",
+                "last_month",
+                "this_week",
+                "last_week",
+                "today",
+                "this_year",
+                "custom",
+                "none",
+              ] as DatePreset[]
+            ).map((preset) => (
               <button
                 key={preset}
                 onClick={() => handlePresetChange(preset)}
@@ -218,10 +259,8 @@ export function ReportsPage() {
       {!loading && result && (
         <div className="space-y-6">
           <SummarySection data={result} />
-          <FinancialSection data={result.financial} />
           <PaymentSection data={result.payment} />
           <ExpenseSection data={result.expense} />
-          <MemberSection data={result.member} />
           <MembershipStatusSection data={result.membership_status} />
         </div>
       )}
@@ -239,62 +278,32 @@ function SummarySection({ data }: { data: ReportData }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card>
           <p className="text-xs text-text-muted">Total Revenue</p>
-          <p className="mt-1 text-lg font-bold text-success">{formatCurrency(data.financial.total_revenue)}</p>
+          <p className="mt-1 text-lg font-bold text-success">
+            {formatCurrency(data.financial.total_revenue)}
+          </p>
         </Card>
         <Card>
           <p className="text-xs text-text-muted">Total Expenses</p>
-          <p className="mt-1 text-lg font-bold text-danger">{formatCurrency(data.financial.total_expenses)}</p>
+          <p className="mt-1 text-lg font-bold text-danger">
+            {formatCurrency(data.financial.total_expenses)}
+          </p>
         </Card>
         <Card>
           <p className="text-xs text-text-muted">Net Income</p>
-          <p className={`mt-1 text-lg font-bold ${data.financial.net_income >= 0 ? "text-success" : "text-danger"}`}>
+          <p
+            className={`mt-1 text-lg font-bold ${data.financial.net_income >= 0 ? "text-success" : "text-danger"}`}
+          >
             {formatCurrency(data.financial.net_income)}
           </p>
         </Card>
         <Card>
           <p className="text-xs text-text-muted">Transactions</p>
-          <p className="mt-1 text-lg font-bold text-text-primary">{data.financial.payment_count + data.financial.expense_count}</p>
+          <p className="mt-1 text-lg font-bold text-text-primary">
+            {data.financial.payment_count + data.financial.expense_count}
+          </p>
         </Card>
       </div>
     </>
-  );
-}
-
-function FinancialSection({ data }: { data: FinancialReport }) {
-  return (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-        <DollarSign size={18} />
-        Revenue & Expenses Breakdown
-      </h3>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {data.revenue_by_method.length > 0 && (
-          <Card title="Revenue by Payment Method">
-            <div className="space-y-2">
-              {data.revenue_by_method.map((item) => (
-                <div key={item.category} className="flex justify-between text-sm">
-                  <span className="text-text-muted">{item.category}</span>
-                  <span className="font-medium">{formatCurrency(item.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {data.expenses_by_category.length > 0 && (
-          <Card title="Expenses by Category">
-            <div className="space-y-2">
-              {data.expenses_by_category.map((item) => (
-                <div key={item.category} className="flex justify-between text-sm">
-                  <span className="text-text-muted">{item.category}</span>
-                  <span className="font-medium">{formatCurrency(item.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -307,7 +316,9 @@ function PaymentSection({ data }: { data: PaymentReport }) {
       </h3>
       <Card>
         {data.payments.length === 0 ? (
-          <p className="text-sm text-text-muted py-4 text-center">No payments found for the selected filters.</p>
+          <p className="text-sm text-text-muted py-4 text-center">
+            No payments found for the selected filters.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -350,14 +361,15 @@ function ExpenseSection({ data }: { data: ExpenseReport }) {
       </h3>
       <Card>
         {data.expenses.length === 0 ? (
-          <p className="text-sm text-text-muted py-4 text-center">No expenses found for the selected filters.</p>
+          <p className="text-sm text-text-muted py-4 text-center">
+            No expenses found for the selected filters.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="pb-2 text-left font-medium text-text-muted">Date</th>
-                  <th className="pb-2 text-left font-medium text-text-muted">Description</th>
                   <th className="pb-2 text-left font-medium text-text-muted">Category</th>
                   <th className="pb-2 text-right font-medium text-text-muted">Amount</th>
                 </tr>
@@ -366,7 +378,6 @@ function ExpenseSection({ data }: { data: ExpenseReport }) {
                 {data.expenses.map((e, i) => (
                   <tr key={i} className="border-b border-border/50">
                     <td className="py-2 text-text-muted">{e.date}</td>
-                    <td className="py-2">{e.description}</td>
                     <td className="py-2">
                       <Badge variant="info">{e.category}</Badge>
                     </td>
@@ -382,45 +393,8 @@ function ExpenseSection({ data }: { data: ExpenseReport }) {
   );
 }
 
-function MemberSection({ data }: { data: MemberReport }) {
-  return (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-        <Users size={18} />
-        Members Overview
-      </h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Card>
-          <p className="text-xs text-text-muted">Total Members</p>
-          <p className="mt-1 text-2xl font-bold text-text-primary">{data.total_members}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-text-muted">Active</p>
-          <p className="mt-1 text-2xl font-bold text-success">{data.active_members}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-text-muted">Expiring Soon</p>
-          <p className="mt-1 text-2xl font-bold text-warning">{data.expiring_soon}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-text-muted">Expired</p>
-          <p className="mt-1 text-2xl font-bold text-danger">{data.expired_members}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-text-muted">Archived</p>
-          <p className="mt-1 text-2xl font-bold text-text-muted">{data.archived_members}</p>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
 function MembershipStatusSection({ data }: { data: MembershipStatusReport }) {
-  const sections = [
-    { title: "Active Members", items: data.active, variant: "active" as const },
-    { title: "Expiring Soon", items: data.expiring_soon, variant: "expiring" as const },
-    { title: "Expired", items: data.expired, variant: "expired" as const },
-  ];
+  const sections = [{ title: "Active Members", items: data.active, variant: "active" as const }];
 
   return (
     <div className="space-y-3">

@@ -17,7 +17,10 @@ pub async fn create_member(
 }
 
 #[tauri::command]
-pub async fn get_member(state: State<'_, Database>, id: String) -> Result<MemberResponse, AppError> {
+pub async fn get_member(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<MemberResponse, AppError> {
     let conn = state.inner().clone_conn();
     run_db(conn, move |c| member_service::get_member(c, &id)).await
 }
@@ -48,7 +51,10 @@ pub async fn update_member(
     request: UpdateMemberRequest,
 ) -> Result<MemberResponse, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| member_service::update_member(c, &id, request)).await
+    run_db(conn, move |c| {
+        member_service::update_member(c, &id, request)
+    })
+    .await
 }
 
 #[tauri::command]

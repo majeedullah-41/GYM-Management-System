@@ -1,3 +1,4 @@
+use crate::dto::billing::PaymentAllocationResponse;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,4 +19,5 @@ pub struct ReceiptResponse {
     pub membership_expiry_date: String,
     pub notes: Option<String>,
     pub remaining_balance: i64,
+    pub allocations: Vec<PaymentAllocationResponse>,
 }

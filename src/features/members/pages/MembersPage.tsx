@@ -1,5 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
@@ -32,8 +40,6 @@ interface FormData {
   address: string;
   date_of_birth: string;
   gender: string;
-  admission_fee: string;
-  charge_admission_fee: boolean;
   membership_plan_id: string;
 }
 
@@ -45,8 +51,6 @@ const EMPTY_FORM: FormData = {
   address: "",
   date_of_birth: "",
   gender: "",
-  admission_fee: "",
-  charge_admission_fee: false,
   membership_plan_id: "",
 };
 
@@ -58,21 +62,63 @@ const STATUS_OPTIONS = [
 
 const PAGE_SIZE = 20;
 
-type SortField = "member_number" | "full_name" | "phone" | "membership_plan_name" | "membership_expiry_date" | "outstanding_balance";
+type SortField =
+  | "member_number"
+  | "full_name"
+  | "phone"
+  | "membership_plan_name"
+  | "membership_expiry_date"
+  | "outstanding_balance";
 type SortDir = "asc" | "desc";
+
+function SortIcon({
+  field,
+  activeField,
+  direction,
+}: {
+  field: SortField;
+  activeField: SortField;
+  direction: SortDir;
+}) {
+  if (activeField !== field) return <ArrowUpDown size={14} className="text-text-muted" />;
+  return direction === "asc" ? (
+    <ArrowUp size={14} className="text-primary" />
+  ) : (
+    <ArrowDown size={14} className="text-primary" />
+  );
+}
 
 function sortMembers(members: MemberResponse[], field: SortField, dir: SortDir): MemberResponse[] {
   const sorted = [...members].sort((a, b) => {
     let va: string | number;
     let vb: string | number;
     switch (field) {
-      case "member_number": va = a.member_number; vb = b.member_number; break;
-      case "full_name": va = a.full_name.toLowerCase(); vb = b.full_name.toLowerCase(); break;
-      case "phone": va = a.phone ?? ""; vb = b.phone ?? ""; break;
-      case "membership_plan_name": va = a.membership_plan_name ?? ""; vb = b.membership_plan_name ?? ""; break;
-      case "membership_expiry_date": va = a.membership_expiry_date ?? ""; vb = b.membership_expiry_date ?? ""; break;
-      case "outstanding_balance": va = a.outstanding_balance; vb = b.outstanding_balance; break;
-      default: return 0;
+      case "member_number":
+        va = a.member_number;
+        vb = b.member_number;
+        break;
+      case "full_name":
+        va = a.full_name.toLowerCase();
+        vb = b.full_name.toLowerCase();
+        break;
+      case "phone":
+        va = a.phone ?? "";
+        vb = b.phone ?? "";
+        break;
+      case "membership_plan_name":
+        va = a.membership_plan_name ?? "";
+        vb = b.membership_plan_name ?? "";
+        break;
+      case "membership_expiry_date":
+        va = a.membership_expiry_date ?? "";
+        vb = b.membership_expiry_date ?? "";
+        break;
+      case "outstanding_balance":
+        va = a.outstanding_balance;
+        vb = b.outstanding_balance;
+        break;
+      default:
+        return 0;
     }
     if (typeof va === "number" && typeof vb === "number") {
       return dir === "asc" ? va - vb : vb - va;
@@ -122,9 +168,7 @@ export function MembersPage({
   const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(
-    initialExpandedId ?? null,
-  );
+  const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId ?? null);
 
   useEffect(() => {
     if (initialExpandedId) setExpandedId(initialExpandedId);
@@ -156,13 +200,18 @@ export function MembersPage({
   }, [loadMembers]);
 
   useEffect(() => {
-    listActivePlans().then(setPlans).catch(() => {});
+    listActivePlans()
+      .then(setPlans)
+      .catch(() => {});
   }, []);
 
   const filteredMembers = useMemo(() => {
-    if (!planFilter) return members;
-    return members.filter((m) => m.membership_plan_name === planFilter);
-  }, [members, planFilter]);
+    return members.filter(
+      (member) =>
+        member.is_archived === showArchived &&
+        (!planFilter || member.membership_plan_name === planFilter),
+    );
+  }, [members, planFilter, showArchived]);
 
   const sortedMembers = useMemo(
     () => sortMembers(filteredMembers, sortField, sortDir),
@@ -186,13 +235,6 @@ export function MembersPage({
     }
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ArrowUpDown size={14} className="text-text-muted" />;
-    return sortDir === "asc"
-      ? <ArrowUp size={14} className="text-primary" />
-      : <ArrowDown size={14} className="text-primary" />;
-  };
-
   const openCreateForm = () => {
     setEditingMember(null);
     setFormData(EMPTY_FORM);
@@ -210,9 +252,6 @@ export function MembersPage({
       address: member.address ?? "",
       date_of_birth: member.date_of_birth ?? "",
       gender: formData.gender ?? "",
-      admission_fee: member.admission_fee != null ? String(member.admission_fee) : "",
-      charge_admission_fee:
-        member.admission_fee != null && member.admission_fee > 0,
       membership_plan_id: member.membership_plan_id ?? "",
     });
     setFormErrors({});
@@ -224,10 +263,7 @@ export function MembersPage({
     if (!formData.full_name.trim()) errors.full_name = "Name is required";
     if (formData.phone.trim() && !/^\d{11}$/.test(formData.phone.trim()))
       errors.phone = "Phone must be exactly 11 digits";
-    if (
-      formData.cnic.trim() &&
-      formData.cnic.replace(/-/g, "").length !== 13
-    )
+    if (formData.cnic.trim() && formData.cnic.replace(/-/g, "").length !== 13)
       errors.cnic = "CNIC must be exactly 13 digits";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -236,23 +272,18 @@ export function MembersPage({
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
+    let newEnrollmentId: string | null = null;
     try {
       setSubmitting(true);
       const payload = {
         full_name: formData.full_name.trim(),
         father_name: formData.father_name.trim() || null,
         phone: formData.phone.trim() || null,
-        cnic: formData.cnic.trim()
-          ? formData.cnic.replace(/-/g, "")
-          : null,
+        cnic: formData.cnic.trim() ? formData.cnic.replace(/-/g, "") : null,
         address: formData.address.trim() || null,
         date_of_birth: formData.date_of_birth || null,
         gender: formData.gender || null,
         notes: null as string | null,
-        admission_fee:
-          formData.charge_admission_fee && formData.admission_fee.trim()
-            ? parseInt(formData.admission_fee, 10) || null
-            : null,
         membership_plan_id: formData.membership_plan_id || null,
       };
 
@@ -264,7 +295,8 @@ export function MembersPage({
           message: `"${payload.full_name}" has been updated.`,
         });
       } else {
-        await createMember(payload);
+        const created = await createMember(payload);
+        newEnrollmentId = payload.membership_plan_id ? created.id : null;
         addToast({
           variant: "success",
           title: "Member added",
@@ -274,6 +306,7 @@ export function MembersPage({
 
       setFormOpen(false);
       await loadMembers();
+      if (newEnrollmentId) openPaymentForMember(newEnrollmentId);
     } catch (err) {
       addToast({
         variant: "error",
@@ -340,10 +373,7 @@ export function MembersPage({
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-          />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             type="text"
             name="member_search"
@@ -382,7 +412,11 @@ export function MembersPage({
 
       {!loading && !error && sortedMembers.length === 0 && (
         <EmptyState
-          title={search || statusFilter || planFilter || showArchived ? "No members found" : "No members yet"}
+          title={
+            search || statusFilter || planFilter || showArchived
+              ? "No members found"
+              : "No members yet"
+          }
           message={
             search || statusFilter || planFilter || showArchived
               ? "Try adjusting your search or filters."
@@ -402,20 +436,23 @@ export function MembersPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-secondary-bg">
-                  {([
-                    ["member_number", "Member #"],
-                    ["full_name", "Name"],
-                    ["phone", "Phone"],
-                    ["membership_plan_name", "Plan"],
-                    ["membership_expiry_date", "Expiry"],
-                  ] as const).map(([field, label]) => (
+                  {(
+                    [
+                      ["member_number", "Member #"],
+                      ["full_name", "Name"],
+                      ["phone", "Phone"],
+                      ["membership_plan_name", "Plan"],
+                      ["membership_expiry_date", "Expiry"],
+                    ] as const
+                  ).map(([field, label]) => (
                     <th
                       key={field}
                       onClick={() => toggleSort(field)}
                       className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted cursor-pointer hover:text-text-primary select-none"
                     >
                       <span className="inline-flex items-center gap-1">
-                        {label} <SortIcon field={field} />
+                        {label}{" "}
+                        <SortIcon field={field} activeField={sortField} direction={sortDir} />
                       </span>
                     </th>
                   ))}
@@ -427,7 +464,12 @@ export function MembersPage({
                     className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted cursor-pointer hover:text-text-primary select-none"
                   >
                     <span className="inline-flex items-center gap-1">
-                      Balance <SortIcon field="outstanding_balance" />
+                      Balance{" "}
+                      <SortIcon
+                        field="outstanding_balance"
+                        activeField={sortField}
+                        direction={sortDir}
+                      />
                     </span>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted">
@@ -438,96 +480,102 @@ export function MembersPage({
               <tbody>
                 {pagedMembers.map((m) => (
                   <Fragment key={m.id}>
-                  <tr
-                    onClick={() =>
-                      setExpandedId((cur) => (cur === m.id ? null : m.id))
-                    }
-                    className={`border-b border-border cursor-pointer hover:bg-secondary-bg ${
-                      expandedId === m.id ? "bg-secondary-bg" : ""
-                    }`}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 font-mono text-xs text-text-muted">
-                        <ChevronDown
-                          size={14}
-                          className={`transition-transform ${
-                            expandedId === m.id ? "rotate-180" : ""
-                          }`}
-                        />
-                        {m.member_number}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-text-primary">
-                      {m.full_name}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {m.phone || "\u2014"}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {m.membership_plan_name || "\u2014"}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {m.membership_expiry_date || "\u2014"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={m.is_paid ? "success" : "danger"}>
-                        {m.is_paid ? "Paid" : "Unpaid"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {m.outstanding_balance > 0 ? (
-                        <span className="text-orange-600 font-medium">
-                          {formatCurrency(m.outstanding_balance)}
-                        </span>
-                      ) : (
-                        <span className="text-green-600">{formatCurrency(0)}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {!m.is_archived && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={(e) => { e.stopPropagation(); openPaymentForMember(m.id); }}
-                          >
-                            Pay
-                          </Button>
+                    <tr
+                      onClick={() => setExpandedId((cur) => (cur === m.id ? null : m.id))}
+                      className={`border-b border-border cursor-pointer hover:bg-secondary-bg ${
+                        expandedId === m.id ? "bg-secondary-bg" : ""
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5 font-mono text-xs text-text-muted">
+                          <ChevronDown
+                            size={14}
+                            className={`transition-transform ${
+                              expandedId === m.id ? "rotate-180" : ""
+                            }`}
+                          />
+                          {m.member_number}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-text-primary">{m.full_name}</td>
+                      <td className="px-4 py-3 text-text-muted">{m.phone || "\u2014"}</td>
+                      <td className="px-4 py-3 text-text-muted">
+                        {m.membership_plan_name || "\u2014"}
+                      </td>
+                      <td className="px-4 py-3 text-text-muted">
+                        {m.membership_expiry_date || "\u2014"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={m.is_paid ? "success" : "danger"}>
+                          {m.is_paid ? "Paid" : "Unpaid"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {m.outstanding_balance > 0 ? (
+                          <span className="text-orange-600 font-medium">
+                            {formatCurrency(m.outstanding_balance)}
+                          </span>
+                        ) : (
+                          <span className="text-green-600">{formatCurrency(0)}</span>
                         )}
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={(e) => { e.stopPropagation(); openEditForm(m); }}
-                        >
-                          Edit
-                        </Button>
-                        {!m.is_archived ? (
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {!m.is_archived && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openPaymentForMember(m.id);
+                              }}
+                            >
+                              Pay
+                            </Button>
+                          )}
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={(e) => { e.stopPropagation(); setArchiveTarget(m); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditForm(m);
+                            }}
                           >
-                            Archive
+                            Edit
                           </Button>
-                        ) : (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={(e) => { e.stopPropagation(); setReactivateTarget(m); }}
-                          >
-                            Reactivate
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedId === m.id && (
-                    <tr className="border-b border-border bg-secondary-bg/40">
-                      <td colSpan={8} className="px-0 py-0">
-                        <MemberDetailRow member={m} />
+                          {!m.is_archived ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setArchiveTarget(m);
+                              }}
+                            >
+                              Archive
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReactivateTarget(m);
+                              }}
+                            >
+                              Reactivate
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  )}
+                    {expandedId === m.id && (
+                      <tr className="border-b border-border bg-secondary-bg/40">
+                        <td colSpan={8} className="px-0 py-0">
+                          <MemberDetailRow member={m} />
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 ))}
               </tbody>
@@ -584,27 +632,21 @@ export function MembersPage({
             label="Full Name *"
             placeholder="e.g. Ahmad Khan"
             value={formData.full_name}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, full_name: e.target.value }))
-            }
+            onChange={(e) => setFormData((p) => ({ ...p, full_name: e.target.value }))}
             error={formErrors.full_name}
           />
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Father Name"
               value={formData.father_name}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, father_name: e.target.value }))
-              }
+              onChange={(e) => setFormData((p) => ({ ...p, father_name: e.target.value }))}
             />
             <Input
               label="Phone"
               placeholder="03xxxxxxxxx"
               type="tel"
               value={formData.phone}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, phone: formatPhone(e.target.value) }))
-              }
+              onChange={(e) => setFormData((p) => ({ ...p, phone: formatPhone(e.target.value) }))}
               error={formErrors.phone}
             />
           </div>
@@ -613,22 +655,16 @@ export function MembersPage({
               label="CNIC"
               placeholder="XXXXX-XXXXXXX-X"
               value={formData.cnic}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, cnic: formatCnic(e.target.value) }))
-              }
+              onChange={(e) => setFormData((p) => ({ ...p, cnic: formatCnic(e.target.value) }))}
               error={formErrors.cnic}
             />
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Gender
-              </label>
+              <label className="text-sm font-medium text-text-primary">Gender</label>
               <select
                 name="member_gender"
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
                 value={formData.gender}
-                onChange={(e) =>
-                  setFormData((p) => ({ ...p, gender: e.target.value }))
-                }
+                onChange={(e) => setFormData((p) => ({ ...p, gender: e.target.value }))}
               >
                 <option value="">Select</option>
                 <option value="Male">Male</option>
@@ -640,16 +676,12 @@ export function MembersPage({
             label="Date of Birth"
             type="date"
             value={formData.date_of_birth}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, date_of_birth: e.target.value }))
-            }
+            onChange={(e) => setFormData((p) => ({ ...p, date_of_birth: e.target.value }))}
           />
           <Input
             label="Address"
             value={formData.address}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, address: e.target.value }))
-            }
+            onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))}
           />
           <Select
             label="Membership Plan"
@@ -668,43 +700,6 @@ export function MembersPage({
               }))
             }
           />
-          <div className="rounded-md border border-border p-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-text-primary">
-              <input
-                type="checkbox"
-                name="charge_admission_fee"
-                checked={formData.charge_admission_fee}
-                onChange={(e) =>
-                  setFormData((p) => ({
-                    ...p,
-                    charge_admission_fee: e.target.checked,
-                  }))
-                }
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-              />
-              Charge Admission Fee
-            </label>
-            <p className="mt-1 text-xs text-text-muted">
-              One-time fee charged at enrollment.
-            </p>
-            {formData.charge_admission_fee && (
-              <div className="mt-3">
-                <Input
-                  label="Admission Fee Amount (PKR)"
-                  type="number"
-                  min={0}
-                  value={formData.admission_fee}
-                  onChange={(e) =>
-                    setFormData((p) => ({
-                      ...p,
-                      admission_fee: e.target.value,
-                    }))
-                  }
-                  placeholder="e.g. 500"
-                />
-              </div>
-            )}
-          </div>
         </div>
       </Modal>
 

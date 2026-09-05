@@ -1,3 +1,4 @@
+pub mod billing;
 pub mod dashboard;
 pub mod db;
 pub mod expenses;

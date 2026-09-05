@@ -18,12 +18,7 @@ pub const EXPENSE_CATEGORIES: &[&str] = &[
     "Other",
 ];
 
-pub const EXPENSE_PAYMENT_METHODS: &[&str] = &[
-    "Cash",
-    "Card",
-    "BankTransfer",
-    "Other",
-];
+pub const EXPENSE_PAYMENT_METHODS: &[&str] = &["Cash", "Card", "BankTransfer", "Other"];
 
 #[derive(Debug, Deserialize)]
 pub struct CreateExpenseRequest {

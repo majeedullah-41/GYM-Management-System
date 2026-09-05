@@ -32,7 +32,10 @@ pub async fn update_expense(
     request: UpdateExpenseRequest,
 ) -> Result<ExpenseResponse, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| expense_service::update_expense(c, &id, request)).await
+    run_db(conn, move |c| {
+        expense_service::update_expense(c, &id, request)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -69,7 +72,10 @@ pub async fn total_expenses(
     date_to: String,
 ) -> Result<i64, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| expense_service::total_expenses(c, &date_from, &date_to)).await
+    run_db(conn, move |c| {
+        expense_service::total_expenses(c, &date_from, &date_to)
+    })
+    .await
 }
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::dto::billing::{MonthlyBillResponse, PaymentAllocationResponse};
 use crate::models::Payment;
 
 #[derive(Debug, Deserialize)]
@@ -13,6 +14,7 @@ pub struct CreatePaymentRequest {
     pub description: Option<String>,
     pub reference: Option<String>,
     pub notes: Option<String>,
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +51,7 @@ pub struct PaymentResponse {
     pub void_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub allocations: Vec<PaymentAllocationResponse>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -66,6 +69,9 @@ pub struct PaymentSummary {
     pub is_first_payment: bool,
     pub membership_start_date: Option<String>,
     pub membership_expiry_date: Option<String>,
+    pub previous_dues: i64,
+    pub current_month_fee: i64,
+    pub bills: Vec<MonthlyBillResponse>,
 }
 
 impl PaymentResponse {
@@ -96,6 +102,7 @@ impl PaymentResponse {
             void_reason: payment.void_reason,
             created_at: payment.created_at,
             updated_at: payment.updated_at,
+            allocations: Vec::new(),
         }
     }
 }

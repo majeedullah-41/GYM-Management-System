@@ -1,5 +1,5 @@
 use chrono::{Duration, NaiveDate, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::errors::AppError;
 use crate::models::Payment;
@@ -44,6 +44,27 @@ pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
         ],
     )?;
     Ok(())
+}
+
+pub fn set_recurring_metadata(
+    conn: &Connection,
+    payment_id: &str,
+    idempotency_key: Option<&str>,
+) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE payments SET idempotency_key=?2 WHERE id=?1",
+        params![payment_id, idempotency_key],
+    )?;
+    Ok(())
+}
+
+pub fn get_by_idempotency_key(conn: &Connection, key: &str) -> Result<Option<Payment>, AppError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM payments WHERE idempotency_key=?1",
+        SELECT_COLS
+    ))?;
+    let result = stmt.query_row(params![key], row_to_payment).optional()?;
+    Ok(result)
 }
 
 pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Payment>, AppError> {
@@ -238,18 +259,15 @@ pub fn get_member_periods(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        rusqlite::params_from_iter(param_values.iter()),
-        |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, i32>(4)?,
-            ))
-        },
-    )?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(param_values.iter()), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i32>(4)?,
+        ))
+    })?;
 
     let mut out: Vec<MemberPeriod> = Vec::new();
     let mut keys: std::collections::HashSet<(String, String, String)> =
@@ -333,30 +351,27 @@ pub fn get_member_periods(
         }
         let (price, duration) = *plan_meta.get(pid).unwrap_or(&(0, 30));
         let dur = Duration::days(duration as i64);
-        if duration <= 0 {
-            continue;
-        }
-
-        let push_synthetic =
-            |start: NaiveDate, end: NaiveDate, keys: &mut std::collections::HashSet<(String, String, String)>,
-             out: &mut Vec<MemberPeriod>|
-             -> Result<(), AppError> {
-                let start_str = start.format("%Y-%m-%d").to_string();
-                let end_str = end.format("%Y-%m-%d").to_string();
-                if keys.contains(&(pid.clone(), start_str.clone(), end_str.clone())) {
-                    return Ok(());
-                }
-                keys.insert((pid.clone(), start_str.clone(), end_str.clone()));
-                let paid = total_paid_for_period(conn, member_id, pid, &start_str, &end_str)?;
-                out.push(MemberPeriod {
-                    plan_id: pid.clone(),
-                    start_date: start_str,
-                    expiry_date: end_str,
-                    price,
-                    paid,
-                });
-                Ok(())
-            };
+        let push_synthetic = |start: NaiveDate,
+                              end: NaiveDate,
+                              keys: &mut std::collections::HashSet<(String, String, String)>,
+                              out: &mut Vec<MemberPeriod>|
+         -> Result<(), AppError> {
+            let start_str = start.format("%Y-%m-%d").to_string();
+            let end_str = end.format("%Y-%m-%d").to_string();
+            if keys.contains(&(pid.clone(), start_str.clone(), end_str.clone())) {
+                return Ok(());
+            }
+            keys.insert((pid.clone(), start_str.clone(), end_str.clone()));
+            let paid = total_paid_for_period(conn, member_id, pid, &start_str, &end_str)?;
+            out.push(MemberPeriod {
+                plan_id: pid.clone(),
+                start_date: start_str,
+                expiry_date: end_str,
+                price,
+                paid,
+            });
+            Ok(())
+        };
 
         // Full cycles that ended entirely before today (definitely missed).
         let mut cursor = *last_expiry;
@@ -406,10 +421,7 @@ pub fn get_member_unpaid_periods(
     plan_id: Option<&str>,
 ) -> Result<Vec<MemberPeriod>, AppError> {
     let periods = get_member_periods(conn, member_id, plan_id)?;
-    Ok(periods
-        .into_iter()
-        .filter(|p| p.paid < p.price)
-        .collect())
+    Ok(periods.into_iter().filter(|p| p.paid < p.price).collect())
 }
 
 /// Whether the member has at least one real (non-voided) payment period for the
@@ -689,16 +701,7 @@ mod tests {
         create(&conn, &make_payment(&member_id, &plan_id, 2000)).unwrap();
         create(&conn, &make_payment(&member_id, &plan_id, 500)).unwrap();
 
-        let payments = list(
-            &conn,
-            "",
-            None,
-            None,
-            Some(&member_id),
-            None,
-            None,
-        )
-        .unwrap();
+        let payments = list(&conn, "", None, None, Some(&member_id), None, None).unwrap();
         assert_eq!(payments.len(), 2);
     }
 
@@ -710,10 +713,8 @@ mod tests {
         create(&conn, &make_payment(&member_id, &plan_id, 500)).unwrap();
         create(&conn, &make_payment(&member_id, &plan_id, 700)).unwrap();
 
-        let total = total_paid_for_period(
-            &conn, &member_id, &plan_id, "2025-01-15", "2025-02-15",
-        )
-        .unwrap();
+        let total =
+            total_paid_for_period(&conn, &member_id, &plan_id, "2025-01-15", "2025-02-15").unwrap();
         assert_eq!(total, 1200);
     }
 
@@ -838,7 +839,13 @@ mod tests {
         let payment = make_payment(&member_id, &plan_id, 2000);
         create(&conn, &payment).unwrap();
 
-        void_payment(&conn, &payment.id, "Duplicate entry", "2025-06-01T00:00:00Z").unwrap();
+        void_payment(
+            &conn,
+            &payment.id,
+            "Duplicate entry",
+            "2025-06-01T00:00:00Z",
+        )
+        .unwrap();
 
         let fetched = get_by_id(&conn, &payment.id).unwrap().unwrap();
         assert!(fetched.is_voided);
@@ -857,10 +864,8 @@ mod tests {
 
         void_payment(&conn, &p1.id, "Wrong amount", "2025-06-01T00:00:00Z").unwrap();
 
-        let total = total_paid_for_period(
-            &conn, &member_id, &plan_id, "2025-01-15", "2025-02-15",
-        )
-        .unwrap();
+        let total =
+            total_paid_for_period(&conn, &member_id, &plan_id, "2025-01-15", "2025-02-15").unwrap();
         assert_eq!(total, 700);
     }
 

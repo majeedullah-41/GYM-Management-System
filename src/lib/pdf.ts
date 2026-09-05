@@ -1,21 +1,33 @@
 import { jsPDF } from "jspdf";
 import { invokeCommand } from "./tauri";
 import type {
-  FinancialReport,
-  PaymentReport,
   ExpenseReport,
-  MemberReport,
+  FinancialReport,
   MembershipStatusReport,
+  PaymentReport,
 } from "./api/reports";
 
 const INDIGO: [number, number, number] = [79, 70, 229];
-const SLATE: [number, number, number] = [71, 85, 105];
+const INDIGO_DARK: [number, number, number] = [55, 48, 163];
+const TEXT: [number, number, number] = [30, 41, 59];
+const SLATE: [number, number, number] = [100, 116, 139];
 const GREEN: [number, number, number] = [22, 163, 74];
 const RED: [number, number, number] = [220, 38, 38];
-const LIGHT: [number, number, number] = [241, 245, 249];
+const LIGHT: [number, number, number] = [248, 250, 252];
+const BORDER: [number, number, number] = [226, 232, 240];
 
-function fmt(n: number): string {
-  return "Rs. " + n.toLocaleString("en-US");
+const MARGIN = 18;
+const BOTTOM_MARGIN = 20;
+const ROW_HEIGHT = 6.5;
+
+interface PdfColumn {
+  header: string;
+  width: number;
+  align?: "left" | "right";
+}
+
+function fmt(amount: number): string {
+  return `Rs. ${amount.toLocaleString("en-US")}`;
 }
 
 export interface SavePdfResult {
@@ -31,34 +43,19 @@ async function savePdf(payload: string, name: string): Promise<SavePdfResult> {
   });
 }
 
-// ─────────────────────────── REPORT ───────────────────────────
-function row(pdf: jsPDF, m: number, y: number, label: string, value: string): number {
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(10);
-  pdf.setTextColor(...SLATE);
-  pdf.text(label, m, y);
-  pdf.setFont("helvetica", "bold");
-  pdf.setTextColor(30, 41, 59);
-  const rightX = pdf.internal.pageSize.getWidth() - m;
-  pdf.text(value.length > 40 ? value.slice(0, 40) : value, rightX, y, { align: "right" });
-  return y + 6;
-}
-
-function uint8(buf: ArrayBuffer): string {
+function uint8(buffer: ArrayBuffer): string {
   const chunks: string[] = [];
-  const bytes = new Uint8Array(buf);
+  const bytes = new Uint8Array(buffer);
   for (let i = 0; i < bytes.length; i += 0x8000) {
     chunks.push(String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000))));
   }
   return btoa(chunks.join(""));
 }
 
-// ─────────────────────────── REPORT ───────────────────────────
 export interface ReportPdfData {
   financial: FinancialReport;
   payment: PaymentReport;
   expense: ExpenseReport;
-  member: MemberReport;
   membership_status: MembershipStatusReport;
   dateFrom?: string;
   dateTo?: string;
@@ -66,214 +63,277 @@ export interface ReportPdfData {
 
 export async function renderReportPdf(data: ReportPdfData): Promise<SavePdfResult> {
   const pdf = new jsPDF({ unit: "mm", format: "a4" });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const m = 18;
-  let y = 22;
+  let y = drawDocumentHeader(pdf, data.dateFrom, data.dateTo);
 
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(18);
-  pdf.setTextColor(...INDIGO);
-  pdf.text("GYM REPORT", pageW / 2, y, { align: "center" });
-  y += 7;
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(10);
-  pdf.setTextColor(...SLATE);
-  const range = data.dateFrom || data.dateTo
-    ? `Period: ${data.dateFrom || "start"} → ${data.dateTo || "now"}`
-    : "All Time";
-  pdf.text(range, pageW / 2, y, { align: "center" });
-  y += 15;
+  y = drawSummary(pdf, y, data.financial);
 
-  // Summary section
-  y = sectionHeader(pdf, m, y, "SUMMARY");
-  y = statCards(pdf, m, y, [
-    { label: "Total Revenue", value: fmt(data.financial.total_revenue), color: GREEN },
-    { label: "Total Expenses", value: fmt(data.financial.total_expenses), color: RED },
-    { label: "Net Income", value: fmt(data.financial.net_income), color: data.financial.net_income >= 0 ? GREEN : RED },
-    { label: "Members", value: String(data.member.total_members), color: INDIGO },
-  ]);
-  y += 4;
+  y = drawTable(
+    pdf,
+    y,
+    `Payment Details (${data.payment.total_count})`,
+    [
+      { header: "Receipt #", width: 30 },
+      { header: "Member", width: 43 },
+      { header: "Method", width: 31 },
+      { header: "Date", width: 31 },
+      { header: "Amount", width: 39, align: "right" },
+    ],
+    data.payment.payments.map((payment) => [
+      payment.receipt_number,
+      payment.member_name,
+      payment.payment_method,
+      payment.payment_date,
+      fmt(payment.amount),
+    ]),
+    "No payments were recorded for this period.",
+  );
 
-  // Revenue by method
-  if (data.financial.revenue_by_method.length > 0) {
-    y = sectionHeader(pdf, m, y, "REVENUE BY PAYMENT METHOD");
-    for (const item of data.financial.revenue_by_method) {
-      y = row(pdf, m, y, item.category, fmt(item.amount));
-    }
-    y += 4;
-  }
+  y = drawTable(
+    pdf,
+    y,
+    `Expense Details (${data.expense.total_count})`,
+    [
+      { header: "Date", width: 43 },
+      { header: "Category", width: 82 },
+      { header: "Amount", width: 49, align: "right" },
+    ],
+    data.expense.expenses.map((expense) => [expense.date, expense.category, fmt(expense.amount)]),
+    "No expenses were recorded for this period.",
+  );
 
-  // Expenses by category
-  if (data.financial.expenses_by_category.length > 0) {
-    y = sectionHeader(pdf, m, y, "EXPENSES BY CATEGORY");
-    for (const item of data.financial.expenses_by_category) {
-      y = row(pdf, m, y, item.category, fmt(item.amount));
-    }
-    y += 4;
-  }
+  drawTable(
+    pdf,
+    y,
+    `Active Memberships (${data.membership_status.active.length})`,
+    [
+      { header: "Member #", width: 40 },
+      { header: "Name", width: 55 },
+      { header: "Phone", width: 40 },
+      { header: "Plan", width: 39 },
+    ],
+    data.membership_status.active.map((member) => [
+      member.member_number,
+      member.full_name,
+      member.phone || "-",
+      member.plan_name || "-",
+    ]),
+    "No active memberships found.",
+  );
 
-  // Payments table
-  y = sectionHeader(pdf, m, y, "PAYMENT DETAILS");
-  y = tableHeader(pdf, m, y, ["Receipt #", "Member", "Method", "Date", "Amount"]);
-  for (const p of data.payment.payments) {
-    y = tableRow(pdf, m, y, [
-      p.receipt_number,
-      truncate(p.member_name, 20),
-      p.payment_method,
-      p.payment_date,
-      fmt(p.amount),
-    ]);
-  }
-  y += 4;
-
-  // Expenses table
-  y = sectionHeader(pdf, m, y, "EXPENSE DETAILS");
-  y = tableHeader(pdf, m, y, ["Date", "Description", "Category", "Amount"]);
-  for (const e of data.expense.expenses) {
-    y = tableRow(pdf, m, y, [
-      e.date,
-      truncate(e.description, 28),
-      e.category,
-      fmt(e.amount),
-    ]);
-  }
-  y += 4;
-
-  // Membership status
-  y = sectionHeader(pdf, m, y, "MEMBERSHIP STATUS");
-  y = membershipTable(pdf, m, y, "Active Members", data.membership_status.active);
-  y = membershipTable(pdf, m, y, "Expiring Soon", data.membership_status.expiring_soon);
-  y = membershipTable(pdf, m, y, "Expired", data.membership_status.expired);
+  addPageFooters(pdf);
 
   const bytes = pdf.output("arraybuffer");
-  const dateLabel = data.dateFrom || data.dateTo
-    ? `${data.dateFrom || "start"}-to-${data.dateTo || "now"}`
-    : "all-time";
+  const dateLabel =
+    data.dateFrom || data.dateTo
+      ? `${data.dateFrom || "start"}-to-${data.dateTo || "now"}`
+      : "all-time";
   return savePdf(uint8(bytes), `GymReport-${dateLabel.replace(/[^a-zA-Z0-9-_]/g, "_")}`);
 }
 
-// statCards renders 2x2 grid of stat boxes
-function statCards(
-  pdf: jsPDF,
-  m: number,
-  y: number,
-  stats: { label: string; value: string; color: [number, number, number] }[],
-): number {
-  const cardW = (pdf.internal.pageSize.getWidth() - m * 2 - 8) / 2;
-  const cardH = 20;
-  stats.forEach((s, i) => {
-    const col = i % 2;
-    const rowIdx = Math.floor(i / 2);
-    const x = m + col * (cardW + 8);
-    const cy = y + rowIdx * (cardH + 6);
+function drawDocumentHeader(pdf: jsPDF, dateFrom?: string, dateTo?: string): number {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const range =
+    dateFrom || dateTo ? `${dateFrom || "Beginning"} to ${dateTo || "Today"}` : "All time";
+
+  pdf.setFillColor(...INDIGO_DARK);
+  pdf.rect(0, 0, pageWidth, 36, "F");
+  pdf.setFillColor(...INDIGO);
+  pdf.rect(0, 33, pageWidth, 3, "F");
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.setTextColor(255, 255, 255);
+  pdf.text("GYM MANAGEMENT REPORT", MARGIN, 16);
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+  pdf.setTextColor(224, 231, 255);
+  pdf.text(`Reporting period: ${range}`, MARGIN, 24);
+  pdf.text(`Generated: ${new Date().toLocaleDateString("en-GB")}`, pageWidth - MARGIN, 24, {
+    align: "right",
+  });
+
+  return 47;
+}
+
+function drawSummary(pdf: jsPDF, y: number, data: FinancialReport): number {
+  y = ensureSpace(pdf, y, 38);
+  y = drawSectionTitle(pdf, y, "Financial Summary");
+
+  const gap = 4;
+  const contentWidth = pdf.internal.pageSize.getWidth() - MARGIN * 2;
+  const cardWidth = (contentWidth - gap * 2) / 3;
+  const cards = [
+    { label: "Total Revenue", value: fmt(data.total_revenue), color: GREEN },
+    { label: "Total Expenses", value: fmt(data.total_expenses), color: RED },
+    {
+      label: "Net Income",
+      value: fmt(data.net_income),
+      color: data.net_income >= 0 ? GREEN : RED,
+    },
+  ];
+
+  cards.forEach((card, index) => {
+    const x = MARGIN + index * (cardWidth + gap);
     pdf.setFillColor(...LIGHT);
-    pdf.roundedRect(x, cy, cardW, cardH, 3, 3, "F");
+    pdf.setDrawColor(...BORDER);
+    pdf.setLineWidth(0.25);
+    pdf.roundedRect(x, y, cardWidth, 22, 2, 2, "FD");
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(...SLATE);
+    pdf.text(card.label, x + 4, y + 7);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(13);
+    pdf.setTextColor(...card.color);
+    pdf.text(fitText(pdf, card.value, cardWidth - 8), x + 4, y + 16);
+  });
+
+  return y + 30;
+}
+
+function drawTable(
+  pdf: jsPDF,
+  startY: number,
+  title: string,
+  columns: PdfColumn[],
+  rows: string[][],
+  emptyMessage: string,
+): number {
+  let y = ensureSpace(pdf, startY, rows.length > 0 ? 28 : 24);
+  y = drawSectionTitle(pdf, y, title);
+
+  if (rows.length === 0) {
+    pdf.setFillColor(...LIGHT);
+    pdf.setDrawColor(...BORDER);
+    pdf.roundedRect(MARGIN, y, contentWidth(pdf), 13, 2, 2, "FD");
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(...SLATE);
-    pdf.text(s.label, x + 6, cy + 8);
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(13);
-    pdf.setTextColor(...s.color);
-    pdf.text(truncate(s.value, 14), x + 6, cy + 16);
+    pdf.text(emptyMessage, MARGIN + 4, y + 8);
+    return y + 20;
+  }
+
+  y = drawTableHeader(pdf, y, columns);
+  rows.forEach((cells, rowIndex) => {
+    if (y + ROW_HEIGHT > pdf.internal.pageSize.getHeight() - BOTTOM_MARGIN) {
+      y = addContinuationPage(pdf);
+      y = drawSectionTitle(pdf, y, `${title} - continued`);
+      y = drawTableHeader(pdf, y, columns);
+    }
+    y = drawTableRow(pdf, y, columns, cells, rowIndex % 2 === 1);
   });
-  return y + 2 * (cardH + 6) + 4;
+
+  return y + 7;
 }
 
-function sectionHeader(pdf: jsPDF, m: number, y: number, title: string): number {
-  if (y > 250) {
-    pdf.addPage();
-    y = 22;
-  }
+function drawSectionTitle(pdf: jsPDF, y: number, title: string): number {
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(13);
-  pdf.setTextColor(...INDIGO);
-  pdf.text(title, m, y);
+  pdf.setFontSize(11.5);
+  pdf.setTextColor(...TEXT);
+  pdf.text(title, MARGIN, y);
   pdf.setDrawColor(...INDIGO);
-  pdf.setLineWidth(0.5);
-  pdf.line(m, y + 1.5, pdf.internal.pageSize.getWidth() - m, y + 1.5);
-  return y + 8;
+  pdf.setLineWidth(0.6);
+  pdf.line(MARGIN, y + 2, MARGIN + 10, y + 2);
+  pdf.setDrawColor(...BORDER);
+  pdf.setLineWidth(0.25);
+  pdf.line(MARGIN + 10, y + 2, pdf.internal.pageSize.getWidth() - MARGIN, y + 2);
+  return y + 7;
 }
 
-function tableHeader(pdf: jsPDF, m: number, y: number, cols: string[]): number {
+function drawTableHeader(pdf: jsPDF, y: number, columns: PdfColumn[]): number {
   pdf.setFillColor(...INDIGO);
-  pdf.roundedRect(m, y - 5, pdf.internal.pageSize.getWidth() - m * 2, 7, 1.5, 1.5, "F");
+  pdf.roundedRect(MARGIN, y, contentWidth(pdf), 8, 1.5, 1.5, "F");
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(8.5);
+  pdf.setFontSize(8);
   pdf.setTextColor(255, 255, 255);
-  const widths = colWidths(cols.length);
-  let x = m + 2;
-  cols.forEach((c, i) => {
-    pdf.text(c, x, y, { align: "left" });
-    x += widths[i];
+
+  let x = MARGIN;
+  columns.forEach((column) => {
+    const textX = column.align === "right" ? x + column.width - 2.5 : x + 2.5;
+    pdf.text(column.header, textX, y + 5.2, { align: column.align || "left" });
+    x += column.width;
   });
-  return y + 6;
+  return y + 8.5;
 }
 
-function tableRow(pdf: jsPDF, m: number, y: number, cells: string[]): number {
-  if (y > 270) {
-    pdf.addPage();
-    return tableHeader(pdf, m, 22, cellLabels(cells.length)) + 1;
-  }
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(8.5);
-  pdf.setTextColor(30, 41, 59);
-  const widths = colWidths(cells.length);
-  let x = m + 2;
-  cells.forEach((c, i) => {
-    pdf.text(c, x, y);
-    x += widths[i];
-  });
-  // subtle zebra line
-  pdf.setDrawColor(230, 230, 230);
-  pdf.setLineWidth(0.2);
-  pdf.line(m, y + 1.5, pdf.internal.pageSize.getWidth() - m, y + 1.5);
-  return y + 6;
-}
-
-function colWidths(count: number): number[] {
-  if (count === 5) return [30, 40, 34, 34, 36];
-  return [32, 60, 42, 40];
-}
-
-function cellLabels(count: number): string[] {
-  if (count === 5) return ["Receipt #", "Member", "Method", "Date", "Amount"];
-  return ["Date", "Description", "Category", "Amount"];
-}
-
-function membershipTable(
+function drawTableRow(
   pdf: jsPDF,
-  m: number,
   y: number,
-  title: string,
-  rows: { member_number: string; full_name: string; phone: string | null; plan_name: string | null; expiry_date: string | null }[],
+  columns: PdfColumn[],
+  cells: string[],
+  shaded: boolean,
 ): number {
-  y += 2;
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(10.5);
-  pdf.setTextColor(...SLATE);
-  pdf.text(`${title} (${rows.length})`, m, y);
-  y += 5;
-  if (rows.length === 0) {
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    pdf.setTextColor(150, 150, 150);
-    pdf.text("  None.", m, y);
-    return y + 5;
+  if (shaded) {
+    pdf.setFillColor(...LIGHT);
+    pdf.rect(MARGIN, y, contentWidth(pdf), ROW_HEIGHT, "F");
   }
-  y = tableHeader(pdf, m, y, ["Member #", "Name", "Phone", "Plan", "Expiry"]);
-  for (const r of rows) {
-    y = tableRow(pdf, m, y, [
-      r.member_number,
-      truncate(r.full_name, 18),
-      r.phone || "-",
-      truncate(r.plan_name || "-", 18),
-      r.expiry_date || "-",
-    ]);
-  }
-  return y;
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8.2);
+  pdf.setTextColor(...TEXT);
+  let x = MARGIN;
+  columns.forEach((column, index) => {
+    const value = fitText(pdf, String(cells[index] ?? "-"), column.width - 5);
+    const textX = column.align === "right" ? x + column.width - 2.5 : x + 2.5;
+    pdf.text(value, textX, y + 4.4, { align: column.align || "left" });
+    x += column.width;
+  });
+
+  pdf.setDrawColor(...BORDER);
+  pdf.setLineWidth(0.15);
+  pdf.line(MARGIN, y + ROW_HEIGHT, pdf.internal.pageSize.getWidth() - MARGIN, y + ROW_HEIGHT);
+  return y + ROW_HEIGHT;
 }
 
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 1) + "\u2026" : s;
+function ensureSpace(pdf: jsPDF, y: number, neededHeight: number): number {
+  return y + neededHeight > pdf.internal.pageSize.getHeight() - BOTTOM_MARGIN
+    ? addContinuationPage(pdf)
+    : y;
+}
+
+function addContinuationPage(pdf: jsPDF): number {
+  pdf.addPage();
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(9);
+  pdf.setTextColor(...INDIGO_DARK);
+  pdf.text("GYM MANAGEMENT REPORT", MARGIN, 13);
+  pdf.setDrawColor(...BORDER);
+  pdf.setLineWidth(0.3);
+  pdf.line(MARGIN, 16, pageWidth - MARGIN, 16);
+  return 24;
+}
+
+function addPageFooters(pdf: jsPDF): void {
+  const pageCount = pdf.getNumberOfPages();
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  for (let page = 1; page <= pageCount; page += 1) {
+    pdf.setPage(page);
+    pdf.setDrawColor(...BORDER);
+    pdf.setLineWidth(0.2);
+    pdf.line(MARGIN, pageHeight - 13, pageWidth - MARGIN, pageHeight - 13);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...SLATE);
+    pdf.text("Gym POS", MARGIN, pageHeight - 8);
+    pdf.text(`Page ${page} of ${pageCount}`, pageWidth - MARGIN, pageHeight - 8, {
+      align: "right",
+    });
+  }
+}
+
+function contentWidth(pdf: jsPDF): number {
+  return pdf.internal.pageSize.getWidth() - MARGIN * 2;
+}
+
+function fitText(pdf: jsPDF, value: string, maxWidth: number): string {
+  if (pdf.getTextWidth(value) <= maxWidth) return value;
+  let shortened = value;
+  while (shortened.length > 1 && pdf.getTextWidth(`${shortened}...`) > maxWidth) {
+    shortened = shortened.slice(0, -1);
+  }
+  return `${shortened}...`;
 }

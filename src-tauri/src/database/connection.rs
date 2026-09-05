@@ -37,8 +37,7 @@ mod tests {
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA foreign_keys = ON;")
-            .unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         migrations::run_migrations(&mut conn).unwrap();
         conn
     }
@@ -61,6 +60,9 @@ mod tests {
         assert!(tables.contains(&"receipts".to_string()));
         assert!(tables.contains(&"settings".to_string()));
         assert!(tables.contains(&"schema_migrations".to_string()));
+        assert!(tables.contains(&"memberships".to_string()));
+        assert!(tables.contains(&"monthly_membership_bills".to_string()));
+        assert!(tables.contains(&"payment_allocations".to_string()));
     }
 
     #[test]

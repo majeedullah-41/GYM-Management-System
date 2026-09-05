@@ -1,5 +1,8 @@
 # Gym POS — Member Enrollment & Payment Workflow
 
+> Current policy: admission and advance fees are no longer supported. Members are charged only
+> their membership plan fee. Any admission-fee references below are legacy documentation.
+
 ## 1. Overview
 This document describes the required workflow for member enrollment, plan assignment, and fee/payment tracking in the Gym POS system. Follow this exactly when implementing the "Add Member" and "Payments" features.
 

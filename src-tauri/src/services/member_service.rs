@@ -6,9 +6,7 @@ use crate::dto::member::{
 };
 use crate::errors::AppError;
 use crate::models::Member;
-use crate::repositories::{
-    member_repository, membership_plan_repository, payment_repository,
-};
+use crate::repositories::{member_repository, membership_plan_repository};
 use crate::utils::dates::now_iso8601;
 
 pub fn create_member(
@@ -17,9 +15,7 @@ pub fn create_member(
 ) -> Result<MemberResponse, AppError> {
     let full_name = request.full_name.trim().to_string();
     if full_name.is_empty() {
-        return Err(AppError::ValidationError(
-            "Member name is required".into(),
-        ));
+        return Err(AppError::ValidationError("Member name is required".into()));
     }
 
     if let Some(ref phone) = request.phone {
@@ -48,23 +44,52 @@ pub fn create_member(
         id: uuid::Uuid::new_v4().to_string(),
         member_number,
         full_name,
-        father_name: request.father_name.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        phone: request.phone.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        cnic: request.cnic.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        address: request.address.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        father_name: request
+            .father_name
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        phone: request
+            .phone
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        cnic: request
+            .cnic
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        address: request
+            .address
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
         date_of_birth: request.date_of_birth,
         gender: request.gender,
         photo_path: None,
-        notes: request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        admission_fee: request.admission_fee.filter(|v| *v > 0),
+        notes: request
+            .notes
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        admission_fee: None,
         membership_plan_id: request.membership_plan_id,
         is_archived: false,
         created_at: now.clone(),
         updated_at: now,
     };
 
-    member_repository::create(conn, &member)?;
-    log::info!("Created member: {} ({})", member.full_name, member.member_number);
+    let tx = conn.unchecked_transaction()?;
+    member_repository::create(&tx, &member)?;
+    if let Some(ref plan_id) = member.membership_plan_id {
+        crate::services::billing_service::create_membership_for_plan(
+            &tx,
+            &member.id,
+            plan_id,
+            &crate::utils::dates::today_iso(),
+        )?;
+    }
+    tx.commit()?;
+    log::info!(
+        "Created member: {} ({})",
+        member.full_name,
+        member.member_number
+    );
 
     let membership = get_membership_info(conn, &member.id)?;
     Ok(MemberResponse::from_member(member, membership))
@@ -90,7 +115,7 @@ pub fn list_members(
         let membership = get_membership_info(conn, &member.id)?;
 
         if let Some(filter) = status_filter {
-            let is_paid = membership.admission_fee_collected && membership.outstanding_balance <= 0;
+            let is_paid = membership.outstanding_balance <= 0;
             match filter {
                 "paid" if !is_paid => continue,
                 "unpaid" if is_paid => continue,
@@ -118,9 +143,7 @@ pub fn update_member(
 
     let full_name = request.full_name.trim().to_string();
     if full_name.is_empty() {
-        return Err(AppError::ValidationError(
-            "Member name is required".into(),
-        ));
+        return Err(AppError::ValidationError("Member name is required".into()));
     }
 
     if let Some(ref phone) = request.phone {
@@ -132,14 +155,30 @@ pub fn update_member(
     }
 
     member.full_name = full_name;
-    member.father_name = request.father_name.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-    member.phone = request.phone.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-    member.cnic = request.cnic.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-    member.address = request.address.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    member.father_name = request
+        .father_name
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    member.phone = request
+        .phone
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    member.cnic = request
+        .cnic
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    member.address = request
+        .address
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     member.date_of_birth = request.date_of_birth;
     member.gender = request.gender;
-    member.notes = request.notes.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-    member.admission_fee = request.admission_fee.filter(|v| *v > 0);
+    member.notes = request
+        .notes
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    member.admission_fee = None;
+    let old_plan_id = member.membership_plan_id.clone();
     member.membership_plan_id = request.membership_plan_id.clone();
     member.updated_at = now_iso8601();
 
@@ -154,8 +193,30 @@ pub fn update_member(
         }
     }
 
-    member_repository::update(conn, &member)?;
-    log::info!("Updated member: {} ({})", member.full_name, member.member_number);
+    let tx = conn.unchecked_transaction()?;
+    member_repository::update(&tx, &member)?;
+    if old_plan_id != member.membership_plan_id {
+        crate::services::billing_service::end_active_membership(
+            &tx,
+            id,
+            "cancelled",
+            &crate::utils::dates::today_iso(),
+        )?;
+        if let Some(ref plan_id) = member.membership_plan_id {
+            crate::services::billing_service::create_membership_for_plan(
+                &tx,
+                id,
+                plan_id,
+                &crate::utils::dates::today_iso(),
+            )?;
+        }
+    }
+    tx.commit()?;
+    log::info!(
+        "Updated member: {} ({})",
+        member.full_name,
+        member.member_number
+    );
 
     let membership = get_membership_info(conn, &member.id)?;
     Ok(MemberResponse::from_member(member, membership))
@@ -166,8 +227,20 @@ pub fn archive_member(conn: &Connection, id: &str) -> Result<MemberResponse, App
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
 
     let now = now_iso8601();
-    member_repository::archive(conn, id, &now)?;
-    log::info!("Archived member: {} ({})", member.full_name, member.member_number);
+    let tx = conn.unchecked_transaction()?;
+    member_repository::archive(&tx, id, &now)?;
+    crate::services::billing_service::end_active_membership(
+        &tx,
+        id,
+        "cancelled",
+        &crate::utils::dates::today_iso(),
+    )?;
+    tx.commit()?;
+    log::info!(
+        "Archived member: {} ({})",
+        member.full_name,
+        member.member_number
+    );
 
     let mut updated = member;
     updated.is_archived = true;
@@ -181,8 +254,26 @@ pub fn unarchive_member(conn: &Connection, id: &str) -> Result<MemberResponse, A
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
 
     let now = now_iso8601();
-    member_repository::unarchive(conn, id, &now)?;
-    log::info!("Reactivated member: {} ({})", member.full_name, member.member_number);
+    let tx = conn.unchecked_transaction()?;
+    member_repository::unarchive(&tx, id, &now)?;
+    if let Some(ref plan_id) = member.membership_plan_id {
+        let plan = membership_plan_repository::get_by_id(&tx, plan_id)?
+            .ok_or_else(|| AppError::NotFoundError("Assigned plan not found".into()))?;
+        if plan.is_active {
+            crate::services::billing_service::create_membership_for_plan(
+                &tx,
+                id,
+                plan_id,
+                &crate::utils::dates::today_iso(),
+            )?;
+        }
+    }
+    tx.commit()?;
+    log::info!(
+        "Reactivated member: {} ({})",
+        member.full_name,
+        member.member_number
+    );
 
     let mut updated = member;
     updated.is_archived = false;
@@ -191,16 +282,14 @@ pub fn unarchive_member(conn: &Connection, id: &str) -> Result<MemberResponse, A
     Ok(MemberResponse::from_member(updated, membership))
 }
 
-fn get_membership_info(
-    conn: &Connection,
-    member_id: &str,
-) -> Result<MembershipInfo, AppError> {
-    let (plan_name, start_date, expiry_date, _latest_outstanding) =
-        member_repository::get_latest_membership_info(conn, member_id)?;
-    let outstanding = payment_repository::get_member_total_outstanding(conn, member_id)?;
-
-    let status = compute_membership_status(expiry_date.as_deref());
-    let admission_fee_collected = member_repository::has_any_payments(conn, member_id)?;
+fn get_membership_info(conn: &Connection, member_id: &str) -> Result<MembershipInfo, AppError> {
+    let billing = crate::services::billing_service::get_billing_summary(conn, member_id)?;
+    let plan_name = billing.plan_name;
+    let start_date = billing.enrollment_date;
+    let expiry_date = None;
+    let outstanding = billing.total_outstanding;
+    let status = billing.membership_status;
+    let admission_fee_collected = true;
 
     Ok(MembershipInfo {
         plan_name,
@@ -283,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn should_create_member_with_admission_fee() {
+    fn should_ignore_legacy_admission_fee() {
         let conn = test_db();
         let result = create_member(
             &conn,
@@ -294,8 +383,8 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(result.admission_fee, Some(500));
-        assert!(!result.admission_fee_collected);
+        assert_eq!(result.admission_fee, None);
+        assert!(result.admission_fee_collected);
         assert!(!result.is_archived);
     }
 

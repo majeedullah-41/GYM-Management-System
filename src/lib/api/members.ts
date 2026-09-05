@@ -12,8 +12,6 @@ export interface MemberResponse {
   gender: string | null;
   notes: string | null;
   is_archived: boolean;
-  admission_fee: number | null;
-  admission_fee_collected: boolean;
   membership_plan_id: string | null;
   membership_plan_name: string | null;
   membership_start_date: string | null;
@@ -34,7 +32,6 @@ export interface CreateMemberRequest {
   date_of_birth: string | null;
   gender: string | null;
   notes: string | null;
-  admission_fee: number | null;
   membership_plan_id?: string | null;
 }
 
@@ -47,7 +44,6 @@ export interface UpdateMemberRequest {
   date_of_birth: string | null;
   gender: string | null;
   notes: string | null;
-  admission_fee: number | null;
   membership_plan_id?: string | null;
 }
 

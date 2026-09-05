@@ -6,12 +6,13 @@ use crate::models::MembershipPlan;
 use crate::repositories::membership_plan_repository;
 use crate::utils::dates::now_iso8601;
 
-pub fn create_plan(conn: &Connection, request: CreatePlanRequest) -> Result<PlanResponse, AppError> {
+pub fn create_plan(
+    conn: &Connection,
+    request: CreatePlanRequest,
+) -> Result<PlanResponse, AppError> {
     let name = request.name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::ValidationError(
-            "Plan name is required".into(),
-        ));
+        return Err(AppError::ValidationError("Plan name is required".into()));
     }
     if request.duration_days <= 0 {
         return Err(AppError::ValidationError(
@@ -19,9 +20,7 @@ pub fn create_plan(conn: &Connection, request: CreatePlanRequest) -> Result<Plan
         ));
     }
     if request.price < 0 {
-        return Err(AppError::ValidationError(
-            "Price cannot be negative".into(),
-        ));
+        return Err(AppError::ValidationError("Price cannot be negative".into()));
     }
 
     if membership_plan_repository::exists_by_name(conn, &name, None)? {
@@ -84,15 +83,12 @@ pub fn update_plan(
     id: &str,
     request: UpdatePlanRequest,
 ) -> Result<PlanResponse, AppError> {
-    let mut plan = membership_plan_repository::get_by_id(conn, id)?.ok_or_else(|| {
-        AppError::NotFoundError(format!("Plan with id '{}' not found", id))
-    })?;
+    let mut plan = membership_plan_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Plan with id '{}' not found", id)))?;
 
     let name = request.name.trim().to_string();
     if name.is_empty() {
-        return Err(AppError::ValidationError(
-            "Plan name is required".into(),
-        ));
+        return Err(AppError::ValidationError("Plan name is required".into()));
     }
     if request.duration_days <= 0 {
         return Err(AppError::ValidationError(
@@ -100,9 +96,7 @@ pub fn update_plan(
         ));
     }
     if request.price < 0 {
-        return Err(AppError::ValidationError(
-            "Price cannot be negative".into(),
-        ));
+        return Err(AppError::ValidationError("Price cannot be negative".into()));
     }
 
     if membership_plan_repository::exists_by_name(conn, &name, Some(id))? {
@@ -129,14 +123,11 @@ pub fn update_plan(
 }
 
 pub fn deactivate_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppError> {
-    let mut plan = membership_plan_repository::get_by_id(conn, id)?.ok_or_else(|| {
-        AppError::NotFoundError(format!("Plan with id '{}' not found", id))
-    })?;
+    let mut plan = membership_plan_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Plan with id '{}' not found", id)))?;
 
     if !plan.is_active {
-        return Err(AppError::ValidationError(
-            "Plan is already inactive".into(),
-        ));
+        return Err(AppError::ValidationError("Plan is already inactive".into()));
     }
 
     plan.is_active = false;
@@ -150,14 +141,11 @@ pub fn deactivate_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppE
 }
 
 pub fn reactivate_plan(conn: &Connection, id: &str) -> Result<PlanResponse, AppError> {
-    let mut plan = membership_plan_repository::get_by_id(conn, id)?.ok_or_else(|| {
-        AppError::NotFoundError(format!("Plan with id '{}' not found", id))
-    })?;
+    let mut plan = membership_plan_repository::get_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Plan with id '{}' not found", id)))?;
 
     if plan.is_active {
-        return Err(AppError::ValidationError(
-            "Plan is already active".into(),
-        ));
+        return Err(AppError::ValidationError("Plan is already active".into()));
     }
 
     plan.is_active = true;

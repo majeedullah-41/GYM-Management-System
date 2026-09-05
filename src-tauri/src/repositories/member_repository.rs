@@ -60,7 +60,8 @@ pub fn list(
     let mut param_values: Vec<String> = Vec::new();
 
     if !search.is_empty() {
-        conditions.push("(full_name LIKE ?1 OR member_number LIKE ?1 OR phone LIKE ?1)".to_string());
+        conditions
+            .push("(full_name LIKE ?1 OR member_number LIKE ?1 OR phone LIKE ?1)".to_string());
         param_values.push(format!("%{}%", search));
     }
 

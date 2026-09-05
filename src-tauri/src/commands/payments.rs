@@ -59,7 +59,10 @@ pub async fn update_payment(
     request: UpdatePaymentRequest,
 ) -> Result<PaymentResponse, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| payment_service::update_payment(c, &id, request)).await
+    run_db(conn, move |c| {
+        payment_service::update_payment(c, &id, request)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -68,7 +71,10 @@ pub async fn list_member_payments(
     member_id: String,
 ) -> Result<Vec<PaymentResponse>, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| payment_service::list_member_payments(c, &member_id)).await
+    run_db(conn, move |c| {
+        payment_service::list_member_payments(c, &member_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -78,7 +84,10 @@ pub async fn get_payment_summary(
     plan_id: String,
 ) -> Result<PaymentSummary, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| payment_service::get_payment_summary(c, &member_id, &plan_id)).await
+    run_db(conn, move |c| {
+        payment_service::get_payment_summary(c, &member_id, &plan_id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -88,5 +97,8 @@ pub async fn void_payment(
     request: VoidPaymentRequest,
 ) -> Result<PaymentResponse, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, move |c| payment_service::void_payment(c, &id, &request.reason)).await
+    run_db(conn, move |c| {
+        payment_service::void_payment(c, &id, &request.reason)
+    })
+    .await
 }

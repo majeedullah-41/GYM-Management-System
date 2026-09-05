@@ -30,12 +30,9 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
         const p = await listMemberPayments(member.id);
         if (cancelled) return;
         setPayments(p);
-        const planId =
-          p.length > 0 ? p[0].membership_plan_id : member.membership_plan_id;
+        const planId = p.length > 0 ? p[0].membership_plan_id : member.membership_plan_id;
         if (planId) {
-          const s = await getPaymentSummary(member.id, planId).catch(
-            () => null,
-          );
+          const s = await getPaymentSummary(member.id, planId).catch(() => null);
           if (!cancelled) setSummary(s);
         }
       } catch {
@@ -57,13 +54,13 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
     );
   }
 
+  const lastPayment = payments.find((payment) => !payment.is_voided);
+
   return (
     <div className="space-y-4 p-4">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-md border border-border bg-surface p-4 md:col-span-2">
-          <h3 className="mb-3 text-sm font-semibold text-text-primary">
-            Member Information
-          </h3>
+          <h3 className="mb-3 text-sm font-semibold text-text-primary">Member Information</h3>
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
             <div>
               <span className="text-text-muted">Member #</span>
@@ -89,19 +86,6 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
               <div>
                 <span className="text-text-muted">CNIC</span>
                 <div className="font-mono">{member.cnic}</div>
-              </div>
-            )}
-            {member.admission_fee != null && member.admission_fee > 0 && (
-              <div>
-                <span className="text-text-muted">Admission Fee</span>
-                <div>
-                  {formatCurrency(member.admission_fee)}
-                  {!member.admission_fee_collected && (
-                    <span className="ml-1 text-xs font-medium text-orange-600">
-                      (not collected)
-                    </span>
-                  )}
-                </div>
               </div>
             )}
             {member.gender && (
@@ -132,21 +116,17 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
         </div>
 
         <div className="rounded-md border border-border bg-surface p-4">
-          <h3 className="mb-3 text-sm font-semibold text-text-primary">
-            Membership & Dues
-          </h3>
+          <h3 className="mb-3 text-sm font-semibold text-text-primary">Membership & Dues</h3>
           <div className="space-y-3 text-sm">
             <div>
               <span className="text-text-muted">Plan</span>
-              <div className="font-medium">
-                {member.membership_plan_name || "No Plan"}
-              </div>
+              <div className="font-medium">{member.membership_plan_name || "No Plan"}</div>
             </div>
             <div>
               <span className="text-text-muted">Status</span>
               <div>
                 <Badge variant={member.is_paid ? "success" : "danger"}>
-                  {member.is_paid ? "Paid" : "Unpaid"}
+                  {member.membership_status || "No membership"}
                 </Badge>
               </div>
             </div>
@@ -156,6 +136,16 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
                 <div>{member.membership_start_date}</div>
               </div>
             )}
+            {summary && (
+              <div>
+                <span className="text-text-muted">Plan Fee</span>
+                <div className="font-medium">{formatCurrency(summary.plan_price)}</div>
+              </div>
+            )}
+            <div>
+              <span className="text-text-muted">Last Payment Date</span>
+              <div>{lastPayment?.payment_date ?? "—"}</div>
+            </div>
             {member.membership_expiry_date && (
               <div>
                 <span className="text-text-muted">Expiry Date</span>
@@ -165,13 +155,27 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
             <div className="border-t border-border pt-3">
               <span className="text-text-muted">Total Paid</span>
               <div className="font-medium text-green-600">
-                {formatCurrency(
-                  payments.reduce((sum, p) => sum + p.amount, 0),
-                )}
+                {formatCurrency(payments.reduce((sum, p) => sum + p.amount, 0))}
               </div>
             </div>
             <div>
-              <span className="text-text-muted">Pending Dues</span>
+              <span className="text-text-muted">Previous Dues</span>
+              <div
+                className={
+                  member.outstanding_balance > 0
+                    ? "font-semibold text-orange-600"
+                    : "text-green-600"
+                }
+              >
+                {formatCurrency(summary?.previous_dues ?? 0)}
+              </div>
+            </div>
+            <div>
+              <span className="text-text-muted">Current Plan Period</span>
+              <div>{formatCurrency(summary?.current_month_fee ?? 0)}</div>
+            </div>
+            <div>
+              <span className="text-text-muted">Total Outstanding</span>
               <div
                 className={
                   member.outstanding_balance > 0
@@ -182,22 +186,60 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
                 {formatCurrency(member.outstanding_balance)}
               </div>
             </div>
-            {summary && summary.is_first_payment && summary.admission_fee && (
-              <div>
-                <span className="text-text-muted">Admission Fee Due</span>
-                <div className="text-orange-600">
-                  {formatCurrency(summary.admission_fee)}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
       <div className="rounded-md border border-border bg-surface p-4">
-        <h3 className="mb-3 text-sm font-semibold text-text-primary">
-          Fee / Payment History
-        </h3>
+        <h3 className="mb-3 text-sm font-semibold text-text-primary">Membership Dues History</h3>
+        {!summary || summary.bills.length === 0 ? (
+          <p className="text-sm text-text-muted">No membership bills generated.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="pb-2 text-left text-xs text-text-muted">Plan Period</th>
+                  <th className="pb-2 text-right text-xs text-text-muted">Expected</th>
+                  <th className="pb-2 text-right text-xs text-text-muted">Paid</th>
+                  <th className="pb-2 text-right text-xs text-text-muted">Remaining</th>
+                  <th className="pb-2 text-left text-xs text-text-muted">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...summary.bills].reverse().map((bill) => (
+                  <tr key={bill.id} className="border-b border-border last:border-0">
+                    <td className="py-2">
+                      {bill.period_start} to {bill.period_end}
+                    </td>
+                    <td className="py-2 text-right">{formatCurrency(bill.expected_amount)}</td>
+                    <td className="py-2 text-right text-green-600">
+                      {formatCurrency(bill.paid_amount)}
+                    </td>
+                    <td className="py-2 text-right">{formatCurrency(bill.remaining_amount)}</td>
+                    <td className="py-2">
+                      <Badge
+                        variant={
+                          bill.status === "PAID"
+                            ? "success"
+                            : bill.status === "CURRENT"
+                              ? "info"
+                              : "danger"
+                        }
+                      >
+                        {bill.status.replace("PARTIALLY_PAID", "PARTIAL")}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-md border border-border bg-surface p-4">
+        <h3 className="mb-3 text-sm font-semibold text-text-primary">Fee / Payment History</h3>
         {payments.length === 0 ? (
           <p className="text-sm text-text-muted">No payments recorded yet.</p>
         ) : (
@@ -205,35 +247,18 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="pb-2 text-left text-xs font-medium text-text-muted">
-                    Receipt #
-                  </th>
-                  <th className="pb-2 text-left text-xs font-medium text-text-muted">
-                    Date
-                  </th>
-                  <th className="pb-2 text-right text-xs font-medium text-text-muted">
-                    Amount
-                  </th>
-                  <th className="pb-2 text-left text-xs font-medium text-text-muted">
-                    Method
-                  </th>
-                  <th className="pb-2 text-left text-xs font-medium text-text-muted">
-                    Period
-                  </th>
+                  <th className="pb-2 text-left text-xs font-medium text-text-muted">Receipt #</th>
+                  <th className="pb-2 text-left text-xs font-medium text-text-muted">Date</th>
+                  <th className="pb-2 text-right text-xs font-medium text-text-muted">Amount</th>
+                  <th className="pb-2 text-left text-xs font-medium text-text-muted">Method</th>
+                  <th className="pb-2 text-left text-xs font-medium text-text-muted">Period</th>
                 </tr>
               </thead>
               <tbody>
                 {payments.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <td className="py-2.5 font-mono text-xs text-text-muted">
-                      {p.receipt_number}
-                    </td>
-                    <td className="py-2.5 text-text-primary">
-                      {p.payment_date}
-                    </td>
+                  <tr key={p.id} className="border-b border-border last:border-0">
+                    <td className="py-2.5 font-mono text-xs text-text-muted">{p.receipt_number}</td>
+                    <td className="py-2.5 text-text-primary">{p.payment_date}</td>
                     <td className="py-2.5 text-right font-medium text-text-primary">
                       {formatCurrency(p.amount)}
                     </td>
@@ -243,7 +268,14 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
                       </Badge>
                     </td>
                     <td className="py-2.5 text-xs text-text-muted">
-                      {p.membership_start_date} → {p.membership_expiry_date}
+                      {p.allocations.length > 0
+                        ? p.allocations
+                            .map(
+                              (a) =>
+                                `${a.period_start} to ${a.period_end}: ${formatCurrency(a.amount)}`,
+                            )
+                            .join(", ")
+                        : `${p.membership_start_date} → ${p.membership_expiry_date}`}
                     </td>
                   </tr>
                 ))}

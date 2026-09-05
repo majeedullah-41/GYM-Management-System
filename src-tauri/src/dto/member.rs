@@ -78,7 +78,7 @@ impl MemberResponse {
             membership_expiry_date: membership.expiry_date,
             membership_status: membership.status,
             outstanding_balance: membership.outstanding_balance,
-            is_paid: membership.admission_fee_collected && membership.outstanding_balance <= 0,
+            is_paid: membership.outstanding_balance <= 0,
             created_at: member.created_at,
             updated_at: member.updated_at,
         }

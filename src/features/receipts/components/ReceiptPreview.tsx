@@ -12,10 +12,7 @@ import {
   type ReceiptResponse,
 } from "../../../lib/api/receipts";
 import { formatCurrency } from "../../../lib/utils/format";
-import {
-  getAllSettings,
-  type PrintSettings,
-} from "../../../lib/api/settings";
+import { getAllSettings, type PrintSettings } from "../../../lib/api/settings";
 
 interface Props {
   isOpen: boolean;
@@ -50,9 +47,7 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
       setReceipt(null);
       getReceiptByPaymentId(paymentId)
         .then(setReceipt)
-        .catch((err) =>
-          setError(err instanceof Error ? err.message : "Failed to load receipt"),
-        )
+        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load receipt"))
         .finally(() => setLoading(false));
     }
   }, [isOpen, paymentId]);
@@ -73,7 +68,11 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
       setPrinting(true);
       const res = await printReceipt(receipt);
       if (res.mode === "pdf") {
-        addToast({ variant: "success", title: "Receipt saved as PDF", message: res.path || undefined });
+        addToast({
+          variant: "success",
+          title: "Receipt saved as PDF",
+          message: res.path || undefined,
+        });
       } else if (res.mode === "print") {
         addToast({ variant: "info", title: "Receipt opened for printing", message: res.message });
       } else {
@@ -101,11 +100,7 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
-            <Button
-              onClick={handlePrint}
-              loading={printing}
-              disabled={!receipt || printing}
-            >
+            <Button onClick={handlePrint} loading={printing} disabled={!receipt || printing}>
               <Printer size={14} className="mr-1.5" />
               Print Receipt
             </Button>
@@ -114,14 +109,10 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
       >
         {loading && <LoadingState message="Loading receipt..." />}
         {error && <ErrorState message={error} />}
-        {receipt && print && (
-          <ReceiptContent receipt={receipt} print={print} footer={footer} />
-        )}
+        {receipt && print && <ReceiptContent receipt={receipt} print={print} footer={footer} />}
       </Modal>
 
-      {receipt && print && (
-        <PrintPortal receipt={receipt} print={print} footer={footer} />
-      )}
+      {receipt && print && <PrintPortal receipt={receipt} print={print} footer={footer} />}
     </>
   );
 }
@@ -141,10 +132,7 @@ function ReceiptContent({
       style={{ width: `${(print.paper_width === "58" ? 58 : 80) * 3.6}px` }}
     >
       {print.show_gym_name && (
-        <div
-          className="text-center font-bold"
-          style={{ fontSize: print.font_size + 2 }}
-        >
+        <div className="text-center font-bold" style={{ fontSize: print.font_size + 2 }}>
           {receipt.gym_name}
         </div>
       )}
@@ -181,21 +169,31 @@ function ReceiptContent({
       {print.show_plan_info && receipt.plan_name && (
         <PvRow label="Plan" value={receipt.plan_name} fontPx={print.font_size} />
       )}
-      {print.show_period && (
-        <PvRow
-          label="Period"
-          value={`${receipt.membership_start_date}  to  ${receipt.membership_expiry_date}`}
-          fontPx={print.font_size}
-        />
-      )}
+      {print.show_period &&
+        (receipt.allocations.length > 0 ? (
+          <div style={{ fontSize: print.font_size }}>
+            <div className="font-bold">Applied To</div>
+            {receipt.allocations.map((allocation) => (
+              <PvRow
+                key={allocation.billing_period}
+                label={`${allocation.period_start} to ${allocation.period_end}`}
+                value={formatCurrency(allocation.amount)}
+                fontPx={print.font_size}
+              />
+            ))}
+          </div>
+        ) : (
+          <PvRow
+            label="Period"
+            value={`${receipt.membership_start_date} to ${receipt.membership_expiry_date}`}
+            fontPx={print.font_size}
+          />
+        ))}
       <PvDivider />
       {print.show_payment_details && (
         <>
           <PvRow label="Method" value={receipt.payment_method} fontPx={print.font_size} />
-          <div
-            className="text-center font-bold"
-            style={{ fontSize: print.font_size + 1 }}
-          >
+          <div className="text-center font-bold" style={{ fontSize: print.font_size + 1 }}>
             AMOUNT PAID&nbsp;&nbsp;{formatCurrency(receipt.amount)}
           </div>
         </>
@@ -203,7 +201,9 @@ function ReceiptContent({
       {print.show_remaining_balance && (
         <PvRow
           label="Remaining"
-          value={receipt.remaining_balance > 0 ? formatCurrency(receipt.remaining_balance) : "Rs. 0"}
+          value={
+            receipt.remaining_balance > 0 ? formatCurrency(receipt.remaining_balance) : "Rs. 0"
+          }
           fontPx={print.font_size}
         />
       )}
@@ -246,11 +246,7 @@ function PrintPortal({
           }
         }
       `}</style>
-      <div
-        id="receipt-print-portal"
-        className="receipt-print-portal"
-        aria-hidden="true"
-      >
+      <div id="receipt-print-portal" className="receipt-print-portal" aria-hidden="true">
         <ReceiptContent receipt={receipt} print={print} footer={footer} />
       </div>
     </>,
@@ -258,15 +254,7 @@ function PrintPortal({
   );
 }
 
-function PvRow({
-  label,
-  value,
-  fontPx,
-}: {
-  label: string;
-  value: string;
-  fontPx: number;
-}) {
+function PvRow({ label, value, fontPx }: { label: string; value: string; fontPx: number }) {
   return (
     <div className="flex justify-between" style={{ fontSize: fontPx }}>
       <span>{label}</span>

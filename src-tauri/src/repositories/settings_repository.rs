@@ -161,16 +161,21 @@ pub fn get_print_settings(conn: &Connection) -> Result<PrintSettings, AppError> 
     })
 }
 
-pub fn save_print_settings(
-    conn: &Connection,
-    print: &PrintSettings,
-) -> Result<(), AppError> {
+pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     let set = |key: &str, value: &str| set_setting(conn, key, value, &now);
     let set_bool = |key: &str, value: bool| set(key, if value { "1" } else { "0" });
 
-    let destination = if print.destination == "pdf" { "pdf" } else { "print_window" };
-    let paper_width = if print.paper_width == "58" { "58" } else { "80" };
+    let destination = if print.destination == "pdf" {
+        "pdf"
+    } else {
+        "print_window"
+    };
+    let paper_width = if print.paper_width == "58" {
+        "58"
+    } else {
+        "80"
+    };
     let font_size = print.font_size.clamp(8, 16);
 
     set("print_destination", destination)?;
@@ -192,7 +197,6 @@ pub fn save_print_settings(
     Ok(())
 }
 
-
 pub fn save_gym_settings(conn: &Connection, gym: &GymSettings) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     set_setting(conn, "gym_name", &gym.gym_name, &now)?;
@@ -207,10 +211,30 @@ pub fn save_receipt_settings(conn: &Connection, receipt: &ReceiptSettings) -> Re
     let now = chrono::Utc::now().to_rfc3339();
     set_setting(conn, "receipt_title", &receipt.receipt_title, &now)?;
     set_setting_optional(conn, "receipt_footer", &receipt.receipt_footer, &now)?;
-    set_setting(conn, "receipt_show_phone", if receipt.show_phone { "1" } else { "0" }, &now)?;
-    set_setting(conn, "receipt_show_address", if receipt.show_address { "1" } else { "0" }, &now)?;
-    set_setting(conn, "receipt_show_member_id", if receipt.show_member_id { "1" } else { "0" }, &now)?;
-    set_setting(conn, "receipt_show_notes", if receipt.show_notes { "1" } else { "0" }, &now)?;
+    set_setting(
+        conn,
+        "receipt_show_phone",
+        if receipt.show_phone { "1" } else { "0" },
+        &now,
+    )?;
+    set_setting(
+        conn,
+        "receipt_show_address",
+        if receipt.show_address { "1" } else { "0" },
+        &now,
+    )?;
+    set_setting(
+        conn,
+        "receipt_show_member_id",
+        if receipt.show_member_id { "1" } else { "0" },
+        &now,
+    )?;
+    set_setting(
+        conn,
+        "receipt_show_notes",
+        if receipt.show_notes { "1" } else { "0" },
+        &now,
+    )?;
     Ok(())
 }
 
@@ -233,7 +257,12 @@ fn set_setting(conn: &Connection, key: &str, value: &str, now: &str) -> Result<(
     Ok(())
 }
 
-fn set_setting_optional(conn: &Connection, key: &str, value: &Option<String>, now: &str) -> Result<(), AppError> {
+fn set_setting_optional(
+    conn: &Connection,
+    key: &str,
+    value: &Option<String>,
+    now: &str,
+) -> Result<(), AppError> {
     match value {
         Some(v) if !v.is_empty() => set_setting(conn, key, v, now),
         _ => {

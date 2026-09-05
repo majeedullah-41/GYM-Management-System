@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Search, Pencil, Trash2, RotateCcw } from "lucide-react";
+import { Search, Pencil, Trash2 } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Select } from "../../../components/ui/Select";
@@ -16,7 +16,6 @@ import {
   updateExpense,
   deleteExpense,
   EXPENSE_CATEGORIES,
-  EXPENSE_PAYMENT_METHODS,
   type ExpenseResponse,
 } from "../../../lib/api/expenses";
 
@@ -30,18 +29,10 @@ const FORM_CATEGORIES = EXPENSE_CATEGORIES.map((c) => ({
   label: c,
 }));
 
-const PAYMENT_METHOD_OPTIONS = [
-  { value: "", label: "Select method..." },
-  ...EXPENSE_PAYMENT_METHODS.map((m) => ({ value: m, label: m })),
-];
-
 interface FormData {
   category: string;
   amount: string;
   expense_date: string;
-  description: string;
-  payment_method: string;
-  vendor: string;
   notes: string;
 }
 
@@ -49,9 +40,6 @@ const EMPTY_FORM: FormData = {
   category: "",
   amount: "",
   expense_date: new Date().toISOString().split("T")[0],
-  description: "",
-  payment_method: "",
-  vendor: "",
   notes: "",
 };
 
@@ -141,9 +129,6 @@ export function ExpensesPage() {
       category: expense.category,
       amount: String(expense.amount),
       expense_date: expense.expense_date,
-      description: expense.description ?? "",
-      payment_method: expense.payment_method ?? "",
-      vendor: expense.vendor ?? "",
       notes: expense.notes ?? "",
     });
     setFormErrors({});
@@ -168,9 +153,9 @@ export function ExpensesPage() {
         category: formData.category,
         amount: parseInt(formData.amount, 10),
         expense_date: formData.expense_date,
-        description: formData.description.trim() || null,
-        payment_method: formData.payment_method || null,
-        vendor: formData.vendor.trim() || null,
+        description: editingExpense?.description ?? null,
+        payment_method: editingExpense?.payment_method ?? null,
+        vendor: editingExpense?.vendor ?? null,
         notes: formData.notes.trim() || null,
       };
 
@@ -215,17 +200,14 @@ export function ExpensesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Expenses"
+        title="Expense"
         description="Track and manage gym expenses."
         action={{ label: "+ Add Expense", onClick: openCreate }}
       />
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-          />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             type="text"
             name="expense_search"
@@ -253,9 +235,7 @@ export function ExpensesPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm">
             <span className="text-text-muted">Total:</span>
-            <span className="font-semibold text-text-primary">
-              {formatCurrency(totalAmount)}
-            </span>
+            <span className="font-semibold text-text-primary">{formatCurrency(totalAmount)}</span>
           </div>
           <span className="text-xs text-text-muted">
             {expenses.length} expense{expenses.length !== 1 ? "s" : ""}
@@ -268,20 +248,11 @@ export function ExpensesPage() {
 
       {!loading && !error && expenses.length === 0 && (
         <EmptyState
-          title={
-            search || categoryFilter || datePreset
-              ? "No expenses found"
-              : "No expenses yet"
-          }
+          title={search || categoryFilter || datePreset ? "No expenses found" : "No expenses yet"}
           message={
             search || categoryFilter || datePreset
               ? "Try adjusting your filters."
               : "Record your first expense to start tracking gym costs."
-          }
-          action={
-            !search && !categoryFilter && !datePreset
-              ? { label: "+ Add Expense", onClick: openCreate }
-              : undefined
           }
         />
       )}
@@ -297,15 +268,6 @@ export function ExpensesPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
                   Category
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-                  Description
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-                  Payment Method
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-                  Vendor
-                </th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text-muted">
                   Amount
                 </th>
@@ -316,24 +278,12 @@ export function ExpensesPage() {
             </thead>
             <tbody>
               {expenses.map((e) => (
-                <tr
-                  key={e.id}
-                  className="border-b border-border last:border-b-0"
-                >
+                <tr key={e.id} className="border-b border-border last:border-b-0">
                   <td className="px-4 py-3 text-text-muted">{e.expense_date}</td>
                   <td className="px-4 py-3">
                     <span className="inline-block rounded-full bg-secondary-bg px-2.5 py-0.5 text-xs font-medium text-text-primary">
                       {e.category}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-text-muted">
-                    {e.description || "\u2014"}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted text-xs">
-                    {e.payment_method || "\u2014"}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted text-xs">
-                    {e.vendor || "\u2014"}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-text-primary">
                     {formatCurrency(e.amount)}
@@ -386,9 +336,7 @@ export function ExpensesPage() {
           />
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Amount (PKR) *
-              </label>
+              <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
               <input
                 type="number"
                 name="expense_amount"
@@ -398,63 +346,21 @@ export function ExpensesPage() {
                 onChange={(e) => setFormData((p) => ({ ...p, amount: e.target.value }))}
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               />
-              {formErrors.amount && (
-                <p className="text-xs text-red-500">{formErrors.amount}</p>
-              )}
+              {formErrors.amount && <p className="text-xs text-red-500">{formErrors.amount}</p>}
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Date *
-              </label>
+              <label className="text-sm font-medium text-text-primary">Date *</label>
               <input
                 type="date"
                 name="expense_date"
                 value={formData.expense_date}
-                onChange={(e) =>
-                  setFormData((p) => ({ ...p, expense_date: e.target.value }))
-                }
+                onChange={(e) => setFormData((p) => ({ ...p, expense_date: e.target.value }))}
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               />
               {formErrors.expense_date && (
                 <p className="text-xs text-red-500">{formErrors.expense_date}</p>
               )}
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Payment Method"
-              options={PAYMENT_METHOD_OPTIONS}
-              value={formData.payment_method}
-              onChange={(e) => setFormData((p) => ({ ...p, payment_method: e.target.value }))}
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Vendor <span className="text-text-muted">(optional)</span>
-              </label>
-              <input
-                type="text"
-                name="expense_vendor"
-                placeholder="e.g. ABC Suppliers"
-                value={formData.vendor}
-                onChange={(e) => setFormData((p) => ({ ...p, vendor: e.target.value }))}
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">
-              Description <span className="text-text-muted">(optional)</span>
-            </label>
-            <input
-              type="text"
-              name="expense_description"
-              placeholder="e.g. Monthly electricity bill"
-              value={formData.description}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, description: e.target.value }))
-              }
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
-            />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-text-primary">
@@ -466,9 +372,7 @@ export function ExpensesPage() {
               rows={2}
               placeholder="Additional notes"
               value={formData.notes}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, notes: e.target.value }))
-              }
+              onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))}
             />
           </div>
         </div>
