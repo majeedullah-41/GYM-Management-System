@@ -5,7 +5,7 @@ use crate::database::Database;
 use crate::dto::report::{ReportRequest, ReportResponse};
 use crate::errors::AppError;
 use crate::repositories::settings_repository;
-use crate::services::{report_pdf_service, report_service};
+use crate::services::{auth_service, report_pdf_service, report_service};
 
 use super::db::run_db;
 
@@ -31,6 +31,7 @@ pub async fn generate_report_pdf(
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<ReportPdfResult, AppError> {
+    auth_service::require_authenticated()?;
     let conn = state.inner().clone_conn();
     let df = date_from.clone();
     let dt = date_to.clone();

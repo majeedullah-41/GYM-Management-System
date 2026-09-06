@@ -161,11 +161,6 @@ pub fn set_bill_paid(
     Ok(())
 }
 
-pub fn allocation_total(conn: &Connection, payment_id: &str) -> Result<i64, AppError> {
-    Ok(conn.query_row("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE payment_id=?1 AND monthly_bill_id IS NOT NULL",
-        params![payment_id], |r| r.get(0))?)
-}
-
 pub fn create_bill_allocation(
     conn: &Connection,
     payment_id: &str,

@@ -6,6 +6,7 @@ use crate::errors::AppError;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GymSettings {
     pub gym_name: String,
+    pub gym_logo: Option<String>,
     pub gym_address: Option<String>,
     pub gym_phone: Option<String>,
     pub gym_email: Option<String>,
@@ -27,6 +28,8 @@ pub struct PrintSettings {
     pub destination: String,
     pub paper_width: String,
     pub font_size: i64,
+    pub thermal_printer_name: Option<String>,
+    pub thermal_characters_per_line: Option<i64>,
     pub show_gym_name: bool,
     pub show_gym_phone: bool,
     pub show_gym_address: bool,
@@ -42,11 +45,31 @@ pub struct PrintSettings {
     pub show_footer: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupSettings {
+    pub directory: Option<String>,
+    pub daily_enabled: bool,
+    pub close_enabled: bool,
+    pub last_backup_at: Option<String>,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            directory: None,
+            daily_enabled: true,
+            close_enabled: true,
+            last_backup_at: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct AllSettings {
     pub gym: GymSettings,
     pub receipt: ReceiptSettings,
     pub print: PrintSettings,
+    pub backup: BackupSettings,
 }
 
 pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
@@ -54,6 +77,9 @@ pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
 
     if let Ok(name) = get_setting(conn, "gym_name") {
         settings.gym_name = name;
+    }
+    if let Ok(logo) = get_setting(conn, "gym_logo") {
+        settings.gym_logo = Some(logo);
     }
     if let Ok(addr) = get_setting(conn, "gym_address") {
         settings.gym_address = Some(addr);
@@ -117,7 +143,53 @@ pub fn get_all_settings(conn: &Connection) -> Result<AllSettings, AppError> {
         gym: get_gym_settings(conn)?,
         receipt: get_receipt_settings(conn)?,
         print: get_print_settings(conn)?,
+        backup: get_backup_settings(conn),
     })
+}
+
+pub fn get_backup_settings(conn: &Connection) -> BackupSettings {
+    BackupSettings {
+        directory: get_setting(conn, "backup_directory")
+            .ok()
+            .filter(|value| !value.trim().is_empty()),
+        daily_enabled: get_bool_default(conn, "backup_daily_enabled", true),
+        close_enabled: get_bool_default(conn, "backup_close_enabled", true),
+        last_backup_at: get_setting(conn, "backup_last_at").ok(),
+    }
+}
+
+pub fn save_backup_settings(conn: &Connection, backup: &BackupSettings) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    set_setting_optional(conn, "backup_directory", &backup.directory, &now)?;
+    set_setting(
+        conn,
+        "backup_daily_enabled",
+        if backup.daily_enabled { "1" } else { "0" },
+        &now,
+    )?;
+    set_setting(
+        conn,
+        "backup_close_enabled",
+        if backup.close_enabled { "1" } else { "0" },
+        &now,
+    )?;
+    Ok(())
+}
+
+pub fn set_backup_timestamp(
+    conn: &Connection,
+    timestamp: &str,
+    daily_date: Option<&str>,
+) -> Result<(), AppError> {
+    set_setting(conn, "backup_last_at", timestamp, timestamp)?;
+    if let Some(date) = daily_date {
+        set_setting(conn, "backup_last_daily_date", date, timestamp)?;
+    }
+    Ok(())
+}
+
+pub fn last_daily_backup_date(conn: &Connection) -> Option<String> {
+    get_setting(conn, "backup_last_daily_date").ok()
 }
 
 fn get_bool_default(conn: &Connection, key: &str, default: bool) -> bool {
@@ -130,6 +202,7 @@ fn get_bool_default(conn: &Connection, key: &str, default: bool) -> bool {
 pub fn get_print_settings(conn: &Connection) -> Result<PrintSettings, AppError> {
     let destination = match get_setting(conn, "print_destination") {
         Ok(v) if v == "pdf" => "pdf".to_string(),
+        Ok(v) if v == "thermal" => "thermal".to_string(),
         _ => "print_window".to_string(),
     };
     let paper_width = match get_setting(conn, "print_paper_width") {
@@ -140,11 +213,18 @@ pub fn get_print_settings(conn: &Connection) -> Result<PrintSettings, AppError> 
         Ok(v) => v.parse::<i64>().unwrap_or(11).clamp(8, 16),
         Err(_) => 11,
     };
+    let thermal_printer_name = get_setting(conn, "thermal_printer_name").ok();
+    let thermal_characters_per_line = match get_setting(conn, "thermal_characters_per_line") {
+        Ok(v) => v.parse::<i64>().ok().map(|c| c.clamp(16, 64)),
+        Err(_) => None,
+    };
 
     Ok(PrintSettings {
         destination,
         paper_width,
         font_size,
+        thermal_printer_name,
+        thermal_characters_per_line,
         show_gym_name: get_bool_default(conn, "print_show_gym_name", true),
         show_gym_phone: get_bool_default(conn, "print_show_gym_phone", true),
         show_gym_address: get_bool_default(conn, "print_show_gym_address", true),
@@ -166,10 +246,10 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
     let set = |key: &str, value: &str| set_setting(conn, key, value, &now);
     let set_bool = |key: &str, value: bool| set(key, if value { "1" } else { "0" });
 
-    let destination = if print.destination == "pdf" {
-        "pdf"
-    } else {
-        "print_window"
+    let destination = match print.destination.as_str() {
+        "pdf" => "pdf",
+        "thermal" => "thermal",
+        _ => "print_window",
     };
     let paper_width = if print.paper_width == "58" {
         "58"
@@ -181,6 +261,16 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
     set("print_destination", destination)?;
     set("print_paper_width", paper_width)?;
     set("print_font_size", &font_size.to_string())?;
+    set_setting_optional(conn, "thermal_printer_name", &print.thermal_printer_name, &now)?;
+    match print.thermal_characters_per_line {
+        Some(c) => set("thermal_characters_per_line", &c.clamp(16, 64).to_string())?,
+        None => {
+            conn.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                params!["thermal_characters_per_line"],
+            )?;
+        }
+    }
     set_bool("print_show_gym_name", print.show_gym_name)?;
     set_bool("print_show_gym_phone", print.show_gym_phone)?;
     set_bool("print_show_gym_address", print.show_gym_address)?;
@@ -200,6 +290,7 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
 pub fn save_gym_settings(conn: &Connection, gym: &GymSettings) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     set_setting(conn, "gym_name", &gym.gym_name, &now)?;
+    set_setting_optional(conn, "gym_logo", &gym.gym_logo, &now)?;
     set_setting_optional(conn, "gym_address", &gym.gym_address, &now)?;
     set_setting_optional(conn, "gym_phone", &gym.gym_phone, &now)?;
     set_setting_optional(conn, "gym_email", &gym.gym_email, &now)?;

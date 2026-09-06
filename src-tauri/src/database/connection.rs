@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 
 use crate::errors::AppError;
+use crate::services::auth_service;
 
 use super::migrations;
 
@@ -28,6 +29,7 @@ pub fn init_db(db_path: &Path) -> Result<Connection, AppError> {
     let mut conn = Connection::open(db_path)?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     migrations::run_migrations(&mut conn)?;
+    auth_service::ensure_default_admin(&conn)?;
     Ok(conn)
 }
 
@@ -63,6 +65,7 @@ mod tests {
         assert!(tables.contains(&"memberships".to_string()));
         assert!(tables.contains(&"monthly_membership_bills".to_string()));
         assert!(tables.contains(&"payment_allocations".to_string()));
+        assert!(tables.contains(&"users".to_string()));
     }
 
     #[test]

@@ -1,3 +1,5 @@
+pub mod auth_service;
+pub mod backup_service;
 pub mod billing_service;
 pub mod dashboard_service;
 pub mod expense_service;

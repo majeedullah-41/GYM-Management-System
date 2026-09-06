@@ -46,6 +46,14 @@ fn get_migrations() -> Vec<Migration> {
             id: "009_plan_duration_billing_cycles",
             sql: include_str!("009_plan_duration_billing_cycles.sql"),
         },
+        Migration {
+            id: "010_authentication",
+            sql: include_str!("010_authentication.sql"),
+        },
+        Migration {
+            id: "011_optional_recovery_and_default_credentials",
+            sql: include_str!("011_optional_recovery_and_default_credentials.sql"),
+        },
     ]
 }
 

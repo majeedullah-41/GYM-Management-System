@@ -1,3 +1,4 @@
+#[cfg(test)]
 use chrono::{Duration, NaiveDate, Utc};
 use rusqlite::Connection;
 
@@ -289,7 +290,6 @@ fn get_membership_info(conn: &Connection, member_id: &str) -> Result<MembershipI
     let expiry_date = None;
     let outstanding = billing.total_outstanding;
     let status = billing.membership_status;
-    let admission_fee_collected = true;
 
     Ok(MembershipInfo {
         plan_name,
@@ -297,10 +297,10 @@ fn get_membership_info(conn: &Connection, member_id: &str) -> Result<MembershipI
         expiry_date,
         status,
         outstanding_balance: outstanding,
-        admission_fee_collected,
     })
 }
 
+#[cfg(test)]
 fn compute_membership_status(expiry_date: Option<&str>) -> Option<String> {
     let expiry_str = expiry_date?;
     let today = Utc::now().date_naive();
@@ -339,7 +339,6 @@ mod tests {
             date_of_birth: None,
             gender: None,
             notes: None,
-            admission_fee: None,
             membership_plan_id: None,
         }
     }
@@ -369,38 +368,6 @@ mod tests {
         assert_eq!(result.full_name, "Ahmad Khan");
         assert!(result.member_number.starts_with("GYM-"));
         assert!(!result.is_archived);
-    }
-
-    #[test]
-    fn should_ignore_legacy_admission_fee() {
-        let conn = test_db();
-        let result = create_member(
-            &conn,
-            CreateMemberRequest {
-                full_name: "Ahmad Khan".to_string(),
-                admission_fee: Some(500),
-                ..valid_request("Ahmad Khan")
-            },
-        )
-        .unwrap();
-        assert_eq!(result.admission_fee, None);
-        assert!(result.admission_fee_collected);
-        assert!(!result.is_archived);
-    }
-
-    #[test]
-    fn should_ignore_zero_or_negative_admission_fee() {
-        let conn = test_db();
-        let result = create_member(
-            &conn,
-            CreateMemberRequest {
-                full_name: "Ahmad Khan".to_string(),
-                admission_fee: Some(0),
-                ..valid_request("Ahmad Khan")
-            },
-        )
-        .unwrap();
-        assert_eq!(result.admission_fee, None);
     }
 
     #[test]
@@ -472,7 +439,6 @@ mod tests {
             CreateMemberRequest {
                 full_name: "Test".to_string(),
                 phone: Some("123".to_string()),
-                admission_fee: None,
                 ..valid_request("Test")
             },
         );
@@ -530,7 +496,6 @@ mod tests {
                 date_of_birth: None,
                 gender: None,
                 notes: None,
-                admission_fee: None,
                 membership_plan_id: None,
             },
         )

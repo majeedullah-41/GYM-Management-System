@@ -5,6 +5,7 @@ export interface ReceiptResponse {
   receipt_number: string;
   issued_at: string;
   gym_name: string;
+  gym_logo: string | null;
   gym_address: string | null;
   gym_phone: string | null;
   member_name: string;
@@ -46,5 +47,15 @@ export interface PrintDispatchResult {
 export async function printReceipt(receipt: ReceiptResponse): Promise<PrintDispatchResult> {
   return invokeCommand<PrintDispatchResult>("print_receipt_json", {
     receiptJson: JSON.stringify(receipt),
+  });
+}
+
+export async function printThermalReceipt(
+  receipt: ReceiptResponse,
+  printerName?: string | null,
+): Promise<PrintDispatchResult> {
+  return invokeCommand<PrintDispatchResult>("print_thermal_receipt", {
+    receiptJson: JSON.stringify(receipt),
+    printerName: printerName || null,
   });
 }

@@ -7,6 +7,7 @@ pub struct ReceiptResponse {
     pub receipt_number: String,
     pub issued_at: String,
     pub gym_name: String,
+    pub gym_logo: Option<String>,
     pub gym_address: Option<String>,
     pub gym_phone: Option<String>,
     pub member_name: String,

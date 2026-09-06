@@ -9,6 +9,8 @@ import { PaymentsPage } from "../../features/payments/pages/PaymentsPage";
 import { ReportsPage } from "../../features/reports/pages/ReportsPage";
 import { SettingsPage } from "../../features/settings/pages/SettingsPage";
 import type { Page } from "../../types";
+import type { AuthUser } from "../../lib/api/auth";
+import { logout } from "../../lib/api/auth";
 
 const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   dashboard: DashboardPage,
@@ -16,11 +18,11 @@ const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   payments: PaymentsPage,
   finances: FinancesPage,
   reports: ReportsPage,
-  settings: SettingsPage,
+  settings: () => null,
   "member-detail": MembersPage,
 };
 
-export function AppShell() {
+export function AppShell({ user, onSignedOut, onUserUpdated }: { user: AuthUser; onSignedOut: () => void; onUserUpdated: (user: AuthUser) => void }) {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [paymentMemberId, setPaymentMemberId] = useState<string | null>(null);
@@ -66,6 +68,8 @@ export function AppShell() {
         <div className="flex h-screen overflow-hidden">
           <Sidebar
             currentPage={currentPage}
+            username={user.username}
+            onLogout={async () => { await logout(); onSignedOut(); }}
             onNavigate={(page) => {
               setSelectedMemberId(null);
               setPaymentMemberId(null);
@@ -80,6 +84,9 @@ export function AppShell() {
               }
               if (currentPage === "payments") {
                 return <PaymentsPage initialMemberId={paymentMemberId} />;
+              }
+              if (currentPage === "settings") {
+                return <SettingsPage user={user} onUserUpdated={onUserUpdated} onSignedOut={onSignedOut} />;
               }
               return <Component />;
             })()}

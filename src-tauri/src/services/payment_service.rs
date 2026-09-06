@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::dto::payment::{
@@ -11,25 +11,6 @@ use crate::repositories::{
 };
 use crate::utils::constants::{is_valid_payment_method, PAYMENT_METHODS};
 use crate::utils::dates::now_iso8601;
-
-/// Returns the current active (non-expired) membership period for a member+plan.
-/// A period whose expiry is in the past is treated as expired and ignored, so a
-/// renewal starts a brand-new period instead of reusing the old, fully-paid one.
-fn active_period(
-    conn: &Connection,
-    member_id: &str,
-    plan_id: &str,
-) -> Result<Option<(String, String)>, AppError> {
-    let Some((start, expiry)) = payment_repository::get_current_period(conn, member_id, plan_id)?
-    else {
-        return Ok(None);
-    };
-    let today = Utc::now().date_naive();
-    match NaiveDate::parse_from_str(&expiry, "%Y-%m-%d") {
-        Ok(e) if e >= today => Ok(Some((start, expiry))),
-        _ => Ok(None),
-    }
-}
 
 pub fn create_payment(
     conn: &Connection,
@@ -245,7 +226,6 @@ pub fn get_payment_summary(
     }
 
     let is_first_payment = !member_repository::has_any_payments(conn, member_id)?;
-    let admission_fee = None;
 
     let billing = crate::services::billing_service::get_billing_summary(conn, member_id)?;
     if let Some(active_plan) = &billing.membership_plan_id {
@@ -281,7 +261,6 @@ pub fn get_payment_summary(
         new_period_due,
         previously_paid,
         outstanding,
-        admission_fee,
         is_first_payment,
         membership_start_date: billing.enrollment_date.clone(),
         membership_expiry_date: None,
@@ -501,7 +480,6 @@ mod tests {
             amount,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
-            admission_fee: None,
             description: None,
             reference: None,
             notes: None,
@@ -636,7 +614,6 @@ mod tests {
             amount: 2000,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
-            admission_fee: None,
             description: None,
             reference: None,
             notes: None,
@@ -898,37 +875,21 @@ mod tests {
     }
 
     #[test]
-    fn should_exclude_legacy_admission_fee_from_summary() {
+    fn should_calculate_summary_from_plan_price_when_legacy_fee_exists() {
         let conn = test_db();
         let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
         let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
 
         let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
         assert_eq!(summary.plan_price, 2000);
-        assert_eq!(summary.admission_fee, None);
         assert!(summary.is_first_payment);
         assert_eq!(summary.outstanding, 2000);
     }
 
     #[test]
-    #[ignore = "superseded legacy expiry-cycle balance assertion"]
-    fn should_not_include_admission_fee_after_first_payment() {
+    fn should_allow_payment_against_accumulated_plan_dues() {
         let conn = test_db();
-        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
-        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
-
-        create_payment(&conn, valid_request(&member_id, &plan_id, 2500)).unwrap();
-
-        let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
-        assert_eq!(summary.admission_fee, None);
-        assert!(!summary.is_first_payment);
-        assert_eq!(summary.outstanding, 0);
-    }
-
-    #[test]
-    fn should_allow_payment_up_to_plan_price_plus_admission_fee() {
-        let conn = test_db();
-        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let member_id = insert_test_member(&conn, "Ahmad");
         let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
 
         let result = create_payment(&conn, valid_request(&member_id, &plan_id, 2500)).unwrap();
@@ -936,34 +897,9 @@ mod tests {
     }
 
     #[test]
-    fn should_respect_user_entered_admission_fee_higher_than_configured() {
+    fn should_allow_partial_plan_payment() {
         let conn = test_db();
-        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
-        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
-
-        let mut req = valid_request(&member_id, &plan_id, 2000);
-        req.admission_fee = Some(1000);
-        let result = create_payment(&conn, req).unwrap();
-        assert_eq!(result.amount, 2000);
-    }
-
-    #[test]
-    #[ignore = "superseded legacy date-window balance assertion"]
-    fn should_reject_amount_above_plan_price_plus_entered_fee() {
-        let conn = test_db();
-        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
-        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
-
-        let mut req = valid_request(&member_id, &plan_id, 3100);
-        req.admission_fee = Some(1000);
-        let result = create_payment(&conn, req);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn should_allow_partial_first_payment_covering_fee_and_part_of_plan() {
-        let conn = test_db();
-        let member_id = insert_test_member_with_fee(&conn, "Ahmad", 500);
+        let member_id = insert_test_member(&conn, "Ahmad");
         let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
 
         let result = create_payment(&conn, valid_request(&member_id, &plan_id, 1000)).unwrap();
@@ -971,13 +907,12 @@ mod tests {
     }
 
     #[test]
-    fn should_not_include_fee_for_member_without_admission_fee() {
+    fn should_report_plan_outstanding_for_new_member() {
         let conn = test_db();
         let member_id = insert_test_member(&conn, "Ahmad");
         let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
 
         let summary = get_payment_summary(&conn, &member_id, &plan_id).unwrap();
-        assert_eq!(summary.admission_fee, None);
         assert!(summary.is_first_payment);
         assert_eq!(summary.outstanding, 2000);
     }

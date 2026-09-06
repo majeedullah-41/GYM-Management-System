@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Save, Download, Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { Save, Download, FolderOpen, ImagePlus, Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
@@ -13,9 +13,13 @@ import {
   saveGymSettings,
   saveReceiptSettings,
   savePrintSettings,
+  saveBackupSettings,
+  selectBackupFolder,
+  selectGymLogo,
   backupDatabase,
   type AllSettings,
   type PrintSettings,
+  type BackupSettings,
 } from "../../../lib/api/settings";
 import {
   createPlan,
@@ -27,23 +31,25 @@ import {
   type UpdatePlanRequest,
   type PlanResponse,
 } from "../../../lib/api/membership-plans";
+import type { AuthUser } from "../../../lib/api/auth";
+import { UserInformationTab } from "../components/UserInformationTab";
 
-type Tab = "gym" | "plans" | "receipts" | "data";
+type Tab = "user" | "gym" | "plans" | "receipts" | "data";
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: "user", label: "User Information" },
   { key: "gym", label: "Gym Info" },
   { key: "plans", label: "Membership Plans" },
   { key: "receipts", label: "Receipts" },
   { key: "data", label: "Data & Backup" },
 ];
 
-export function SettingsPage() {
+export function SettingsPage({ user, onUserUpdated, onSignedOut }: { user: AuthUser; onUserUpdated: (user: AuthUser) => void; onSignedOut: () => void }) {
   const { addToast } = useToast();
-  const [activeTab, setActiveTab] = useState<Tab>("gym");
+  const [activeTab, setActiveTab] = useState<Tab>("user");
   const [settings, setSettings] = useState<AllSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [backing, setBacking] = useState(false);
 
   const load = useCallback(async () => {
@@ -67,42 +73,47 @@ export function SettingsPage() {
   if (!settings) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Settings"
         description="Configure your gym information and application preferences."
       />
 
-      <div className="flex gap-1 rounded-lg border border-border bg-surface p-1">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? "bg-primary text-white"
-                : "text-text-muted hover:bg-secondary-bg hover:text-text-primary"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
+        <nav className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-2 lg:sticky lg:top-0 lg:grid-cols-1">
+          {TABS.map((tab) => (
+            <button
+              type="button"
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              aria-current={activeTab === tab.key ? "page" : undefined}
+              className={`w-full rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? "bg-primary text-white"
+                  : "text-text-muted hover:bg-secondary-bg hover:text-text-primary"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
-      {activeTab === "gym" && (
-        <GymInfoTab settings={settings} onSave={setSettings} />
-      )}
-      {activeTab === "plans" && <PlansTab />}
-      {activeTab === "receipts" && (
-        <ReceiptsTab settings={settings} onSave={setSettings} />
-      )}
-      {activeTab === "data" && (
-        <DataTab
-          backing={backing}
-          setBacking={setBacking}
-          addToast={addToast}
-        />
-      )}
+        <section className="min-w-0">
+          {activeTab === "user" && <UserInformationTab user={user} onUserUpdated={onUserUpdated} onSignedOut={onSignedOut} />}
+          {activeTab === "gym" && <GymInfoTab settings={settings} onSave={setSettings} />}
+          {activeTab === "plans" && <PlansTab />}
+          {activeTab === "receipts" && <ReceiptsTab settings={settings} onSave={setSettings} />}
+          {activeTab === "data" && (
+            <DataTab
+              settings={settings}
+              onSave={setSettings}
+              backing={backing}
+              setBacking={setBacking}
+              addToast={addToast}
+            />
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -117,6 +128,7 @@ function GymInfoTab({
   const { addToast } = useToast();
   const [form, setForm] = useState(settings.gym);
   const [saving, setSaving] = useState(false);
+  const [selectingLogo, setSelectingLogo] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const update = (patch: Partial<typeof form>) => {
@@ -142,15 +154,54 @@ function GymInfoTab({
     }
   };
 
+  const handleSelectLogo = async () => {
+    try {
+      setSelectingLogo(true);
+      const logo = await selectGymLogo();
+      if (logo) update({ gym_logo: logo });
+    } catch (err) {
+      addToast({
+        variant: "error",
+        title: "Could not load logo",
+        message: err instanceof Error ? err.message : "Select a PNG or JPEG image",
+      });
+    } finally {
+      setSelectingLogo(false);
+    }
+  };
+
   return (
-    <div className="rounded-lg border border-border bg-surface p-6">
-      <h3 className="text-base font-semibold text-text-primary mb-4">
-        Gym Information
-      </h3>
-      <p className="text-sm text-text-muted mb-6">
+    <div className="rounded-lg border border-border bg-surface p-5">
+      <h3 className="mb-1 text-base font-semibold text-text-primary">Gym Information</h3>
+      <p className="mb-4 text-sm text-text-muted">
         This information appears on receipts and printed documents.
       </p>
-      <div className="space-y-4 max-w-lg">
+      <div className="max-w-lg space-y-3">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-text-primary">Gym Logo</label>
+          <div className="flex items-center gap-3">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-secondary-bg">
+              {form.gym_logo ? (
+                <img src={form.gym_logo} alt="Gym logo" className="h-full w-full object-contain" />
+              ) : (
+                <ImagePlus size={22} className="text-text-muted" />
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" loading={selectingLogo} onClick={handleSelectLogo}>
+                <ImagePlus size={14} />
+                Choose Logo
+              </Button>
+              {form.gym_logo && (
+                <Button type="button" variant="secondary" onClick={() => update({ gym_logo: null })}>
+                  <Trash2 size={14} />
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="mt-1.5 text-xs text-text-muted">PNG or JPEG, maximum 2 MB.</p>
+        </div>
         <Input
           label="Gym Name *"
           value={form.gym_name}
@@ -179,7 +230,7 @@ function GymInfoTab({
           onChange={(e) => update({ gym_website: e.target.value || null })}
         />
       </div>
-      <div className="mt-6">
+      <div className="mt-4">
         <Button onClick={handleSave} loading={saving} disabled={!dirty}>
           <Save size={14} className="mr-1.5" />
           Save Changes
@@ -313,15 +364,11 @@ function PlansTab() {
   if (loading) return <LoadingState message="Loading plans..." />;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-6">
+    <div className="rounded-lg border border-border bg-surface p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold text-text-primary">
-            Membership Plans
-          </h3>
-          <p className="text-sm text-text-muted">
-            Add, edit, and manage your membership plans.
-          </p>
+          <h3 className="text-base font-semibold text-text-primary">Membership Plans</h3>
+          <p className="text-sm text-text-muted">Add, edit, and manage your membership plans.</p>
         </div>
         <Button size="sm" onClick={openCreate}>
           <Plus size={14} /> Add Plan
@@ -357,28 +404,17 @@ function PlansTab() {
             </thead>
             <tbody>
               {plans.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-b border-border last:border-b-0"
-                >
-                  <td className="px-4 py-2.5 font-medium text-text-primary">
-                    {p.name}
-                  </td>
-                  <td className="px-4 py-2.5 text-text-muted">
-                    {p.duration_days} days
-                  </td>
+                <tr key={p.id} className="border-b border-border last:border-b-0">
+                  <td className="px-4 py-2.5 font-medium text-text-primary">{p.name}</td>
+                  <td className="px-4 py-2.5 text-text-muted">{p.duration_days} days</td>
                   <td className="px-4 py-2.5 text-text-primary">
                     {p.price === 0 ? "Free" : `Rs. ${p.price.toLocaleString()}`}
                   </td>
-                  <td className="px-4 py-2.5 text-text-muted">
-                    {p.member_count}
-                  </td>
+                  <td className="px-4 py-2.5 text-text-muted">{p.member_count}</td>
                   <td className="px-4 py-2.5">
                     <span
                       className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                        p.is_active
-                          ? "bg-green-50 text-green-700"
-                          : "bg-red-50 text-red-600"
+                        p.is_active ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
                       }`}
                     >
                       {p.is_active ? "Active" : "Inactive"}
@@ -386,11 +422,7 @@ function PlansTab() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1.5">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => openEdit(p)}
-                      >
+                      <Button variant="secondary" size="sm" onClick={() => openEdit(p)}>
                         <Pencil size={12} /> Edit
                       </Button>
                       {p.is_active ? (
@@ -399,20 +431,14 @@ function PlansTab() {
                           size="sm"
                           disabled={p.member_count > 0}
                           title={
-                            p.member_count > 0
-                              ? "Plan is in use by members"
-                              : "Deactivate plan"
+                            p.member_count > 0 ? "Plan is in use by members" : "Deactivate plan"
                           }
                           onClick={() => handleToggleActive(p)}
                         >
                           <Trash2 size={12} /> Deactivate
                         </Button>
                       ) : (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleToggleActive(p)}
-                        >
+                        <Button variant="secondary" size="sm" onClick={() => handleToggleActive(p)}>
                           <RefreshCw size={12} /> Activate
                         </Button>
                       )}
@@ -431,11 +457,7 @@ function PlansTab() {
         title={editing ? "Edit Plan" : "Add Plan"}
         footer={
           <>
-            <Button
-              variant="secondary"
-              onClick={() => setModalOpen(false)}
-              disabled={submitting}
-            >
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
             <Button onClick={handleSubmit} loading={submitting}>
@@ -446,14 +468,10 @@ function PlansTab() {
       >
         <div className="space-y-4">
           {formError && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
-              {formError}
-            </p>
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>
           )}
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">
-              Plan Name *
-            </label>
+            <label className="text-sm font-medium text-text-primary">Plan Name *</label>
             <Input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -462,9 +480,7 @@ function PlansTab() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Price (PKR) *
-              </label>
+              <label className="text-sm font-medium text-text-primary">Price (PKR) *</label>
               <Input
                 type="number"
                 min={0}
@@ -474,29 +490,21 @@ function PlansTab() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">
-                Duration (days) *
-              </label>
+              <label className="text-sm font-medium text-text-primary">Duration (days) *</label>
               <Input
                 type="number"
                 min={1}
                 value={form.duration_days}
-                onChange={(e) =>
-                  setForm({ ...form, duration_days: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, duration_days: e.target.value })}
                 placeholder="e.g. 30"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">
-              Description
-            </label>
+            <label className="text-sm font-medium text-text-primary">Description</label>
             <Input
               value={form.description}
-              onChange={(e) =>
-                setForm({ ...form, description: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Optional description"
             />
           </div>
@@ -514,14 +522,14 @@ function ReceiptsTab({
   onSave: (s: AllSettings) => void;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PrintSettingsSection settings={settings} onSave={onSave} />
     </div>
   );
 }
 
 const PRINT_FIELDS: { key: keyof PrintSettings; label: string }[] = [
-  { key: "show_gym_name", label: "Gym name" },
+  { key: "show_gym_name", label: "Gym name and logo" },
   { key: "show_gym_phone", label: "Gym phone" },
   { key: "show_gym_address", label: "Gym address" },
   { key: "show_receipt_title", label: "Receipt title" },
@@ -530,7 +538,7 @@ const PRINT_FIELDS: { key: keyof PrintSettings; label: string }[] = [
   { key: "show_member_info", label: "Member name and ID" },
   { key: "show_plan_info", label: "Plan" },
   { key: "show_period", label: "Membership period" },
-  { key: "show_payment_details", label: "Payment method and amount" },
+  { key: "show_payment_details", label: "Payment status" },
   { key: "show_remaining_balance", label: "Remaining balance" },
   { key: "show_notes", label: "Notes" },
   { key: "show_footer", label: "Footer text" },
@@ -574,17 +582,14 @@ function PrintSettingsSection({
   const widthMm = form.paper_width === "58" ? 58 : 80;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-6">
-      <h3 className="text-base font-semibold text-text-primary mb-1">
-        Receipt Print Settings
-      </h3>
-      <p className="text-sm text-text-muted mb-6">
-        Choose the layout, destination and information included when printing a
-        receipt.
+    <div className="rounded-lg border border-border bg-surface p-5">
+      <h3 className="text-base font-semibold text-text-primary mb-1">Receipt Print Settings</h3>
+      <p className="mb-4 text-sm text-text-muted">
+        Choose the layout, destination and information included when printing a receipt.
       </p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Select
               label="Destination"
@@ -593,6 +598,7 @@ function PrintSettingsSection({
               options={[
                 { value: "print_window", label: "Print Window (send to printer)" },
                 { value: "pdf", label: "Save as PDF" },
+                { value: "thermal", label: "Thermal Printer (ESC/POS)" },
               ]}
             />
             <Select
@@ -610,28 +616,51 @@ function PrintSettingsSection({
               min={8}
               max={16}
               value={form.font_size}
-              onChange={(e) =>
-                update({ font_size: Number(e.target.value) || 11 })
-              }
+              onChange={(e) => update({ font_size: Number(e.target.value) || 11 })}
             />
           </div>
+
+          {form.destination === "thermal" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Thermal Printer Name"
+                placeholder="Leave empty for the Windows default printer"
+                value={form.thermal_printer_name ?? ""}
+                onChange={(e) =>
+                  update({
+                    thermal_printer_name: e.target.value.trim() ? e.target.value : null,
+                  })
+                }
+              />
+              <Input
+                label="Characters per Line"
+                type="number"
+                min={16}
+                max={64}
+                placeholder="58mm → 32, 80mm → 42"
+                value={form.thermal_characters_per_line ?? ""}
+                onChange={(e) =>
+                  update({
+                    thermal_characters_per_line: e.target.value
+                      ? Number(e.target.value)
+                      : null,
+                  })
+                }
+              />
+            </div>
+          )}
 
           <div>
             <label className="text-sm font-medium text-text-primary mb-3 block">
               Include on Receipt
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
               {PRINT_FIELDS.map((opt) => (
-                <label
-                  key={opt.key}
-                  className="flex items-center gap-3 cursor-pointer"
-                >
+                <label key={opt.key} className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form[opt.key] as boolean}
-                    onChange={(e) =>
-                      update({ [opt.key]: e.target.checked })
-                    }
+                    onChange={(e) => update({ [opt.key]: e.target.checked })}
                     className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                   />
                   <span className="text-sm text-text-primary">{opt.label}</span>
@@ -660,14 +689,12 @@ function PrintSettingsSection({
         </div>
 
         <div>
-          <label className="text-sm font-medium text-text-primary mb-3 block">
-            Live Preview
-          </label>
+          <label className="text-sm font-medium text-text-primary mb-3 block">Live Preview</label>
           <PrintPreview print={form} settings={settings} widthMm={widthMm} />
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Button onClick={handleSave} loading={saving} disabled={!dirty}>
           <Save size={14} className="mr-1.5" />
           Save Changes
@@ -691,33 +718,38 @@ function PrintPreview({
   return (
     <div className="flex justify-center">
       <div
-        className="bg-white text-gray-900 shadow-sm border border-gray-200 px-3 py-4 font-mono leading-snug"
+        className="bg-white px-3 py-4 font-mono leading-snug text-gray-900"
         style={{ width: `${widthMm * 3.6}px` }}
       >
-        {print.show_gym_name && (
-          <div className="text-center font-bold" style={{ fontSize: fontPx + 2 }}>
-            {settings.gym.gym_name}
+        <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] items-center">
+          {print.show_gym_name && settings.gym.gym_logo && (
+            <img
+              src={settings.gym.gym_logo}
+              alt="Gym logo"
+              className="h-10 w-10 object-contain"
+            />
+          )}
+          <div className="col-start-2 min-w-0 text-center">
+            {print.show_gym_name && (
+              <div className="font-bold" style={{ fontSize: fontPx + 2 }}>
+                {settings.gym.gym_name}
+              </div>
+            )}
+            {print.show_gym_phone && settings.gym.gym_phone && (
+              <div style={{ fontSize: fontPx }}>{settings.gym.gym_phone}</div>
+            )}
+            {print.show_gym_address && settings.gym.gym_address && (
+              <div style={{ fontSize: fontPx }}>{settings.gym.gym_address}</div>
+            )}
           </div>
-        )}
-        {print.show_gym_phone && settings.gym.gym_phone && (
-          <div className="text-center" style={{ fontSize: fontPx }}>
-            {settings.gym.gym_phone}
-          </div>
-        )}
-        {print.show_gym_address && settings.gym.gym_address && (
-          <div className="text-center" style={{ fontSize: fontPx }}>
-            {settings.gym.gym_address}
-          </div>
-        )}
+        </div>
         <Divider />
         {print.show_receipt_title && (
           <div className="text-center font-bold" style={{ fontSize: fontPx }}>
             RECEIPT
           </div>
         )}
-        {print.show_receipt_number && (
-          <Row label="Receipt #" value="R-0001" fontPx={fontPx} />
-        )}
+        {print.show_receipt_number && <Row label="Receipt #" value="R-0001" fontPx={fontPx} />}
         {print.show_date && (
           <Row label="Date" value={new Date().toISOString().slice(0, 10)} fontPx={fontPx} />
         )}
@@ -729,40 +761,25 @@ function PrintPreview({
           </>
         )}
         <Divider />
-        {print.show_plan_info && (
-          <Row label="Plan" value="Monthly" fontPx={fontPx} />
-        )}
+        {print.show_plan_info && <Row label="Plan" value="Monthly" fontPx={fontPx} />}
         {print.show_period && (
-          <Row
-            label="Period"
-            value="2026-08-28  to  2026-09-28"
-            fontPx={fontPx}
-          />
+          <Row label="Period" value="2026-08-28 to 2026-09-28" fontPx={Math.max(8, fontPx - 1)} />
         )}
-        <Divider />
+        {(print.show_remaining_balance || print.show_payment_details || print.show_footer) && (
+          <Divider />
+        )}
+        {print.show_remaining_balance && <Row label="Remaining" value="Rs. 0" fontPx={fontPx} />}
+        {print.show_remaining_balance && (print.show_payment_details || print.show_footer) && (
+          <Divider />
+        )}
         {print.show_payment_details && (
-          <>
-            <Row label="Method" value="Cash" fontPx={fontPx} />
-            <div
-              className="text-center font-bold"
-              style={{ fontSize: fontPx + 1 }}
-            >
-              AMOUNT PAID&nbsp;&nbsp;Rs. 2,500
-            </div>
-          </>
-        )}
-        {print.show_remaining_balance && (
-          <Row label="Remaining" value="Rs. 0" fontPx={fontPx} />
-        )}
-        <Divider />
-        {print.show_notes && (
           <div className="text-center" style={{ fontSize: fontPx }}>
             Paid in full
           </div>
         )}
-        {print.show_footer && settings.receipt.receipt_footer && (
+        {print.show_footer && (
           <div className="text-center" style={{ fontSize: fontPx * 0.9 }}>
-            {settings.receipt.receipt_footer}
+            {settings.receipt.receipt_footer?.trim() || "Thank you for being a member"}
           </div>
         )}
       </div>
@@ -770,15 +787,7 @@ function PrintPreview({
   );
 }
 
-function Row({
-  label,
-  value,
-  fontPx,
-}: {
-  label: string;
-  value: string;
-  fontPx: number;
-}) {
+function Row({ label, value, fontPx }: { label: string; value: string; fontPx: number }) {
   return (
     <div className="flex justify-between" style={{ fontSize: fontPx }}>
       <span>{label}</span>
@@ -792,25 +801,63 @@ function Divider() {
 }
 
 function DataTab({
+  settings,
+  onSave,
   backing,
   setBacking,
   addToast,
 }: {
+  settings: AllSettings;
+  onSave: (settings: AllSettings) => void;
   backing: boolean;
   setBacking: (v: boolean) => void;
   addToast: (args: {
-    variant: string;
+    variant: "success" | "error" | "warning" | "info";
     title: string;
     message?: string;
   }) => void;
 }) {
-  const [lastBackup, setLastBackup] = useState<string | null>(null);
+  const [form, setForm] = useState<BackupSettings>(settings.backup);
+  const [saving, setSaving] = useState(false);
+
+  const persist = async (next: BackupSettings, showToast = true) => {
+    try {
+      setSaving(true);
+      await saveBackupSettings(next);
+      setForm(next);
+      onSave({ ...settings, backup: next });
+      if (showToast) addToast({ variant: "success", title: "Backup settings saved" });
+      return true;
+    } catch (err) {
+      addToast({
+        variant: "error",
+        title: "Could not save backup settings",
+        message: err instanceof Error ? err.message : "Could not save settings",
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const chooseFolder = async () => {
+    const directory = await selectBackupFolder();
+    if (!directory) return null;
+    const next = { ...form, directory };
+    if (!(await persist(next, false))) return null;
+    return directory;
+  };
 
   const handleBackup = async () => {
     try {
       setBacking(true);
-      const path = await backupDatabase("");
-      setLastBackup(path);
+      const directory = form.directory ?? (await chooseFolder());
+      if (!directory) return;
+      const path = await backupDatabase(directory);
+      const last_backup_at = new Date().toISOString();
+      const next = { ...form, directory, last_backup_at };
+      setForm(next);
+      onSave({ ...settings, backup: next });
       addToast({
         variant: "success",
         title: "Backup successful",
@@ -828,30 +875,75 @@ function DataTab({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-surface p-6">
-        <h3 className="text-base font-semibold text-text-primary mb-4">
-          Backup Database
-        </h3>
-        <p className="text-sm text-text-muted mb-6">
-          Create a backup of your gym data. Store backups safely to prevent
-          data loss.
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-surface p-5">
+        <h3 className="mb-1 text-base font-semibold text-text-primary">Data Backup</h3>
+        <p className="mb-4 text-sm text-text-muted">
+          Backups are saved in your selected folder as separate SQLite database files.
         </p>
-        <Button onClick={handleBackup} loading={backing}>
-          <Download size={14} className="mr-1.5" />
-          Backup Database
-        </Button>
-        {lastBackup && (
-          <p className="mt-3 text-xs text-text-muted">
-            Last backup: <span className="text-text-primary">{lastBackup}</span>
+
+        <div className="max-w-2xl space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-text-primary">
+              Backup folder
+            </label>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={form.directory ?? ""}
+                placeholder="Select where backup files should be saved"
+                className="min-w-0 flex-1"
+              />
+              <Button type="button" variant="secondary" onClick={chooseFolder}>
+                <FolderOpen size={15} />
+                Browse
+              </Button>
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-text-primary">
+            <input
+              type="checkbox"
+              checked={form.daily_enabled}
+              onChange={(event) => setForm({ ...form, daily_enabled: event.target.checked })}
+              className="h-4 w-4 accent-primary"
+            />
+            Create one automatic backup every day
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-text-primary">
+            <input
+              type="checkbox"
+              checked={form.close_enabled}
+              onChange={(event) => setForm({ ...form, close_enabled: event.target.checked })}
+              className="h-4 w-4 accent-primary"
+            />
+            Create a backup whenever Gym POS closes
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" loading={saving} onClick={() => persist(form)}>
+              <Save size={14} />
+              Save Backup Settings
+            </Button>
+            <Button type="button" onClick={handleBackup} loading={backing}>
+              <Download size={14} />
+              Back Up Now
+            </Button>
+          </div>
+
+          <p className="text-xs text-text-muted">
+            Last backup:{" "}
+            <span className="text-text-primary">
+              {form.last_backup_at
+                ? new Date(form.last_backup_at).toLocaleString()
+                : "No backup created yet"}
+            </span>
           </p>
-        )}
+        </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-surface p-6">
-        <h3 className="text-base font-semibold text-text-primary mb-4">
-          About
-        </h3>
+      <div className="rounded-lg border border-border bg-surface p-5">
+        <h3 className="text-base font-semibold text-text-primary mb-4">About</h3>
         <div className="space-y-2 text-sm text-text-muted">
           <div className="flex justify-between">
             <span>Application</span>
@@ -867,9 +959,7 @@ function DataTab({
           </div>
           <div className="flex justify-between">
             <span>Platform</span>
-            <span className="text-text-primary font-medium">
-              Tauri 2 (Windows)
-            </span>
+            <span className="text-text-primary font-medium">Tauri 2 (Windows)</span>
           </div>
         </div>
       </div>

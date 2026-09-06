@@ -5,10 +5,15 @@ mod errors;
 mod models;
 mod repositories;
 mod services;
+mod thermal;
 mod utils;
 
 use database::Database;
+use services::auth_service::AuthState;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+
+static CLOSING_BACKUP_STARTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,12 +33,25 @@ pub fn run() {
 
             let conn = database::init_db(&db_path).expect("Failed to initialize database");
 
-            app.manage(Database::new(conn));
+            let database = Database::new(conn);
+            services::backup_service::start_daily_backup_worker(database.clone_conn());
+            app.manage(database);
+            app.manage(AuthState::default());
             log::info!("Database initialized successfully");
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::auth::get_auth_status,
+            commands::auth::login,
+            commands::auth::logout,
+            commands::auth::get_current_user,
+            commands::auth::get_recovery_question,
+            commands::auth::verify_recovery_answer,
+            commands::auth::reset_password,
+            commands::auth::change_username,
+            commands::auth::change_password,
+            commands::auth::change_security_question,
             commands::membership_plans::create_plan,
             commands::membership_plans::get_plan,
             commands::membership_plans::list_plans,
@@ -66,6 +84,7 @@ pub fn run() {
             commands::expenses::restore_expense,
             commands::dashboard::get_dashboard_summary,
             commands::printing::print_receipt_json,
+            commands::printing::print_thermal_receipt,
             commands::printing::save_pdf_bytes,
             commands::reports::generate_report,
             commands::reports::generate_report_pdf,
@@ -73,8 +92,28 @@ pub fn run() {
             commands::settings::save_gym_settings,
             commands::settings::save_receipt_settings,
             commands::settings::save_print_settings,
+            commands::settings::save_backup_settings,
+            commands::settings::select_backup_folder,
+            commands::settings::select_gym_logo,
             commands::settings::backup_database,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if !CLOSING_BACKUP_STARTED.swap(true, Ordering::SeqCst) {
+                    let state = window.state::<Database>();
+                    let conn = state.clone_conn();
+                    match conn.lock() {
+                        Ok(guard) => {
+                            if let Err(error) = services::backup_service::run_closing_backup(&guard)
+                            {
+                                log::error!("Backup on close failed: {error}");
+                            }
+                        }
+                        Err(_) => log::error!("Backup on close could not access the database"),
+                    };
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

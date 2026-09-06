@@ -26,6 +26,9 @@ thiserror = "2.0.20"
 log = "0.4.34"
 env_logger = "0.11.11"
 dirs-next = "2.0.0"
-printpdf = "0.7"
+printpdf = { version = "0.7", features = ["embedded_images"] }
 rfd = "0.15"
 base64 = "0.22"
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["getrandom"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Printing"] }

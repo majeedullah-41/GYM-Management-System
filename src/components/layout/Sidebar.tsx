@@ -1,9 +1,11 @@
-import { LayoutDashboard, Users, Wallet, FileText, Settings, ReceiptText } from "lucide-react";
+import { LayoutDashboard, Users, Wallet, FileText, Settings, ReceiptText, LogOut } from "lucide-react";
 import type { Page } from "../../types";
 
 interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
+  username: string;
+  onLogout: () => Promise<void>;
 }
 
 const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
@@ -15,7 +17,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export function Sidebar({ currentPage, onNavigate, username, onLogout }: SidebarProps) {
   return (
     <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-border bg-surface">
       <div className="border-b border-border px-5 py-4">
@@ -43,8 +45,9 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         })}
       </nav>
 
-      <div className="border-t border-border px-5 py-3">
-        <p className="text-xs text-text-muted">Gym POS v0.1.0</p>
+      <div className="border-t border-border p-3">
+        <div className="mb-2 px-2"><p className="truncate text-sm font-medium text-text-primary">{username}</p><p className="text-xs text-text-muted">Administrator</p></div>
+        <button type="button" onClick={() => void onLogout()} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-text-muted hover:bg-secondary-bg hover:text-text-primary"><LogOut size={16} />Sign out</button>
       </div>
     </aside>
   );

@@ -80,6 +80,7 @@ fn assemble_receipt(
         receipt_number: receipt_number.to_string(),
         issued_at,
         gym_name: settings.gym_name,
+        gym_logo: settings.gym_logo,
         gym_address: if receipt_settings.show_address {
             settings.gym_address
         } else {

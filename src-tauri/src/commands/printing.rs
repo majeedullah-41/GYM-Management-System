@@ -5,13 +5,98 @@ use crate::database::Database;
 use crate::dto::receipt::ReceiptResponse;
 use crate::errors::AppError;
 use crate::repositories::settings_repository::{self, PrintSettings};
+use crate::services::auth_service;
 use crate::services::printing_service;
+use crate::thermal;
 
 #[derive(Serialize)]
 pub struct PrintDispatchResult {
     pub mode: String,
     pub path: Option<String>,
     pub message: String,
+}
+
+/// Print a receipt to a physical ESC/POS thermal printer via the Windows raw
+/// spooler. Uses the stored `thermal_printer_name` setting, then the passed
+/// `printer_name`, then the Windows default printer. On printer failure the
+/// receipt is opened as a PDF in the system viewer as an explicit fallback —
+/// it never retries the thermal printer automatically (the job may have
+/// partially spooled).
+#[tauri::command]
+pub async fn print_thermal_receipt(
+    state: State<'_, Database>,
+    receipt_json: String,
+    printer_name: Option<String>,
+) -> Result<PrintDispatchResult, AppError> {
+    auth_service::require_authenticated()?;
+    let receipt: ReceiptResponse = serde_json::from_str(&receipt_json)
+        .map_err(|e| AppError::InternalError(format!("Invalid receipt payload: {}", e)))?;
+
+    let conn = state.inner().clone_conn();
+    let (print, footer) = tauri::async_runtime::spawn_blocking(move || {
+        let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
+        let print = settings_repository::get_print_settings(&guard)?;
+        let footer = settings_repository::get_receipt_settings(&guard)?.receipt_footer;
+        Ok::<(PrintSettings, Option<String>), AppError>((print, footer))
+    })
+    .await
+    .map_err(|e| AppError::InternalError(format!("Print task failed: {e}")))??;
+
+    let bytes = thermal::thermal_bytes(&receipt, &print, footer.as_deref())?;
+
+    let requested = printer_name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| n.trim().to_string())
+        .or_else(|| {
+            print.thermal_printer_name
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+        });
+
+    let target_printer = match requested {
+        Some(name) => name,
+        None => match thermal::printer::default_printer_name() {
+            Ok(name) => name,
+            Err(e) => {
+                return thermal_fallback(
+                    &receipt,
+                    &print,
+                    footer.as_deref(),
+                    format!("No thermal printer is installed or selected ({e})"),
+                );
+            }
+        },
+    };
+
+    match thermal::printer::send_raw(&target_printer, &bytes) {
+        Ok(()) => Ok(PrintDispatchResult {
+            mode: "thermal".to_string(),
+            path: None,
+            message: format!("Receipt sent to printer: {target_printer}"),
+        }),
+        Err(e) => thermal_fallback(
+            &receipt,
+            &print,
+            footer.as_deref(),
+            format!("Thermal printer failed: {e}"),
+        ),
+    }
+}
+
+fn thermal_fallback(
+    receipt: &ReceiptResponse,
+    print: &PrintSettings,
+    footer: Option<&str>,
+    reason: String,
+) -> Result<PrintDispatchResult, AppError> {
+    log::error!("[thermal] {reason}; falling back to PDF viewer");
+    let pdf = printing_service::render_receipt_pdf(receipt, print, footer)?;
+    let mut result = open_in_viewer(pdf, &receipt.receipt_number)?;
+    result.mode = "fallback".to_string();
+    result.message =
+        format!("{reason}. Receipt opened as PDF — print it from the PDF viewer.");
+    Ok(result)
 }
 
 /// Save arbitrary PDF bytes (sent from the frontend as base64) via the native
@@ -21,6 +106,7 @@ pub async fn save_pdf_bytes(
     payload: String,
     suggested_name: String,
 ) -> Result<PrintDispatchResult, AppError> {
+    auth_service::require_authenticated()?;
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, payload)
         .map_err(|e| AppError::InternalError(format!("Invalid PDF payload: {e}")))?;
 
@@ -63,6 +149,7 @@ pub async fn print_receipt_json(
     state: State<'_, Database>,
     receipt_json: String,
 ) -> Result<PrintDispatchResult, AppError> {
+    auth_service::require_authenticated()?;
     let receipt: ReceiptResponse = serde_json::from_str(&receipt_json)
         .map_err(|e| AppError::InternalError(format!("Invalid receipt payload: {}", e)))?;
 
