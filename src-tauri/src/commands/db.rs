@@ -11,6 +11,7 @@ where
     F: FnOnce(&Connection) -> Result<T, AppError> + Send + 'static,
 {
     auth_service::require_authenticated()?;
+    crate::licensing::require_valid_license()?;
     tauri::async_runtime::spawn_blocking(move || {
         let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
         f(&guard)

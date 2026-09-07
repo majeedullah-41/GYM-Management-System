@@ -4,6 +4,7 @@ pub mod billing;
 pub mod dashboard;
 pub mod db;
 pub mod expenses;
+pub mod license;
 pub mod members;
 pub mod membership_plans;
 pub mod payments;

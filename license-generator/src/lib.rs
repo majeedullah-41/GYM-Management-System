@@ -88,10 +88,7 @@ pub fn hex_encode(bytes: &[u8]) -> String {
 /// lowercase hex.
 pub fn sign(payload: &LicensePayload, signing_key: &ed25519_dalek::SigningKey) -> String {
     use ed25519_dalek::Signer;
-    signature_hex(&signing_key.sign(&canonical_payload(payload)))
-}
-
-fn signature_hex(sig: &ed25519_dalek::Signature) -> String {
+    let sig = signing_key.sign(&canonical_payload(payload));
     hex_encode(&sig.to_bytes())
 }
 
@@ -118,11 +115,12 @@ mod tests {
         let a = canonical_payload(&p);
         let b = canonical_payload(&p);
         assert_eq!(a, b);
-        // Permanent license omits the trailing expires_at section.
+        // Permanent license has an empty (but present) trailing expires_at
+        // field. The serialization always has exactly 8 fields.
         let text = String::from_utf8(a).unwrap();
         assert_eq!(
             text,
-            "1\x1eLIC-2026-000124\x1eAli Khan\x1eSwat Fitness Center\x1e00000000000000000000000000000007\x1epermanent\x1e2026-09-05"
+            "1\x1eLIC-2026-000124\x1eAli Khan\x1eSwat Fitness Center\x1e00000000000000000000000000000007\x1epermanent\x1e2026-09-05\x1e"
         );
     }
 
@@ -137,13 +135,13 @@ mod tests {
         let p = sample_payload();
         let sig = sign(&p, &signing_key);
         assert_eq!(sig.len(), 128);
-        let expected = "GOLDEN-SIG";
+        let expected = "278830a414cd227a607ef54a20e441be499707203891efdaf1d51c4a696e62784a457d066465577caed419e6678bf8348f879cc140b5e32ec3a914391f68b20a";
         assert_eq!(sig, expected);
     }
 
     #[test]
     fn sign_and_verify_round_trip() {
-        use ed25519_dalek::{Signature, Signer, VerifyingKey};
+        use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
         let seed_bytes = [42u8; 32];
         let signing_key = SigningKey::from_bytes(&seed_bytes);
         let verifying_key = VerifyingKey::from(&signing_key);

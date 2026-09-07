@@ -2,6 +2,7 @@ mod commands;
 mod database;
 mod dto;
 mod errors;
+mod licensing;
 mod models;
 mod repositories;
 mod services;
@@ -35,6 +36,8 @@ pub fn run() {
 
             let database = Database::new(conn);
             services::backup_service::start_daily_backup_worker(database.clone_conn());
+            let license_service = licensing::init(&app_dir);
+            app.manage(license_service);
             app.manage(database);
             app.manage(AuthState::default());
             log::info!("Database initialized successfully");
@@ -86,6 +89,12 @@ pub fn run() {
             commands::expenses::total_expenses,
             commands::expenses::restore_expense,
             commands::dashboard::get_dashboard_summary,
+            commands::license::get_license_status,
+            commands::license::get_hardware_id,
+            commands::license::import_license,
+            commands::license::replace_license,
+            commands::license::select_license_file,
+            commands::license::validate_license,
             commands::printing::print_receipt_json,
             commands::printing::print_thermal_receipt,
             commands::printing::save_pdf_bytes,

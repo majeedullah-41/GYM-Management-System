@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# License generator (vendor-side, NEVER committed)
+license-generator/keys/
+*.key
+*.gymlic

@@ -21,7 +21,6 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use ed25519_dalek::SigningKey;
 use rand_core::OsRng;
 use rand_core::RngCore;
 use license_generator::{canonical_payload, hex_encode, LicensePayload, LicenseType};
@@ -75,10 +74,6 @@ fn get_flag(args: &[String], name: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn has_flag(args: &[String], name: &str) -> bool {
-    args.iter().any(|a| a.as_str() == name)
 }
 
 fn gen_keys(args: Vec<String>) -> ExitCode {
@@ -137,6 +132,8 @@ fn issue(args: Vec<String>) -> ExitCode {
     let license_id = get_flag(&args, "--license-id").unwrap_or_else(|| new_license_id(&issued_at));
     let customer_name = get_flag(&args, "--customer").unwrap_or_default();
     let gym_name = get_flag(&args, "--gym").unwrap_or_default();
+    let out_path = get_flag(&args, "--out")
+        .unwrap_or_else(|| format!("{}.gymlic", slugify(&gym_name)));
 
     let payload = LicensePayload {
         version: 1,
@@ -166,8 +163,6 @@ fn issue(args: Vec<String>) -> ExitCode {
     };
     let json = serde_json::to_string_pretty(&envelope).expect("serialize envelope");
 
-    let out_path = get_flag(&args, "--out")
-        .unwrap_or_else(|| format!("{}.gymlic", slugify(&gym_name)));
     std::fs::write(&out_path, json).expect("write license file");
 
     println!("License generated successfully.");
