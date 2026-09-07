@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gym POS — License Generator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px 16px;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      max-width: 560px;
+      width: 100%;
+      padding: 28px;
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .subtitle {
+      margin: 0 0 22px;
+      color: #6b7280;
+      font-size: 13px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin: 14px 0 6px;
+    }
+    input[type="text"], input[type="password"], input[type="date"], select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #fff;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    }
+    .hint {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 5px;
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+    .row > div { flex: 1; }
+    .radio-row {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .radio-row label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button {
+      width: 100%;
+      margin-top: 22px;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: #6366f1;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { background: #4f46e5; }
+    button:disabled { background: #a5a8f0; cursor: not-allowed; }
+    .hidden { display: none; }
+    .result {
+      margin-top: 24px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 18px;
+    }
+    .summary {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.7;
+      margin: 10px 0;
+    }
+    .summary b { font-weight: 600; }
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      background: #f9fafb;
+      resize: vertical;
+    }
+    .btn-secondary {
+      background: #ffffff;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .btn-secondary:hover { background: #f3f4f6; }
+    .error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 14px;
+    }
+    .status { font-size: 13px; margin-top: 14px; color: #4b5563; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Gym POS</h1>
+    <p class="subtitle">License Generator — for vendor use only</p>
+
+    <label for="token">Access token</label>
+    <input type="password" id="token" autocomplete="off" />
+    <div class="hint">Required — issued by the product vendor.</div>
+
+    <label for="hwid">Hardware ID (64 hex chars)</label>
+    <input type="text" id="hwid" placeholder="e.g. 547612b968aadb7316ab1079e628da594c4352a4815f758396af72d7fd205f77" />
+    <div class="hint">Shown on the app's Activation page — copy it exactly.</div>
+
+    <label for="gym">Gym name</label>
+    <input type="text" id="gym" placeholder="e.g. Swat Fitness Center" />
+
+    <label for="customer">Customer name (optional)</label>
+    <input type="text" id="customer" placeholder="e.g. Ali Khan" />
+
+    <label>License type</label>
+    <div class="radio-row">
+      <label><input type="radio" name="type" id="type-permanent" value="permanent" checked /> Permanent</label>
+      <label><input type="radio" name="type" id="type-expiring" value="expiring" /> Expiring</label>
+    </div>
+
+    <div class="hidden" id="expiry-row">
+      <label for="expiry">Expiry date</label>
+      <input type="date" id="expiry" />
+      <div class="hint">License will stop working after this date.</div>
+    </div>
+
+    <button id="generate">Generate license</button>
+    <div class="status hidden" id="status"></div>
+    <div class="error hidden" id="error"></div>
+
+    <div class="result hidden" id="result">
+      <div class="summary" id="summary"></div>
+      <label for="envelope">License text (paste into the app)</label>
+      <textarea id="envelope" readonly></textarea>
+      <button class="btn-secondary" id="copy">Copy license text</button>
+      <button class="btn-secondary" id="download">Download .gymlic file</button>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const radioExpiring = $("type-expiring");
+      const radioPermanent = $("type-permanent");
+
+      function toggleExpiry() {
+        $("expiry-row").classList.toggle("hidden", !radioExpiring.checked);
+      }
+      radioExpiring.addEventListener("change", toggleExpiry);
+      radioPermanent.addEventListener("change", toggleExpiry);
+
+      $("generate").addEventListener("click", async () => {
+        $("error").classList.add("hidden");
+        $("result").classList.add("hidden");
+        const statusEl = $("status");
+        statusEl.classList.remove("hidden");
+        statusEl.textContent = "Generating...";
+        $("generate").disabled = true;
+
+        const body = {
+          token: $("token").value.trim(),
+          hwid: $("hwid").value.trim(),
+          gym_name: $("gym").value.trim(),
+          customer_name: $("customer").value.trim(),
+          license_type: $("type-expiring").checked ? "expiring" : "permanent",
+          expires_at: $("type-expiring").checked ? $("expiry").value : undefined,
+        };
+
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+        $("generate").disabled = false;
+        statusEl.classList.add("hidden");
+
+        if (!res.ok) {
+          const err = $("error");
+          err.textContent = data.error || "Something went wrong.";
+          err.classList.remove("hidden");
+          return;
+        }
+
+        $("envelope").value = data.envelope;
+        $("summary").innerHTML =
+          "<b>License ID:</b> " + data.license_id +
+          " &nbsp; <b>Type:</b> " + data.license_type +
+          "<br><b>Gym:</b> " + (data.gym_name || "—") +
+          " &nbsp; <b>Customer:</b> " + (data.customer_name || "—") +
+          "<br><b>Issued:</b> " + data.issued_at +
+          " &nbsp; <b>Expires:</b> " + (data.expires_at || "Permanent");
+        $("result").classList.remove("hidden");
+      });
+
+      $("copy").addEventListener("click", async () => {
+        const text = $("envelope").value;
+        await navigator.clipboard.writeText(text);
+        $("copy").textContent = "Copied!";
+        setTimeout(() => ($("copy").textContent = "Copy license text"), 1500);
+      });
+
+      $("download").addEventListener("click", () => {
+        const text = $("envelope").value;
+        const gym = ($("gym").value.trim() || "license")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+        const blob = new Blob([text], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = (gym || "license") + ".gymlic";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    </script>
+  </div>
+</body>
+</html>

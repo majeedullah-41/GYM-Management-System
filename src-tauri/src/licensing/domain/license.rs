@@ -33,7 +33,7 @@ impl LicenseType {
 }
 
 /// Verified payload of a license.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LicensePayload {
     pub version: u32,
     pub license_id: String,

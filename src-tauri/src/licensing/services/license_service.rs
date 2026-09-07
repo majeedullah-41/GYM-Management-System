@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use crate::licensing::crypto::license_verifier;
 use crate::licensing::crypto::keys;
+use crate::licensing::domain::hwid::HwId;
 use crate::licensing::domain::license::LicensePayload;
 use crate::licensing::domain::license_status::LicenseStatus;
 
@@ -79,7 +80,7 @@ impl LicenseService {
     }
 
     pub fn hardware_id(&self) -> String {
-        self.hardware.current()
+        self.hardware.current().as_str().to_string()
     }
 
     /// Current status without re-reading the files.
@@ -88,7 +89,7 @@ impl LicenseService {
         LicenseStatusResponse {
             status: cached.status,
             license: cached.license.as_ref().map(info_from_payload),
-            hardware_id: self.hardware.current(),
+            hardware_id: self.hardware_id(),
         }
     }
 
@@ -142,8 +143,9 @@ impl LicenseService {
             Err(status) => return (status, None),
         };
 
-        let machine = self.hardware_id();
-        if !payload.hwid.trim().eq_ignore_ascii_case(&machine) {
+        let machine = HwId(self.hardware_id());
+        let license_target = HwId(payload.hwid.trim().to_string());
+        if !license_target.matches(&machine) {
             return (LicenseStatus::HardwareMismatch, Some(payload));
         }
 

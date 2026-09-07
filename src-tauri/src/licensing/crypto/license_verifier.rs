@@ -1,6 +1,8 @@
 //! Ed25519 verification of Gym POS license envelopes.
 
-use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+#[cfg(test)]
+use ed25519_dalek::SigningKey;
 use serde_json::Value;
 
 use super::super::domain::license::{
@@ -54,8 +56,9 @@ pub fn verify(data: &[u8], public_key: &VerifyingKey) -> Result<LicensePayload, 
     Ok(payload)
 }
 
-/// Builds a signed envelope for a payload with the given key. Used by the
-/// vendor generator and by tests; the app itself never signs.
+/// Builds a signed envelope for a payload with the given key. Test/vendor
+/// utility only; the shipped app never signs.
+#[cfg(test)]
 pub fn build_envelope(payload: &LicensePayload, signing_key: &SigningKey) -> Vec<u8> {
     use ed25519_dalek::Signer;
     let signature = signing_key.sign(&canonical_payload(payload));
@@ -135,6 +138,7 @@ fn decode_hex_64(hex: &str) -> Option<[u8; 64]> {
     Some(out)
 }
 
+#[cfg(test)]
 pub fn hex_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -284,5 +288,22 @@ mod tests {
         value["signature_hex"] = Value::String("zz".repeat(64));
         let bad = serde_json::to_vec(&value).unwrap();
         assert_eq!(verify(&bad, &vk), Err(LicenseStatus::Corrupted));
+    }
+
+    #[test]
+    fn dev_key_verifies_cli_issued_license() {
+        // End-to-end provisioning check: a license issued by the vendor CLI
+        // (license-generator issue) must validate against the PUBLIC_KEY_HEX
+        // embedded in keys.rs. Reads the file written by the manual e2e step.
+        let path = "C:\\Users\\SALMAN~1\\AppData\\Local\\Temp\\opencode\\dev-test.gymlic";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("skipping: CLI-issued license file not present");
+            return;
+        }
+        let data = std::fs::read(path).expect("read issued license");
+        let vk = crate::licensing::crypto::keys::verifying_key().expect("embedded dev key");
+        let payload = verify(&data, &vk).expect("embedded dev key must verify CLI-issued license");
+        assert_eq!(payload.gym_name, "Swat Fitness Center");
+        assert_eq!(payload.hwid, "547612b968aadb7316ab1079e628da594c4352a4815f758396af72d7fd205f77");
     }
 }

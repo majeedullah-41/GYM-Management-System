@@ -34,8 +34,9 @@ import {
 import type { AuthUser } from "../../../lib/api/auth";
 import { UserInformationTab } from "../components/UserInformationTab";
 import { ReceiptPaper } from "../../receipts/components/ReceiptPaper";
+import { LicenseInfoTab } from "../../licensing/components/LicenseInfoTab";
 
-type Tab = "user" | "gym" | "plans" | "receipts" | "data";
+type Tab = "user" | "gym" | "plans" | "receipts" | "data" | "license";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "user", label: "User Information" },
@@ -43,6 +44,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "plans", label: "Membership Plans" },
   { key: "receipts", label: "Receipts" },
   { key: "data", label: "Data & Backup" },
+  { key: "license", label: "License" },
 ];
 
 export function SettingsPage({ user, onUserUpdated, onSignedOut }: { user: AuthUser; onUserUpdated: (user: AuthUser) => void; onSignedOut: () => void }) {
@@ -113,6 +115,7 @@ export function SettingsPage({ user, onUserUpdated, onSignedOut }: { user: AuthU
               addToast={addToast}
             />
           )}
+          {activeTab === "license" && <LicenseInfoTab />}
         </section>
       </div>
     </div>

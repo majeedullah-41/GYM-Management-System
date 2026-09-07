@@ -3,6 +3,25 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import App from "./App";
 
+vi.mock("../lib/api/license", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api/license")>("../lib/api/license");
+  return {
+    ...actual,
+    getLicenseStatus: vi.fn().mockResolvedValue({
+      status: "valid",
+      license: {
+        license_id: "LIC-DEV-000001",
+        customer_name: "Dev",
+        gym_name: "Dev Gym",
+        license_type: "permanent",
+        issued_at: "2026-09-07",
+        expires_at: null,
+      },
+      hardware_id: "0000000000000000000000000000000000000000000000000000000000000000",
+    }),
+  };
+});
+
 vi.mock("../lib/api/auth", async () => {
   const actual = await vi.importActual<typeof import("../lib/api/auth")>("../lib/api/auth");
   return {
@@ -36,9 +55,9 @@ vi.mock("../lib/api/settings", async () => {
 });
 
 describe("App", () => {
-  it("should_render_sidebar_with_gym_pos_title", () => {
+  it("should_render_sidebar_with_gym_pos_title", async () => {
     render(<App />);
-    expect(screen.getByText("Gym POS")).toBeInTheDocument();
+    expect(await screen.findByText("Gym POS")).toBeInTheDocument();
   });
 
   it("should_render_all_navigation_items", async () => {

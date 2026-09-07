@@ -16,9 +16,11 @@ use windows::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, KEY_READ, REG_SZ, HKEY_LOCAL_MACHINE,
 };
 
+use crate::licensing::domain::hwid::HwId;
+
 /// Source of the machine identity.
 pub trait HwIdProvider: Send + Sync {
-    fn current(&self) -> String;
+    fn current(&self) -> HwId;
 }
 
 /// Production provider reading the Windows registry and volume serial.
@@ -26,8 +28,8 @@ pub trait HwIdProvider: Send + Sync {
 pub struct RegistryHwIdProvider;
 
 impl HwIdProvider for RegistryHwIdProvider {
-    fn current(&self) -> String {
-        Self::compute()
+    fn current(&self) -> HwId {
+        HwId(Self::compute())
     }
 }
 
@@ -155,8 +157,8 @@ pub struct MockHwIdProvider(pub String);
 
 #[cfg(test)]
 impl HwIdProvider for MockHwIdProvider {
-    fn current(&self) -> String {
-        self.0.clone()
+    fn current(&self) -> HwId {
+        HwId(self.0.clone())
     }
 }
 
