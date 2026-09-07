@@ -32,7 +32,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
     };
 
     let total_members: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM members WHERE is_archived = 0",
+        "SELECT COUNT(*) FROM members WHERE is_archived = 0 AND deleted_at IS NULL",
         [],
         |row| row.get(0),
     )?;
@@ -121,6 +121,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                 address: m.address.clone(),
                 date_of_birth: m.date_of_birth.clone(),
                 gender: m.gender.clone(),
+                blood_group: m.blood_group.clone(),
                 notes: m.notes.clone(),
                 is_archived: m.is_archived,
                 membership_plan_id: m.membership_plan_id.clone(),

@@ -6,6 +6,7 @@ use crate::errors::AppError;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GymSettings {
     pub gym_name: String,
+    pub gym_tagline: Option<String>,
     pub gym_logo: Option<String>,
     pub gym_address: Option<String>,
     pub gym_phone: Option<String>,
@@ -31,6 +32,8 @@ pub struct PrintSettings {
     pub thermal_printer_name: Option<String>,
     pub thermal_characters_per_line: Option<i64>,
     pub show_gym_name: bool,
+    pub show_gym_logo: bool,
+    pub show_gym_tagline: bool,
     pub show_gym_phone: bool,
     pub show_gym_address: bool,
     pub show_receipt_title: bool,
@@ -39,7 +42,9 @@ pub struct PrintSettings {
     pub show_member_info: bool,
     pub show_plan_info: bool,
     pub show_period: bool,
-    pub show_payment_details: bool,
+    pub show_amount_received: bool,
+    pub show_method: bool,
+    pub show_received_by: bool,
     pub show_remaining_balance: bool,
     pub show_notes: bool,
     pub show_footer: bool,
@@ -78,6 +83,9 @@ pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
     if let Ok(name) = get_setting(conn, "gym_name") {
         settings.gym_name = name;
     }
+    if let Ok(tagline) = get_setting(conn, "gym_tagline") {
+        settings.gym_tagline = Some(tagline);
+    }
     if let Ok(logo) = get_setting(conn, "gym_logo") {
         settings.gym_logo = Some(logo);
     }
@@ -97,6 +105,13 @@ pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
     if settings.gym_name.is_empty() {
         settings.gym_name = "Gym POS".to_string();
     }
+    if settings
+        .gym_tagline
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        settings.gym_tagline = Some("Train Today Be Better".to_string());
+    }
 
     Ok(settings)
 }
@@ -108,7 +123,14 @@ pub fn get_receipt_settings(conn: &Connection) -> Result<ReceiptSettings, AppErr
         settings.receipt_title = title;
     }
     if let Ok(footer) = get_setting(conn, "receipt_footer") {
-        settings.receipt_footer = Some(footer);
+        settings.receipt_footer = if footer
+            .trim()
+            .eq_ignore_ascii_case("Thank you for being a member")
+        {
+            Some("Stay Fit | Stay Healthy".to_string())
+        } else {
+            Some(footer)
+        };
     }
     if let Ok(v) = get_setting(conn, "receipt_show_phone") {
         settings.show_phone = v == "1";
@@ -133,6 +155,9 @@ pub fn get_receipt_settings(conn: &Connection) -> Result<ReceiptSettings, AppErr
 
     if settings.receipt_title.is_empty() {
         settings.receipt_title = "PAYMENT RECEIPT".to_string();
+    }
+    if settings.receipt_footer.is_none() {
+        settings.receipt_footer = Some("Stay Fit | Stay Healthy".to_string());
     }
 
     Ok(settings)
@@ -218,6 +243,15 @@ pub fn get_print_settings(conn: &Connection) -> Result<PrintSettings, AppError> 
         Ok(v) => v.parse::<i64>().ok().map(|c| c.clamp(16, 64)),
         Err(_) => None,
     };
+    let current_receipt_layout =
+        get_setting(conn, "receipt_layout_version").is_ok_and(|value| value == "reference-v1");
+    let visible = |key: &str| {
+        if current_receipt_layout {
+            get_bool_default(conn, key, true)
+        } else {
+            true
+        }
+    };
 
     Ok(PrintSettings {
         destination,
@@ -225,19 +259,23 @@ pub fn get_print_settings(conn: &Connection) -> Result<PrintSettings, AppError> 
         font_size,
         thermal_printer_name,
         thermal_characters_per_line,
-        show_gym_name: get_bool_default(conn, "print_show_gym_name", true),
-        show_gym_phone: get_bool_default(conn, "print_show_gym_phone", true),
-        show_gym_address: get_bool_default(conn, "print_show_gym_address", true),
-        show_receipt_title: get_bool_default(conn, "print_show_receipt_title", true),
-        show_receipt_number: get_bool_default(conn, "print_show_receipt_number", true),
-        show_date: get_bool_default(conn, "print_show_date", true),
-        show_member_info: get_bool_default(conn, "print_show_member_info", true),
-        show_plan_info: get_bool_default(conn, "print_show_plan_info", true),
-        show_period: get_bool_default(conn, "print_show_period", true),
-        show_payment_details: get_bool_default(conn, "print_show_payment_details", true),
+        show_gym_name: visible("print_show_gym_name"),
+        show_gym_logo: visible("print_show_gym_logo"),
+        show_gym_tagline: visible("print_show_gym_tagline"),
+        show_gym_phone: visible("print_show_gym_phone"),
+        show_gym_address: visible("print_show_gym_address"),
+        show_receipt_title: visible("print_show_receipt_title"),
+        show_receipt_number: visible("print_show_receipt_number"),
+        show_date: visible("print_show_date"),
+        show_member_info: visible("print_show_member_info"),
+        show_plan_info: visible("print_show_plan_info"),
+        show_period: visible("print_show_period"),
+        show_amount_received: get_bool_default(conn, "print_show_amount_received", true),
+        show_method: get_bool_default(conn, "print_show_method", true),
+        show_received_by: get_bool_default(conn, "print_show_received_by", true),
         show_remaining_balance: get_bool_default(conn, "print_show_remaining_balance", true),
         show_notes: get_bool_default(conn, "print_show_notes", true),
-        show_footer: get_bool_default(conn, "print_show_footer", true),
+        show_footer: visible("print_show_footer"),
     })
 }
 
@@ -261,7 +299,13 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
     set("print_destination", destination)?;
     set("print_paper_width", paper_width)?;
     set("print_font_size", &font_size.to_string())?;
-    set_setting_optional(conn, "thermal_printer_name", &print.thermal_printer_name, &now)?;
+    set("receipt_layout_version", "reference-v1")?;
+    set_setting_optional(
+        conn,
+        "thermal_printer_name",
+        &print.thermal_printer_name,
+        &now,
+    )?;
     match print.thermal_characters_per_line {
         Some(c) => set("thermal_characters_per_line", &c.clamp(16, 64).to_string())?,
         None => {
@@ -272,6 +316,8 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
         }
     }
     set_bool("print_show_gym_name", print.show_gym_name)?;
+    set_bool("print_show_gym_logo", print.show_gym_logo)?;
+    set_bool("print_show_gym_tagline", print.show_gym_tagline)?;
     set_bool("print_show_gym_phone", print.show_gym_phone)?;
     set_bool("print_show_gym_address", print.show_gym_address)?;
     set_bool("print_show_receipt_title", print.show_receipt_title)?;
@@ -280,7 +326,9 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
     set_bool("print_show_member_info", print.show_member_info)?;
     set_bool("print_show_plan_info", print.show_plan_info)?;
     set_bool("print_show_period", print.show_period)?;
-    set_bool("print_show_payment_details", print.show_payment_details)?;
+    set_bool("print_show_amount_received", print.show_amount_received)?;
+    set_bool("print_show_method", print.show_method)?;
+    set_bool("print_show_received_by", print.show_received_by)?;
     set_bool("print_show_remaining_balance", print.show_remaining_balance)?;
     set_bool("print_show_notes", print.show_notes)?;
     set_bool("print_show_footer", print.show_footer)?;
@@ -290,6 +338,7 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
 pub fn save_gym_settings(conn: &Connection, gym: &GymSettings) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     set_setting(conn, "gym_name", &gym.gym_name, &now)?;
+    set_setting_optional(conn, "gym_tagline", &gym.gym_tagline, &now)?;
     set_setting_optional(conn, "gym_logo", &gym.gym_logo, &now)?;
     set_setting_optional(conn, "gym_address", &gym.gym_address, &now)?;
     set_setting_optional(conn, "gym_phone", &gym.gym_phone, &now)?;
@@ -301,7 +350,10 @@ pub fn save_gym_settings(conn: &Connection, gym: &GymSettings) -> Result<(), App
 pub fn save_receipt_settings(conn: &Connection, receipt: &ReceiptSettings) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     set_setting(conn, "receipt_title", &receipt.receipt_title, &now)?;
-    set_setting_optional(conn, "receipt_footer", &receipt.receipt_footer, &now)?;
+    match &receipt.receipt_footer {
+        Some(f) => set_setting(conn, "receipt_footer", f, &now)?,
+        None => set_setting(conn, "receipt_footer", "", &now)?,
+    }
     set_setting(
         conn,
         "receipt_show_phone",

@@ -7,8 +7,8 @@ pub fn create(conn: &Connection, member: &Member) -> Result<(), AppError> {
     conn.execute(
         "INSERT INTO members \
          (id, member_number, full_name, father_name, phone, cnic, address, \
-          date_of_birth, gender, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+          date_of_birth, gender, blood_group, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             member.id,
             member.member_number,
@@ -19,6 +19,7 @@ pub fn create(conn: &Connection, member: &Member) -> Result<(), AppError> {
             member.address,
             member.date_of_birth,
             member.gender,
+            member.blood_group,
             member.photo_path,
             member.notes,
             member.admission_fee,
@@ -34,8 +35,22 @@ pub fn create(conn: &Connection, member: &Member) -> Result<(), AppError> {
 pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Member>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT id, member_number, full_name, father_name, phone, cnic, address, \
-         date_of_birth, gender, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at \
+         date_of_birth, gender, blood_group, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at \
          FROM members WHERE id = ?1",
+    )?;
+
+    let mut rows = stmt.query_map(params![id], row_to_member)?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+pub fn get_operational_by_id(conn: &Connection, id: &str) -> Result<Option<Member>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, member_number, full_name, father_name, phone, cnic, address, \
+         date_of_birth, gender, blood_group, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at \
+         FROM members WHERE id = ?1 AND deleted_at IS NULL",
     )?;
 
     let mut rows = stmt.query_map(params![id], row_to_member)?;
@@ -52,11 +67,11 @@ pub fn list(
 ) -> Result<Vec<Member>, AppError> {
     let mut sql = String::from(
         "SELECT id, member_number, full_name, father_name, phone, cnic, address, \
-         date_of_birth, gender, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at \
+         date_of_birth, gender, blood_group, photo_path, notes, admission_fee, membership_plan_id, is_archived, created_at, updated_at \
          FROM members",
     );
 
-    let mut conditions = Vec::new();
+    let mut conditions = vec!["deleted_at IS NULL".to_string()];
     let mut param_values: Vec<String> = Vec::new();
 
     if !search.is_empty() {
@@ -144,8 +159,8 @@ pub fn update(conn: &Connection, member: &Member) -> Result<(), AppError> {
     let rows = conn.execute(
         "UPDATE members \
          SET full_name = ?2, father_name = ?3, phone = ?4, cnic = ?5, address = ?6, \
-             date_of_birth = ?7, gender = ?8, notes = ?9, admission_fee = ?10, membership_plan_id = ?11, is_archived = ?12, updated_at = ?13 \
-         WHERE id = ?1",
+             date_of_birth = ?7, gender = ?8, blood_group = ?9, notes = ?10, admission_fee = ?11, membership_plan_id = ?12, is_archived = ?13, updated_at = ?14 \
+         WHERE id = ?1 AND deleted_at IS NULL",
         params![
             member.id,
             member.full_name,
@@ -155,6 +170,7 @@ pub fn update(conn: &Connection, member: &Member) -> Result<(), AppError> {
             member.address,
             member.date_of_birth,
             member.gender,
+            member.blood_group,
             member.notes,
             member.admission_fee,
             member.membership_plan_id,
@@ -175,7 +191,7 @@ pub fn update(conn: &Connection, member: &Member) -> Result<(), AppError> {
 
 pub fn archive(conn: &Connection, id: &str, archived_at: &str) -> Result<(), AppError> {
     let rows = conn.execute(
-        "UPDATE members SET is_archived = 1, updated_at = ?2 WHERE id = ?1",
+        "UPDATE members SET is_archived = 1, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
         params![id, archived_at],
     )?;
 
@@ -191,7 +207,7 @@ pub fn archive(conn: &Connection, id: &str, archived_at: &str) -> Result<(), App
 
 pub fn unarchive(conn: &Connection, id: &str, updated_at: &str) -> Result<(), AppError> {
     let rows = conn.execute(
-        "UPDATE members SET is_archived = 0, updated_at = ?2 WHERE id = ?1",
+        "UPDATE members SET is_archived = 0, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
         params![id, updated_at],
     )?;
 
@@ -200,6 +216,27 @@ pub fn unarchive(conn: &Connection, id: &str, updated_at: &str) -> Result<(), Ap
             "Member with id '{}' not found",
             id
         )));
+    }
+
+    Ok(())
+}
+
+pub fn mark_permanently_deleted(
+    conn: &Connection,
+    id: &str,
+    deleted_at: &str,
+) -> Result<(), AppError> {
+    let rows = conn.execute(
+        "UPDATE members \
+         SET is_archived = 1, deleted_at = ?2, updated_at = ?2 \
+         WHERE id = ?1 AND is_archived = 1 AND deleted_at IS NULL",
+        params![id, deleted_at],
+    )?;
+
+    if rows == 0 {
+        return Err(AppError::ValidationError(
+            "Only an archived member can be permanently deleted".into(),
+        ));
     }
 
     Ok(())
@@ -216,6 +253,7 @@ fn row_to_member(row: &rusqlite::Row<'_>) -> Result<Member, rusqlite::Error> {
         address: row.get("address")?,
         date_of_birth: row.get("date_of_birth")?,
         gender: row.get("gender")?,
+        blood_group: row.get("blood_group")?,
         photo_path: row.get("photo_path")?,
         notes: row.get("notes")?,
         admission_fee: row.get("admission_fee")?,
@@ -249,6 +287,7 @@ mod tests {
             address: None,
             date_of_birth: None,
             gender: None,
+            blood_group: None,
             photo_path: None,
             notes: None,
             admission_fee: None,

@@ -41,9 +41,10 @@ pub fn create_payment(
         }
     }
 
-    let member = member_repository::get_by_id(conn, &request.member_id)?.ok_or_else(|| {
-        AppError::NotFoundError(format!("Member '{}' not found", request.member_id))
-    })?;
+    let member =
+        member_repository::get_operational_by_id(conn, &request.member_id)?.ok_or_else(|| {
+            AppError::NotFoundError(format!("Member '{}' not found", request.member_id))
+        })?;
     if member.is_archived {
         return Err(AppError::ValidationError(
             "Cannot record payment for an archived member".into(),
@@ -140,36 +141,13 @@ pub fn create_payment(
         &payment.id,
         request.idempotency_key.as_deref(),
     )?;
-    let mut remaining = membership_amount;
-    for bill in targets {
-        if remaining <= 0 {
-            break;
-        }
-        let amount = remaining.min(bill.expected_amount - bill.paid_amount);
-        crate::repositories::billing_repository::create_bill_allocation(
-            &tx,
-            &payment.id,
-            &bill.id,
-            &bill.membership_plan_id,
-            &bill.period_start,
-            &bill.period_end,
-            amount,
-            &now,
-        )?;
-        let paid = bill.paid_amount + amount;
-        let status = if paid >= bill.expected_amount {
-            "PAID"
-        } else {
-            "PARTIALLY_PAID"
-        };
-        crate::repositories::billing_repository::set_bill_paid(&tx, &bill.id, paid, status, &now)?;
-        remaining -= amount;
-    }
-    if remaining != 0 {
-        return Err(AppError::ValidationError(
-            "Payment could not be fully allocated".into(),
-        ));
-    }
+    crate::services::billing_service::allocate_payment(
+        &tx,
+        &payment.id,
+        &targets,
+        membership_amount,
+        &now,
+    )?;
 
     let receipt = Receipt {
         id: uuid::Uuid::new_v4().to_string(),

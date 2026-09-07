@@ -27,9 +27,9 @@ vi.mock("../lib/api/settings", async () => {
   return {
     ...actual,
     getAllSettings: vi.fn().mockResolvedValue({
-      gym: { gym_name: "Gym POS", gym_logo: null, gym_address: null, gym_phone: null, gym_email: null, gym_website: null },
+      gym: { gym_name: "Gym POS", gym_tagline: null, gym_logo: null, gym_address: null, gym_phone: null, gym_email: null, gym_website: null },
       receipt: { receipt_title: "RECEIPT", receipt_footer: null, show_phone: true, show_address: true, show_member_id: true, show_notes: true },
-      print: { destination: "print_window", paper_width: "80", font_size: 11, show_gym_name: true, show_gym_phone: true, show_gym_address: true, show_receipt_title: true, show_receipt_number: true, show_date: true, show_member_info: true, show_plan_info: true, show_period: true, show_payment_details: true, show_remaining_balance: true, show_notes: true, show_footer: true },
+      print: { destination: "print_window", paper_width: "80", font_size: 11, show_gym_name: true, show_gym_logo: true, show_gym_tagline: true, show_gym_phone: true, show_gym_address: true, show_receipt_title: true, show_receipt_number: true, show_date: true, show_member_info: true, show_plan_info: true, show_period: true, show_amount_received: true, show_method: true, show_received_by: true, show_remaining_balance: true, show_notes: true, show_footer: true },
       backup: { directory: null, daily_enabled: true, close_enabled: true, last_backup_at: null },
     }),
   };

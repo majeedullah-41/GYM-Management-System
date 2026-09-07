@@ -11,6 +11,7 @@ pub struct Member {
     pub address: Option<String>,
     pub date_of_birth: Option<String>,
     pub gender: Option<String>,
+    pub blood_group: Option<String>,
     pub photo_path: Option<String>,
     pub notes: Option<String>,
     pub admission_fee: Option<i64>,

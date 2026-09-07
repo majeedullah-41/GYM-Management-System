@@ -33,7 +33,11 @@ pub fn thermal_bytes(
         );
     }
 
-    let bytes = escpos::encode(&lines, &profile);
+    let logo = print
+        .show_gym_logo
+        .then(|| receipt.gym_logo.as_deref())
+        .flatten();
+    let bytes = escpos::encode_with_logo(&lines, &profile, logo);
     log::info!(
         "[thermal] receipt {} → {} columns, {} lines ({} print rows), {} bytes",
         receipt.receipt_number,
@@ -56,6 +60,7 @@ mod tests {
             receipt_number: "R-0001".to_string(),
             issued_at: "2026-08-28T10:00:00Z".to_string(),
             gym_name: "Fitness Zone".to_string(),
+            gym_tagline: Some("Train Today Be Better".to_string()),
             gym_logo: None,
             gym_address: Some("123 Main Street, Lahore".to_string()),
             gym_phone: Some("+92 300 1234567".to_string()),
@@ -81,6 +86,8 @@ mod tests {
             thermal_printer_name: None,
             thermal_characters_per_line: None,
             show_gym_name: true,
+            show_gym_logo: true,
+            show_gym_tagline: true,
             show_gym_phone: true,
             show_gym_address: true,
             show_receipt_title: true,
@@ -89,7 +96,9 @@ mod tests {
             show_member_info: true,
             show_plan_info: true,
             show_period: true,
-            show_payment_details: true,
+            show_amount_received: true,
+            show_method: true,
+            show_received_by: true,
             show_remaining_balance: true,
             show_notes: true,
             show_footer: true,
@@ -110,7 +119,9 @@ mod tests {
         print.thermal_characters_per_line = Some(24);
         let bytes = thermal_bytes(&sample_receipt(), &print, None).unwrap();
         let text = String::from_utf8_lossy(&bytes);
-        let divider_line = text.lines().find(|l| !l.is_empty() && l.chars().all(|c| c == '-'));
+        let divider_line = text
+            .lines()
+            .find(|l| !l.is_empty() && l.chars().all(|c| c == '-'));
         assert!(divider_line.is_some());
         assert_eq!(divider_line.unwrap().chars().count(), 24);
     }
@@ -122,10 +133,10 @@ mod tests {
         let document = renderer::build_document(&sample_receipt(), &print, None);
         let lines = layout::render_document(&document.blocks, 32);
         let snapshot = layout::render_lines_as_ascii(&lines);
-        assert!(snapshot.contains("Fitness Zone"));
+        assert!(snapshot.contains("FITNESS ZONE"));
         assert!(snapshot.contains("R-0001"));
         assert!(snapshot.contains("Ali Khan"));
-        assert!(snapshot.contains("Paid in full"));
-        assert!(snapshot.contains("Thank you for being a member"));
+        assert!(snapshot.contains("Rs. 25,000"));
+        assert!(snapshot.contains("Stay Fit | Stay Healthy"));
     }
 }

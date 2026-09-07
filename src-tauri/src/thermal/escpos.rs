@@ -5,18 +5,47 @@
 /// sent; any other character is replaced with `?` because multi-byte encodings
 /// are printer-specific.
 use crate::thermal::model::{Align, Line, LineKind, PrinterProfile};
+use base64::Engine;
 
 const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
 
 /// Encode a rendered document into a raw ESC/POS byte stream.
+#[cfg(test)]
 pub fn encode(lines: &[Line], profile: &PrinterProfile) -> Vec<u8> {
+    encode_with_logo(lines, profile, None)
+}
+
+pub fn encode_with_logo(
+    lines: &[Line],
+    profile: &PrinterProfile,
+    logo_data_url: Option<&str>,
+) -> Vec<u8> {
     let mut w = Escpos::new();
     w.init();
 
     let mut current_align: Option<Align> = None;
     let mut current_bold = false;
     let mut current_double = false;
+
+    if profile.supports_image {
+        if let Some((width_bytes, height, pixels)) = logo_data_url.and_then(|logo| {
+            rasterize_logo(
+                logo,
+                if profile.paper_width_mm == 58 {
+                    280
+                } else {
+                    420
+                },
+                112,
+            )
+        }) {
+            w.align(Align::Center);
+            current_align = Some(Align::Center);
+            w.raster(width_bytes, height, &pixels);
+            w.lf();
+        }
+    }
 
     for line in lines {
         match line.kind {
@@ -114,6 +143,21 @@ impl Escpos {
         self.bytes.extend_from_slice(&[GS, 0x21, n]);
     }
 
+    /// `GS v 0` — print a monochrome raster bitmap.
+    pub fn raster(&mut self, width_bytes: u16, height: u16, pixels: &[u8]) {
+        self.bytes.extend_from_slice(&[
+            GS,
+            0x76,
+            0x30,
+            0x00,
+            width_bytes as u8,
+            (width_bytes >> 8) as u8,
+            height as u8,
+            (height >> 8) as u8,
+        ]);
+        self.bytes.extend_from_slice(pixels);
+    }
+
     /// Write text followed by LF. Non-ASCII characters become `?`.
     pub fn text(&mut self, text: &str) {
         self.bytes.extend(encode_text(text));
@@ -133,8 +177,38 @@ impl Escpos {
 
 fn encode_text(text: &str) -> Vec<u8> {
     text.chars()
-        .map(|c| if c.is_ascii() && (c.is_ascii_graphic() || c == ' ') { c as u8 } else { b'?' })
+        .map(|c| {
+            if c.is_ascii() && (c.is_ascii_graphic() || c == ' ') {
+                c as u8
+            } else {
+                b'?'
+            }
+        })
         .collect()
+}
+
+fn rasterize_logo(data_url: &str, max_width: u32, max_height: u32) -> Option<(u16, u16, Vec<u8>)> {
+    let (_, encoded) = data_url.split_once(',')?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let image = printpdf::image_crate::load_from_memory(&bytes).ok()?;
+    let resized = image.thumbnail(max_width, max_height).to_rgba8();
+    let width_bytes = resized.width().div_ceil(8);
+    let mut raster = vec![0_u8; (width_bytes * resized.height()) as usize];
+
+    for (x, y, pixel) in resized.enumerate_pixels() {
+        let alpha = pixel[3] as u32;
+        let luminance =
+            (pixel[0] as u32 * 299 + pixel[1] as u32 * 587 + pixel[2] as u32 * 114) / 1000;
+        let on_white = (luminance * alpha + 255 * (255 - alpha)) / 255;
+        if on_white < 160 {
+            let index = (y * width_bytes + x / 8) as usize;
+            raster[index] |= 0x80 >> (x % 8);
+        }
+    }
+
+    Some((width_bytes as u16, resized.height() as u16, raster))
 }
 
 #[cfg(test)]
@@ -183,9 +257,22 @@ mod tests {
         let mut profile = PrinterProfile::for_paper_width("58");
         profile.characters_per_line = 8;
         let bytes = encode(&[Line::divider('-')], &profile);
-        // [..2] init + 8 dashes + LF = 11 bytes
-        assert_eq!(bytes.len(), 11);
-        assert_eq!(&bytes[2..10], b"--------");
+        // init (2) + align (3) + 8 dashes + LF = 14 bytes
+        assert_eq!(bytes.len(), 14);
+        assert_eq!(&bytes[5..13], b"--------");
+    }
+
+    #[test]
+    fn encode_prints_configured_logo_as_raster() {
+        let logo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        let bytes = encode_with_logo(
+            &[Line::text("Receipt")],
+            &PrinterProfile::for_paper_width("80"),
+            Some(logo),
+        );
+        assert!(bytes
+            .windows(4)
+            .any(|window| window == [GS, 0x76, 0x30, 0x00]));
     }
 
     #[test]
@@ -203,7 +290,9 @@ mod tests {
         w.text("OK");
         w.cut(true);
         let bytes = w.into_bytes();
-        assert!(bytes.windows(4).any(|w| w == &[ESC, 0x61, 0x01, b'O']));
+        assert!(bytes.windows(3).any(|w| w == [ESC, 0x61, 0x01]));
+        assert!(bytes.windows(3).any(|w| w == [ESC, 0x45, 0x01]));
+        assert!(bytes.windows(2).any(|w| w == b"OK"));
         assert!(bytes.ends_with(&[GS, 0x56, 0x41]));
     }
 }

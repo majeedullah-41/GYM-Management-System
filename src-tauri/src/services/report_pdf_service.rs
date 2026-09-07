@@ -623,6 +623,7 @@ mod tests {
 
     fn sample_gym() -> GymSettings {
         GymSettings {
+            gym_tagline: None,
             gym_name: "Fitness Zone".to_string(),
             gym_logo: None,
             gym_address: Some("123 Main Street, Lahore".to_string()),

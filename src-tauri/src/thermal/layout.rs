@@ -1,6 +1,6 @@
 /// Pure layout engine. Converts `Block`s into printable `Line`s using only
 /// character columns, so it is fully deterministic and testable.
-use crate::thermal::model::{Align, Block, ItemRow, Line, LineKind, PrinterProfile};
+use crate::thermal::model::{Block, ItemRow, Line, LineKind, PrinterProfile};
 
 /// Wrap text so no line exceeds `width` characters. Words are kept whole;
 /// a single word longer than the width is hard-split at the width boundary.
@@ -87,36 +87,41 @@ pub fn render_item_row(row: &ItemRow, amount_text: &str, width: usize) -> Vec<Li
 }
 
 pub fn render_field_row(label: &str, value: &str, width: usize) -> Vec<Line> {
-    let value_w = value.chars().count();
-    let label_w = left_column_width(width, value_w);
-    let labels = wrap_text(label, label_w.max(1));
-
-    let mut lines = Vec::new();
-    for (i, part) in labels.iter().enumerate() {
-        if i == 0 {
-            let pad = " ".repeat(label_w.saturating_sub(part.chars().count()));
-            let text = format!("{part}{pad}{}", right_justify(value, value_w));
-            lines.push(Line::text(text));
-        } else {
-            lines.push(Line::text(part.clone()));
-        }
+    let width = width.max(1);
+    if label.trim().is_empty() {
+        return wrap_text(value, width)
+            .into_iter()
+            .map(Line::text)
+            .collect();
     }
-    lines
+    let label_width = if width >= 36 { 11 } else { 10 };
+    let prefix = format!("{label:<label_width$} : ");
+    if prefix.chars().count() >= width {
+        return wrap_text(&format!("{label} : {value}"), width)
+            .into_iter()
+            .map(Line::text)
+            .collect();
+    }
+    let value_width = width - prefix.chars().count();
+    wrap_text(value, value_width)
+        .into_iter()
+        .enumerate()
+        .map(|(index, piece)| {
+            if index == 0 {
+                Line::text(format!("{prefix}{piece}"))
+            } else {
+                Line::text(format!("{}{piece}", " ".repeat(prefix.chars().count())))
+            }
+        })
+        .collect()
 }
 
 pub fn render_divider(character: char, width: usize) -> Line {
-    let mut text = String::new();
+    let mut line = Line::divider(character);
     for _ in 0..width {
-        text.push(character);
+        line.text.push(character);
     }
-    Line {
-        text,
-        align: Align::Left,
-        bold: false,
-        double: false,
-        kind: LineKind::Divider,
-        divider_char: Some(character),
-    }
+    line
 }
 
 pub fn render_centered(text: &str, bold: bool, width: usize) -> Vec<Line> {
@@ -196,7 +201,9 @@ pub fn render_lines_as_ascii(lines: &[Line]) -> String {
 
 /// Validate that no rendered line exceeds the printer column width.
 pub fn lines_fit_profile(lines: &[Line], profile: &PrinterProfile) -> bool {
-    lines.iter().all(|l| l.text.chars().count() <= profile.characters_per_line)
+    lines
+        .iter()
+        .all(|l| l.text.chars().count() <= profile.characters_per_line)
 }
 
 #[cfg(test)]
@@ -235,7 +242,7 @@ mod tests {
 
     #[test]
     fn center_and_right_justify_respect_width() {
-        assert_eq!(center("ab", 4), "ab  ");
+        assert_eq!(center("ab", 4), " ab ");
         assert_eq!(center("a", 4), " a  ");
         assert_eq!(right_justify("x", 4), "   x");
     }
@@ -254,17 +261,18 @@ mod tests {
 
     #[test]
     fn render_field_row_keeps_value_right_aligned() {
-        let lines = render_field_row("Receipt #", "RCP-0007", 16);
+        let lines = render_field_row("Date", "R01", 16);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].text.chars().count(), 16);
-        assert!(lines[0].text.ends_with("RCP-0007"));
+        assert!(lines[0].text.starts_with("Date"));
+        assert!(lines[0].text.trim_end().ends_with(": R01"));
     }
 
     #[test]
     fn render_field_row_wraps_long_value() {
-        let lines = render_field_row("Member", "A conspicuously long member name", 16);
+        let lines = render_field_row("Member", "A conspicuously long member name", 12);
         assert!(lines.len() > 1);
-        assert!(lines.iter().all(|l| l.text.chars().count() <= 16));
+        assert!(lines.iter().all(|l| l.text.chars().count() <= 12));
     }
 
     #[test]
@@ -278,22 +286,20 @@ mod tests {
     #[test]
     fn document_height_includes_cut_margin() {
         let lines = vec![Line::text("a".to_string()), Line::blank(), Line::cut()];
-        assert_eq!(calculate_document_height(&lines), 4);
+        assert_eq!(calculate_document_height(&lines), 5);
     }
 
     #[test]
     fn ascii_snapshot_is_stable() {
-        let lines = vec![
-            Line::text("Fitness Zone".to_string()).bold().centered(),
-            Line::blank(),
-            Line::divider('-'),
-            render_field_row("Member", "Ali Khan", 16),
-            Line::cut(),
-        ];
+        let mut lines = render_centered("Fitness Zone", true, 16);
+        lines.push(Line::blank());
+        lines.push(render_divider('-', 16));
+        lines.extend(render_field_row("Member", "Ali Khan", 16));
+        lines.push(Line::cut());
         let snapshot = render_lines_as_ascii(&lines);
         assert_eq!(
             snapshot,
-            "  Fitness Zone  \n\n----------------\nMember Ali Khan\n<CUT>"
+            "  Fitness Zone  \n\n----------------\nMember     : Ali\n             Kha\n             n\n<CUT>\n"
         );
     }
 

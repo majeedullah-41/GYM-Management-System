@@ -25,6 +25,7 @@ import {
   updateMember,
   archiveMember,
   unarchiveMember,
+  permanentlyDeleteMember,
   type MemberResponse,
 } from "../../../lib/api/members";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
@@ -40,6 +41,7 @@ interface FormData {
   address: string;
   date_of_birth: string;
   gender: string;
+  blood_group: string;
   membership_plan_id: string;
 }
 
@@ -51,8 +53,15 @@ const EMPTY_FORM: FormData = {
   address: "",
   date_of_birth: "",
   gender: "",
+  blood_group: "",
   membership_plan_id: "",
 };
+
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const BLOOD_GROUP_OPTIONS = [
+  { value: "", label: "All Blood Groups" },
+  ...BLOOD_GROUPS.map((group) => ({ value: group, label: group })),
+];
 
 const STATUS_OPTIONS = [
   { value: "", label: "All Statuses" },
@@ -66,6 +75,7 @@ type SortField =
   | "member_number"
   | "full_name"
   | "phone"
+  | "blood_group"
   | "membership_plan_name"
   | "membership_expiry_date"
   | "outstanding_balance";
@@ -105,6 +115,10 @@ function sortMembers(members: MemberResponse[], field: SortField, dir: SortDir):
         va = a.phone ?? "";
         vb = b.phone ?? "";
         break;
+      case "blood_group":
+        va = a.blood_group ? BLOOD_GROUPS.indexOf(a.blood_group) : BLOOD_GROUPS.length;
+        vb = b.blood_group ? BLOOD_GROUPS.indexOf(b.blood_group) : BLOOD_GROUPS.length;
+        return dir === "asc" ? va - vb : vb - va;
       case "membership_plan_name":
         va = a.membership_plan_name ?? "";
         vb = b.membership_plan_name ?? "";
@@ -156,6 +170,7 @@ export function MembersPage({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [planFilter, setPlanFilter] = useState("");
+  const [bloodGroupFilter, setBloodGroupFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [plans, setPlans] = useState<PlanResponse[]>([]);
 
@@ -176,6 +191,8 @@ export function MembersPage({
 
   const [archiveTarget, setArchiveTarget] = useState<MemberResponse | null>(null);
   const [reactivateTarget, setReactivateTarget] = useState<MemberResponse | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MemberResponse | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadMembers = useCallback(async () => {
     try {
@@ -209,9 +226,10 @@ export function MembersPage({
     return members.filter(
       (member) =>
         member.is_archived === showArchived &&
-        (!planFilter || member.membership_plan_name === planFilter),
+        (!planFilter || member.membership_plan_name === planFilter) &&
+        (!bloodGroupFilter || member.blood_group === bloodGroupFilter),
     );
-  }, [members, planFilter, showArchived]);
+  }, [members, planFilter, bloodGroupFilter, showArchived]);
 
   const sortedMembers = useMemo(
     () => sortMembers(filteredMembers, sortField, sortDir),
@@ -224,7 +242,7 @@ export function MembersPage({
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, planFilter, showArchived]);
+  }, [search, statusFilter, planFilter, bloodGroupFilter, showArchived]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -251,7 +269,8 @@ export function MembersPage({
       cnic: member.cnic ? formatCnic(member.cnic) : "",
       address: member.address ?? "",
       date_of_birth: member.date_of_birth ?? "",
-      gender: formData.gender ?? "",
+      gender: member.gender ?? "",
+      blood_group: member.blood_group ?? "",
       membership_plan_id: member.membership_plan_id ?? "",
     });
     setFormErrors({});
@@ -283,6 +302,7 @@ export function MembersPage({
         address: formData.address.trim() || null,
         date_of_birth: formData.date_of_birth || null,
         gender: formData.gender || null,
+        blood_group: formData.blood_group || null,
         notes: null as string | null,
         membership_plan_id: formData.membership_plan_id || null,
       };
@@ -358,6 +378,30 @@ export function MembersPage({
     }
   };
 
+  const handlePermanentDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      setDeleting(true);
+      await permanentlyDeleteMember(deleteTarget.id);
+      addToast({
+        variant: "success",
+        title: "Member permanently removed",
+        message: `"${deleteTarget.full_name}" was removed. Payment and receipt history was preserved.`,
+      });
+      setDeleteTarget(null);
+      setExpandedId(null);
+      await loadMembers();
+    } catch (err) {
+      addToast({
+        variant: "error",
+        title: "Could not delete member",
+        message: err instanceof Error ? err.message : "Failed to permanently delete member",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const planOptions = [
     { value: "", label: "All Plans" },
     ...plans.map((p) => ({ value: p.name, label: p.name })),
@@ -395,6 +439,12 @@ export function MembersPage({
           onChange={(e) => setPlanFilter(e.target.value)}
           className="w-40"
         />
+        <Select
+          options={BLOOD_GROUP_OPTIONS}
+          value={bloodGroupFilter}
+          onChange={(e) => setBloodGroupFilter(e.target.value)}
+          className="w-40"
+        />
         <label className="flex items-center gap-2 text-sm text-text-muted whitespace-nowrap">
           <input
             type="checkbox"
@@ -413,17 +463,17 @@ export function MembersPage({
       {!loading && !error && sortedMembers.length === 0 && (
         <EmptyState
           title={
-            search || statusFilter || planFilter || showArchived
+            search || statusFilter || planFilter || bloodGroupFilter || showArchived
               ? "No members found"
               : "No members yet"
           }
           message={
-            search || statusFilter || planFilter || showArchived
+            search || statusFilter || planFilter || bloodGroupFilter || showArchived
               ? "Try adjusting your search or filters."
               : "Add your first gym member to start managing memberships."
           }
           action={
-            !search && !statusFilter && !planFilter && !showArchived
+            !search && !statusFilter && !planFilter && !bloodGroupFilter && !showArchived
               ? { label: "+ Add Member", onClick: openCreateForm }
               : undefined
           }
@@ -442,7 +492,7 @@ export function MembersPage({
                       ["full_name", "Name"],
                       ["phone", "Phone"],
                       ["membership_plan_name", "Plan"],
-                      ["membership_expiry_date", "Expiry"],
+                      ["blood_group", "Blood Group"],
                     ] as const
                   ).map(([field, label]) => (
                     <th
@@ -502,8 +552,8 @@ export function MembersPage({
                       <td className="px-4 py-3 text-text-muted">
                         {m.membership_plan_name || "\u2014"}
                       </td>
-                      <td className="px-4 py-3 text-text-muted">
-                        {m.membership_expiry_date || "\u2014"}
+                      <td className="px-4 py-3 font-medium text-text-primary">
+                        {m.blood_group || "\u2014"}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={m.is_paid ? "success" : "danger"}>
@@ -516,7 +566,9 @@ export function MembersPage({
                             {formatCurrency(m.outstanding_balance)}
                           </span>
                         ) : (
-                          <span className="text-green-600">{formatCurrency(0)}</span>
+                          <span className="text-green-600 font-medium">
+                            {formatCurrency(m.outstanding_balance)}
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -555,16 +607,28 @@ export function MembersPage({
                               Archive
                             </Button>
                           ) : (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReactivateTarget(m);
-                              }}
-                            >
-                              Reactivate
-                            </Button>
+                            <>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReactivateTarget(m);
+                                }}
+                              >
+                                Reactivate
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteTarget(m);
+                                }}
+                              >
+                                Delete
+                              </Button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -678,6 +742,15 @@ export function MembersPage({
             value={formData.date_of_birth}
             onChange={(e) => setFormData((p) => ({ ...p, date_of_birth: e.target.value }))}
           />
+          <Select
+            label="Blood Group"
+            options={[
+              { value: "", label: "Select blood group..." },
+              ...BLOOD_GROUPS.map((group) => ({ value: group, label: group })),
+            ]}
+            value={formData.blood_group}
+            onChange={(e) => setFormData((p) => ({ ...p, blood_group: e.target.value }))}
+          />
           <Input
             label="Address"
             value={formData.address}
@@ -722,6 +795,40 @@ export function MembersPage({
         variant="info"
         onConfirm={handleReactivate}
       />
+
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => {
+          if (deleting) return;
+          setDeleteTarget(null);
+        }}
+        title="Delete Member Permanently"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              disabled={deleting}
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={deleting}
+              onClick={handlePermanentDelete}
+            >
+              Delete Permanently
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text-muted">
+          Are you sure you want to permanently delete{" "}
+          <strong className="text-text-primary">{deleteTarget?.full_name}</strong>? Their remaining
+          unpaid balance will be cleared. Existing payments, receipts, and revenue history will
+          remain unchanged. This action cannot be undone.
+        </p>
+      </Modal>
     </div>
   );
 }

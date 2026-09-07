@@ -54,6 +54,14 @@ fn get_migrations() -> Vec<Migration> {
             id: "011_optional_recovery_and_default_credentials",
             sql: include_str!("011_optional_recovery_and_default_credentials.sql"),
         },
+        Migration {
+            id: "012_member_blood_group",
+            sql: include_str!("012_member_blood_group.sql"),
+        },
+        Migration {
+            id: "013_permanently_deleted_members",
+            sql: include_str!("013_permanently_deleted_members.sql"),
+        },
     ]
 }
 

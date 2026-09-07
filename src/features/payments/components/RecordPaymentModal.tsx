@@ -16,6 +16,7 @@ import { listMembers, type MemberResponse } from "../../../lib/api/members";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { formatCurrency } from "../../../lib/utils/format";
 import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
+import { AdvancePaymentModal } from "./AdvancePaymentModal";
 
 interface Props {
   isOpen: boolean;
@@ -43,6 +44,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
   });
   const [submitting, setSubmitting] = useState(false);
   const [completedPaymentId, setCompletedPaymentId] = useState<string | null>(null);
+  const [advanceOpen, setAdvanceOpen] = useState(false);
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [currentPlanLoading, setCurrentPlanLoading] = useState(false);
@@ -69,6 +71,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
       setMethod("Cash");
       setPaymentDate(new Date().toISOString().split("T")[0]);
       setCompletedPaymentId(null);
+      setAdvanceOpen(false);
       setSummary(null);
       setMemberDropdownOpen(false);
       requestKeyRef.current = crypto.randomUUID();
@@ -233,6 +236,13 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
             </Button>
           ) : (
             <>
+              <Button
+                variant="secondary"
+                disabled={!selectedMember}
+                onClick={() => setAdvanceOpen(true)}
+              >
+                Pay in Advance
+              </Button>
               <Button variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
@@ -425,6 +435,13 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
           </div>
         )}
       </Modal>
+
+      <AdvancePaymentModal
+        isOpen={advanceOpen}
+        onClose={() => setAdvanceOpen(false)}
+        member={selectedMember}
+        onPaymentRecorded={onPaymentRecorded}
+      />
 
       <ReceiptPreview
         isOpen={!!completedPaymentId}

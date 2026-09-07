@@ -77,6 +77,37 @@ export interface UpdatePaymentRequest {
   notes: string | null;
 }
 
+export interface AdvancePeriod {
+  billing_period: string;
+  period_start: string;
+  period_end: string;
+}
+
+export interface AdvancePaymentPreview {
+  member_id: string;
+  member_name: string;
+  member_number: string;
+  membership_plan_id: string;
+  plan_name: string;
+  fee: number;
+  period_count: number;
+  paid_through: string | null;
+  coverage_start: string;
+  coverage_end: string;
+  coverage_periods: AdvancePeriod[];
+  outstanding_dues: number;
+  future_total: number;
+  total: number;
+}
+
+export interface CreateAdvancePaymentRequest {
+  member_id: string;
+  period_count: number;
+  payment_method: string;
+  note?: string | null;
+  idempotency_key?: string | null;
+}
+
 export const PAYMENT_METHODS = ["Cash", "Bank Transfer", "Card", "Other"] as const;
 
 export async function createPayment(request: CreatePaymentRequest): Promise<PaymentResponse> {
@@ -123,6 +154,22 @@ export async function getPaymentSummary(memberId: string, planId: string): Promi
     memberId: memberId,
     planId: planId,
   });
+}
+
+export async function previewAdvancePayment(
+  memberId: string,
+  periodCount: number,
+): Promise<AdvancePaymentPreview> {
+  return invokeCommand<AdvancePaymentPreview>("preview_advance_payment", {
+    memberId: memberId,
+    periodCount: periodCount,
+  });
+}
+
+export async function createAdvancePayment(
+  request: CreateAdvancePaymentRequest,
+): Promise<PaymentResponse> {
+  return invokeCommand<PaymentResponse>("create_advance_payment", { request });
 }
 
 export async function voidPayment(id: string, reason: string): Promise<PaymentResponse> {

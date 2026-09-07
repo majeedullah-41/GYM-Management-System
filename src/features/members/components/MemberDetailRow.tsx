@@ -94,6 +94,12 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
                 <div>{member.gender}</div>
               </div>
             )}
+            {member.blood_group && (
+              <div>
+                <span className="text-text-muted">Blood Group</span>
+                <div className="font-medium">{member.blood_group}</div>
+              </div>
+            )}
             {member.date_of_birth && (
               <div>
                 <span className="text-text-muted">Date of Birth</span>

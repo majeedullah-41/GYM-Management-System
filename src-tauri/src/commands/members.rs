@@ -74,3 +74,15 @@ pub async fn unarchive_member(
     let conn = state.inner().clone_conn();
     run_db(conn, move |c| member_service::unarchive_member(c, &id)).await
 }
+
+#[tauri::command]
+pub async fn permanently_delete_member(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<(), AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| {
+        member_service::permanently_delete_member(c, &id)
+    })
+    .await
+}

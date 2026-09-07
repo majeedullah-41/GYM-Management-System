@@ -1,6 +1,7 @@
 use chrono::{Datelike, Duration, NaiveDate};
 use rusqlite::Connection;
 
+use crate::dto::advance_payment::AdvancePeriod;
 use crate::dto::billing::{MembershipBillingSummary, MonthlyBillResponse};
 use crate::errors::AppError;
 use crate::models::{Membership, MonthlyBill};
@@ -62,7 +63,7 @@ fn ensure_legacy_membership(
     if billing_repository::has_membership_history(conn, member_id)? {
         return Ok(None);
     }
-    let member = member_repository::get_by_id(conn, member_id)?
+    let member = member_repository::get_operational_by_id(conn, member_id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{member_id}' not found")))?;
     if member.is_archived {
         return Ok(None);
@@ -174,6 +175,183 @@ fn ensure_billing_generated_at(
         rusqlite::params![now, current.format("%Y-%m-%d").to_string()],
     )?;
     Ok(inserted)
+}
+
+/// Total unresolved amount across a member's outstanding bills (past/current
+/// dues that have not been fully paid yet). Ordered-oldest outstanding bills
+/// are the natural FIFO targets for any payment.
+pub fn outstanding_amount(conn: &Connection, member_id: &str) -> Result<i64, AppError> {
+    let bills = billing_repository::list_outstanding_bills(conn, member_id)?;
+    Ok(bills
+        .iter()
+        .map(|b| b.expected_amount - b.paid_amount)
+        .sum())
+}
+
+/// Money already collected for billing periods that have not started yet
+/// (period start strictly after today). Future bill rows only exist when a
+/// member prepays via the advance payment flow, so this equals the unused
+/// credit the member holds on account.
+pub fn advance_credit(conn: &Connection, member_id: &str) -> Result<i64, AppError> {
+    let today = today_iso();
+    let bills = billing_repository::list_member_bills(conn, member_id)?;
+    Ok(bills
+        .iter()
+        .filter(|b| b.period_start.as_str() > today.as_str())
+        .map(|b| b.paid_amount)
+        .sum())
+}
+
+/// The last calendar day the member is fully paid through: the maximum
+/// `period_end` across bill rows that are fully settled.
+pub fn paid_through(conn: &Connection, member_id: &str) -> Result<Option<String>, AppError> {
+    let bills = billing_repository::list_member_bills(conn, member_id)?;
+    Ok(bills
+        .iter()
+        .filter(|b| b.paid_amount >= b.expected_amount)
+        .map(|b| b.period_end.as_str())
+        .max()
+        .map(str::to_string))
+}
+
+/// The first day of the next unpaid period for a member's active membership:
+/// one day after the latest recorded bill period, or the membership's billing
+/// start when no bills exist yet. Advancing from here structurally prevents
+/// overlapping coverage.
+pub fn next_billing_start(conn: &Connection, member_id: &str) -> Result<String, AppError> {
+    let Some(membership) = billing_repository::get_open_membership(conn, member_id)? else {
+        return Err(AppError::ValidationError(
+            "Member has no active membership to extend".into(),
+        ));
+    };
+    let bills = billing_repository::list_member_bills(conn, member_id)?;
+    let last_end = bills
+        .iter()
+        .filter(|b| b.membership_id == membership.id)
+        .map(|b| b.period_end.as_str())
+        .max();
+    match last_end {
+        Some(end) => {
+            let date = parse_date(end)? + Duration::days(1);
+            Ok(date.format("%Y-%m-%d").to_string())
+        }
+        None => Ok(membership.billing_start_date),
+    }
+}
+
+/// Computes the coverage windows for `count` consecutive plan cycles starting
+/// at `from_date`, using the member's enrolled plan cycle length. Shared by the
+/// advance preview and creation paths so coverage can never diverge.
+pub fn advance_periods(
+    membership: &Membership,
+    from_date: NaiveDate,
+    count: u32,
+) -> Vec<AdvancePeriod> {
+    let cycle_days = i64::from(membership.billing_cycle_days);
+    let mut periods = Vec::with_capacity(count as usize);
+    let mut cursor = from_date;
+    for _ in 0..count {
+        let following = cursor + Duration::days(cycle_days);
+        let period_end = following - Duration::days(1);
+        periods.push(AdvancePeriod {
+            billing_period: cycle_key(cursor),
+            period_start: cursor.format("%Y-%m-%d").to_string(),
+            period_end: period_end.format("%Y-%m-%d").to_string(),
+        });
+        cursor = following;
+    }
+    periods
+}
+
+/// Persists future bill rows (one per advance period) for the member's active
+/// membership so a normal FIFO allocation can target them. Refuses to create a
+/// period that is already recorded, guaranteeing no overlapping coverage.
+pub fn generate_future_bills(
+    conn: &Connection,
+    member_id: &str,
+    from_date: &str,
+    count: u32,
+) -> Result<Vec<MonthlyBill>, AppError> {
+    let Some(membership) = billing_repository::get_open_membership(conn, member_id)? else {
+        return Err(AppError::ValidationError(
+            "Member has no active membership to extend".into(),
+        ));
+    };
+    let from = parse_date(from_date)?;
+    let periods = advance_periods(&membership, from, count);
+    let now = now_iso8601();
+    let mut bills = Vec::with_capacity(periods.len());
+    for period in periods {
+        if billing_repository::bill_exists_for_start(conn, &membership.id, &period.period_start)? {
+            return Err(AppError::ConflictError(format!(
+                "Period '{}' is already recorded for this membership",
+                period.billing_period
+            )));
+        }
+        let bill = MonthlyBill {
+            id: uuid::Uuid::new_v4().to_string(),
+            membership_id: membership.id.clone(),
+            member_id: membership.member_id.clone(),
+            membership_plan_id: membership.membership_plan_id.clone(),
+            billing_period: period.billing_period.clone(),
+            period_start: period.period_start.clone(),
+            period_end: period.period_end.clone(),
+            due_date: period.period_start.clone(),
+            expected_amount: membership.agreed_fee,
+            paid_amount: 0,
+            status: "CURRENT".into(),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+        if billing_repository::insert_bill(conn, &bill)? {
+            bills.push(bill);
+        }
+    }
+    Ok(bills)
+}
+
+/// Allocates `amount` across the given bills oldest-first, recording one ledger
+/// allocation per bill and updating each bill's paid balance/status. Returns an
+/// error if the amount cannot be fully allocated. Shared by normal and advance
+/// payment creation.
+pub fn allocate_payment(
+    conn: &Connection,
+    payment_id: &str,
+    targets: &[MonthlyBill],
+    amount: i64,
+    now: &str,
+) -> Result<(), AppError> {
+    let mut remaining = amount;
+    for bill in targets {
+        if remaining <= 0 {
+            break;
+        }
+        let allocated = remaining.min(bill.expected_amount - bill.paid_amount);
+        billing_repository::create_bill_allocation(
+            conn,
+            payment_id,
+            &bill.id,
+            &bill.membership_plan_id,
+            &bill.period_start,
+            &bill.period_end,
+            allocated,
+            now,
+        )?;
+        let paid = bill.paid_amount + allocated;
+        let status = if paid >= bill.expected_amount {
+            "PAID"
+        } else {
+            "PARTIALLY_PAID"
+        };
+        billing_repository::set_bill_paid(conn, &bill.id, paid, status, now)?;
+        remaining -= allocated;
+    }
+    if remaining != 0 {
+        return Err(AppError::ValidationError(
+            "Payment could not be fully allocated".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn get_billing_summary(
@@ -316,6 +494,34 @@ mod tests {
                 .total_outstanding,
             8000
         );
+    }
+
+    #[test]
+    fn advance_credit_sums_only_future_bills_paid_in_advance() {
+        let (conn, member, plan) = setup();
+        create_membership_for_plan(&conn, &member, &plan, &today_iso()).unwrap();
+        ensure_monthly_billing_generated(&conn, &member).unwrap();
+        let from = next_billing_start(&conn, &member).unwrap();
+        generate_future_bills(&conn, &member, &from, 3).unwrap();
+        assert_eq!(advance_credit(&conn, &member).unwrap(), 0);
+        crate::services::payment_service::create_payment(
+            &conn,
+            CreatePaymentRequest {
+                member_id: member.clone(),
+                membership_plan_id: plan,
+                amount: 8000,
+                payment_method: "Cash".into(),
+                payment_date: today_iso(),
+                description: None,
+                reference: None,
+                notes: None,
+                idempotency_key: Some("adv-credit".into()),
+            },
+        )
+        .unwrap();
+        // 2000 settles the current bill; 6000 covers three future periods.
+        assert_eq!(outstanding_amount(&conn, &member).unwrap(), 0);
+        assert_eq!(advance_credit(&conn, &member).unwrap(), 6000);
     }
 
     #[test]

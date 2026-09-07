@@ -1,3 +1,4 @@
+pub mod advance_payments;
 pub mod auth;
 pub mod billing;
 pub mod dashboard;

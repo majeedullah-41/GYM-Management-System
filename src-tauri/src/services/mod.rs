@@ -1,3 +1,4 @@
+pub mod advance_payment_service;
 pub mod auth_service;
 pub mod backup_service;
 pub mod billing_service;

@@ -9,8 +9,8 @@ use std::fmt;
 
 use windows::core::{Error as WinError, PCWSTR, PWSTR};
 use windows::Win32::Graphics::Printing::{
-    ClosePrinter, DOC_INFO_1W, EndDocPrinter, GetDefaultPrinterW, OpenPrinterW, PRINTER_HANDLE,
-    StartDocPrinterW, WritePrinter,
+    ClosePrinter, EndDocPrinter, GetDefaultPrinterW, OpenPrinterW, StartDocPrinterW, WritePrinter,
+    DOC_INFO_1W, PRINTER_HANDLE,
 };
 
 #[derive(Debug)]
@@ -22,7 +22,11 @@ pub struct PrinterError {
 
 impl fmt::Display for PrinterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({})", self.stage, self.message)
+        write!(
+            f,
+            "{} (win32 code {}, {})",
+            self.stage, self.code, self.message
+        )
     }
 }
 
@@ -102,7 +106,12 @@ fn write_document(handle: PRINTER_HANDLE, bytes: &[u8]) -> Result<(), PrinterErr
 
     let mut written: u32 = 0;
     let ok = unsafe {
-        WritePrinter(handle, bytes.as_ptr() as *const core::ffi::c_void, bytes.len() as u32, &mut written)
+        WritePrinter(
+            handle,
+            bytes.as_ptr() as *const core::ffi::c_void,
+            bytes.len() as u32,
+            &mut written,
+        )
     };
     if !ok.as_bool() || written != bytes.len() as u32 {
         unsafe {

@@ -13,53 +13,51 @@ pub fn build_document(
     print: &PrintSettings,
     footer: Option<&str>,
 ) -> ReceiptDocument {
-    let visible_note = receipt
-        .notes
-        .as_deref()
-        .filter(|s| !s.trim().is_empty() && !s.trim().eq_ignore_ascii_case("paid in full"));
-    let has_content_after_remaining = print.show_payment_details
-        || (print.show_notes && visible_note.is_some())
-        || print.show_footer;
-    let has_bottom_section = print.show_remaining_balance || has_content_after_remaining;
-
     let mut blocks = Vec::new();
 
-    let mut header_texts = Vec::new();
     if print.show_gym_name && !receipt.gym_name.trim().is_empty() {
-        header_texts.push(receipt.gym_name.trim().to_string());
-    }
-    if !header_texts.is_empty() {
-        blocks.push(Block::Header(header_texts));
+        blocks.push(Block::Header(vec![receipt.gym_name.trim().to_uppercase()]));
     }
 
-    let mut contact_lines = Vec::new();
-    if print.show_gym_phone {
-        if let Some(p) = receipt
-            .gym_phone
+    let mut centered_header = Vec::new();
+    if print.show_gym_tagline {
+        if let Some(tagline) = receipt
+            .gym_tagline
             .as_deref()
             .filter(|s| !s.trim().is_empty())
         {
-            contact_lines.push(p.trim().to_string());
+            centered_header.push(tagline.trim().to_string());
         }
     }
-    if print.show_gym_address {
-        if let Some(a) = receipt
-            .gym_address
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-        {
-            contact_lines.push(a.trim().to_string());
-        }
+    let address = print
+        .show_gym_address
+        .then(|| receipt.gym_address.as_deref())
+        .flatten()
+        .filter(|s| !s.trim().is_empty());
+    let phone = print
+        .show_gym_phone
+        .then(|| receipt.gym_phone.as_deref())
+        .flatten()
+        .filter(|s| !s.trim().is_empty());
+    let contact = match (address, phone) {
+        (Some(address), Some(phone)) => Some(format!("{} | {}", address.trim(), phone.trim())),
+        (Some(address), None) => Some(address.trim().to_string()),
+        (None, Some(phone)) => Some(phone.trim().to_string()),
+        (None, None) => None,
+    };
+    if let Some(contact) = contact {
+        centered_header.push(contact);
     }
-    if !contact_lines.is_empty() {
-        blocks.push(Block::Centered(contact_lines));
+    if !centered_header.is_empty() {
+        blocks.push(Block::Centered(centered_header));
     }
 
     blocks.push(Block::Divider);
 
     if print.show_receipt_title {
-        blocks.push(Block::Header(vec!["RECEIPT".to_string()]));
+        blocks.push(Block::Header(vec!["PAYMENT RECEIPT".to_string()]));
     }
+    blocks.push(Block::Divider);
     if print.show_receipt_number {
         blocks.push(Block::Row(
             "Receipt #".to_string(),
@@ -67,7 +65,10 @@ pub fn build_document(
         ));
     }
     if print.show_date {
-        blocks.push(Block::Row("Date".to_string(), receipt.payment_date.clone()));
+        blocks.push(Block::Row(
+            "Date".to_string(),
+            format_receipt_date(&receipt.issued_at),
+        ));
     }
     blocks.push(Block::Divider);
 
@@ -80,13 +81,11 @@ pub fn build_document(
         }
         if !receipt.member_number.trim().is_empty() {
             blocks.push(Block::Row(
-                "Member #".to_string(),
+                "Member ID".to_string(),
                 receipt.member_number.trim().to_string(),
             ));
         }
     }
-    blocks.push(Block::Divider);
-
     if print.show_plan_info && !receipt.plan_name.trim().is_empty() {
         blocks.push(Block::Row(
             "Plan".to_string(),
@@ -97,53 +96,74 @@ pub fn build_document(
         blocks.push(Block::Row(
             "Period".to_string(),
             format!(
-                "{} to {}",
-                receipt.membership_start_date, receipt.membership_expiry_date
+                "{} - {}",
+                format_period_date(&receipt.membership_start_date),
+                format_period_date(&receipt.membership_expiry_date)
             ),
         ));
     }
-    if has_bottom_section {
+
+    if print.show_amount_received
+        || print.show_method
+        || print.show_received_by
+        || print.show_remaining_balance
+    {
         blocks.push(Block::Divider);
-    }
-
-    if print.show_remaining_balance {
-        blocks.push(Block::Row(
-            "Remaining".to_string(),
-            format_currency(receipt.remaining_balance),
-        ));
-    }
-    if print.show_remaining_balance && has_content_after_remaining {
-        blocks.push(Block::Divider);
-    }
-
-    if print.show_payment_details {
-        let status = if receipt.remaining_balance <= 0 {
-            "Paid in full".to_string()
-        } else {
-            format!(
-                "Balance due: {}",
-                format_currency(receipt.remaining_balance)
-            )
-        };
-        blocks.push(Block::Centered(vec![status]));
-    }
-
-    if print.show_notes {
-        if let Some(note) = visible_note {
-            blocks.push(Block::Centered(vec![note.trim().to_string()]));
+        if print.show_received_by {
+            blocks.push(Block::Row("Received By".to_string(), "Admin".to_string()));
+        }
+        if print.show_amount_received {
+            blocks.push(Block::Row(
+                "Amount Received".to_string(),
+                format_currency(receipt.amount),
+            ));
+        }
+        if print.show_method {
+            blocks.push(Block::Row(
+                "Method".to_string(),
+                receipt.payment_method.clone(),
+            ));
+        }
+        if print.show_remaining_balance {
+            blocks.push(Block::Row(
+                "Remaining Amount".to_string(),
+                format_currency(receipt.remaining_balance),
+            ));
         }
     }
 
     if print.show_footer {
+        blocks.push(Block::Divider);
         let footer = footer
             .filter(|s| !s.trim().is_empty())
-            .unwrap_or("Thank you for being a member");
-        if !footer.is_empty() {
-            blocks.push(Block::Centered(vec![footer.trim().to_string()]));
-        }
+            .filter(|s| {
+                !s.trim()
+                    .eq_ignore_ascii_case("Thank you for being a member")
+            })
+            .unwrap_or("Stay Fit | Stay Healthy");
+        blocks.push(Block::Centered(vec![
+            "Thank you!".to_string(),
+            footer.trim().to_string(),
+        ]));
     }
 
     ReceiptDocument { blocks }
+}
+
+fn format_receipt_date(value: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .and_then(|date| {
+            chrono::FixedOffset::east_opt(5 * 60 * 60).map(|offset| date.with_timezone(&offset))
+        })
+        .map(|date| date.format("%d/%m/%Y %I:%M %p").to_string())
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn format_period_date(value: &str) -> String {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map(|date| date.format("%d/%m/%y").to_string())
+        .unwrap_or_else(|_| value.to_string())
 }
 
 #[cfg(test)]
@@ -157,6 +177,7 @@ mod tests {
             receipt_number: "R-0001".to_string(),
             issued_at: "2026-08-28T10:00:00Z".to_string(),
             gym_name: "Fitness Zone".to_string(),
+            gym_tagline: Some("Train Today Be Better".to_string()),
             gym_logo: None,
             gym_address: Some("123 Main Street, Lahore".to_string()),
             gym_phone: Some("+92 300 1234567".to_string()),
@@ -182,6 +203,8 @@ mod tests {
             thermal_printer_name: None,
             thermal_characters_per_line: None,
             show_gym_name: true,
+            show_gym_logo: true,
+            show_gym_tagline: true,
             show_gym_phone: true,
             show_gym_address: true,
             show_receipt_title: true,
@@ -190,7 +213,9 @@ mod tests {
             show_member_info: true,
             show_plan_info: true,
             show_period: true,
-            show_payment_details: true,
+            show_amount_received: true,
+            show_method: true,
+            show_received_by: true,
             show_remaining_balance: true,
             show_notes: true,
             show_footer: true,
@@ -215,8 +240,9 @@ mod tests {
         assert_eq!(
             kinds,
             vec![
-                "header", "centered", "divider", "header", "row", "row", "divider", "row", "row",
-                "divider", "row", "row", "divider", "row", "divider", "centered", "centered"
+                "header", "centered", "divider", "header", "divider", "row", "row", "divider",
+                "row", "row", "row", "row", "divider", "row", "row", "row", "row", "divider",
+                "centered"
             ]
         );
     }
@@ -232,32 +258,60 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(centered.contains(&"Paid in full"));
+        assert!(!centered.contains(&"Paid in full"));
         assert!(!centered.iter().any(|l| *l == "paid in full"));
     }
 
     #[test]
-    fn build_document_respects_hidden_fields() {
+    fn build_document_respects_visibility_fields() {
         let mut print = default_print();
         print.show_gym_name = false;
         print.show_gym_phone = false;
         print.show_gym_address = false;
-        print.show_payment_details = false;
+        print.show_amount_received = false;
+        print.show_method = false;
+        print.show_received_by = false;
+        print.show_remaining_balance = false;
         print.show_footer = false;
         let doc = build_document(&sample_receipt(), &print, Some("ignored"));
-        let mut has_centered = false;
-        for block in &doc.blocks {
-            match block {
-                Block::Centered(lines) if lines.is_empty() => {}
-                Block::Centered(_) => has_centered = true,
-                _ => {}
-            }
-        }
-        assert!(!has_centered);
+        assert!(!doc.blocks.iter().any(
+            |b| matches!(b, Block::Header(lines) if lines == &vec!["FITNESS ZONE".to_string()])
+        ));
+        assert!(doc.blocks.iter().any(
+            |b| matches!(b, Block::Header(lines) if lines == &vec!["PAYMENT RECEIPT".to_string()])
+        ));
+        assert!(!doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Row(label, _) if label == "Amount Received")));
+        assert!(!doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Row(label, _) if label == "Remaining Amount")));
+    }
+
+    #[test]
+    fn build_document_respects_amount_amount_toggles() {
+        let mut print = default_print();
+        print.show_amount_received = false;
+        print.show_remaining_balance = false;
+        let doc = build_document(&sample_receipt(), &print, None);
+        assert!(!doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Row(label, _) if label == "Amount Received")));
+        assert!(!doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Row(label, _) if label == "Remaining Amount")));
         assert!(doc
             .blocks
             .iter()
-            .any(|b| matches!(b, Block::Header(lines) if lines == &vec!["RECEIPT".to_string()])));
+            .any(|b| matches!(b, Block::Row(label, _) if label == "Method")));
+        assert!(doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Row(label, _) if label == "Received By")));
     }
 
     #[test]
@@ -274,8 +328,16 @@ mod tests {
             })
             .flatten()
             .collect();
-        assert!(centered.iter().any(|l| l.starts_with("Balance due: Rs. 1,000")));
-        assert!(centered.iter().any(|l| l == "Paid in full"));
+        assert!(!centered.iter().any(|l| l.starts_with("Balance due:")));
+        assert!(!centered.iter().any(|l| l == "Paid in full"));
+        assert!(doc.blocks.iter().any(|block| {
+            matches!(block, Block::Row(label, value)
+                if label == "Amount Received" && value == "Rs. 25,000")
+        }));
+        assert!(doc.blocks.iter().any(|block| {
+            matches!(block, Block::Row(label, value)
+                if label == "Remaining Amount" && value == "Rs. 1,000")
+        }));
     }
 
     #[test]
@@ -290,6 +352,6 @@ mod tests {
             })
             .flatten()
             .collect();
-        assert!(footer_texts.iter().any(|l| l == "Thank you for being a member"));
+        assert!(footer_texts.iter().any(|l| l == "Stay Fit | Stay Healthy"));
     }
 }

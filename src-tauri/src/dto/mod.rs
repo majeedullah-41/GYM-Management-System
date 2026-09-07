@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod advance_payment;
 pub mod billing;
 pub mod dashboard;
 pub mod expense;

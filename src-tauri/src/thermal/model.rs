@@ -84,18 +84,8 @@ impl Line {
         self
     }
 
-    pub fn right(mut self) -> Self {
-        self.align = Align::Right;
-        self
-    }
-
     pub fn bold(mut self) -> Self {
         self.bold = true;
-        self
-    }
-
-    pub fn double(mut self) -> Self {
-        self.double = true;
         self
     }
 }
@@ -122,7 +112,7 @@ impl PrinterProfile {
                 characters_per_line: 32,
                 supports_cut: true,
                 supports_qr: false,
-                supports_image: false,
+                supports_image: true,
             },
             _ => Self {
                 name: "80mm",
@@ -130,7 +120,7 @@ impl PrinterProfile {
                 characters_per_line: 42,
                 supports_cut: true,
                 supports_qr: false,
-                supports_image: false,
+                supports_image: true,
             },
         }
     }
@@ -171,7 +161,11 @@ pub enum Block {
     /// Label on the left, value right-justified (Receipt #, Date, Member, ...).
     Row(String, String),
     Divider,
-    /// Wrapped name column with a right-aligned amount column.
+    /// Wrapped name column with a right-aligned amount column. The current
+    /// receipt layout does not emit these yet; kept as the reserved block for
+    /// future per-allocation line items.
+    #[allow(dead_code)]
     Items(Vec<ItemRow>),
+    #[allow(dead_code)]
     Totals(Vec<TotalRow>),
 }

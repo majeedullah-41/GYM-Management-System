@@ -259,13 +259,13 @@ pub fn member_report(conn: &Connection) -> Result<MemberReportResponse, AppError
     let today = crate::utils::dates::today_iso();
 
     let total_members: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM members WHERE is_archived = 0",
+        "SELECT COUNT(*) FROM members WHERE is_archived = 0 AND deleted_at IS NULL",
         [],
         |row| row.get(0),
     )?;
 
     let archived_members: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM members WHERE is_archived = 1",
+        "SELECT COUNT(*) FROM members WHERE is_archived = 1 AND deleted_at IS NULL",
         [],
         |row| row.get(0),
     )?;

@@ -33,6 +33,7 @@ import {
 } from "../../../lib/api/membership-plans";
 import type { AuthUser } from "../../../lib/api/auth";
 import { UserInformationTab } from "../components/UserInformationTab";
+import { ReceiptPaper } from "../../receipts/components/ReceiptPaper";
 
 type Tab = "user" | "gym" | "plans" | "receipts" | "data";
 
@@ -206,6 +207,12 @@ function GymInfoTab({
           label="Gym Name *"
           value={form.gym_name}
           onChange={(e) => update({ gym_name: e.target.value })}
+        />
+        <Input
+          label="Receipt Tagline"
+          placeholder="Train Today Be Better"
+          value={form.gym_tagline ?? ""}
+          onChange={(e) => update({ gym_tagline: e.target.value || null })}
         />
         <Input
           label="Phone"
@@ -528,20 +535,23 @@ function ReceiptsTab({
   );
 }
 
-const PRINT_FIELDS: { key: keyof PrintSettings; label: string }[] = [
-  { key: "show_gym_name", label: "Gym name and logo" },
-  { key: "show_gym_phone", label: "Gym phone" },
-  { key: "show_gym_address", label: "Gym address" },
-  { key: "show_receipt_title", label: "Receipt title" },
+const RECEIPT_FIELDS: { key: keyof PrintSettings; label: string }[] = [
+  { key: "show_gym_name", label: "Gym name" },
+  { key: "show_gym_logo", label: "Gym logo" },
+  { key: "show_gym_tagline", label: "Gym tagline" },
+  { key: "show_gym_address", label: "Address" },
+  { key: "show_gym_phone", label: "Phone" },
+  { key: "show_receipt_title", label: "Payment receipt title" },
   { key: "show_receipt_number", label: "Receipt number" },
-  { key: "show_date", label: "Date" },
+  { key: "show_date", label: "Date and time" },
   { key: "show_member_info", label: "Member name and ID" },
-  { key: "show_plan_info", label: "Plan" },
+  { key: "show_plan_info", label: "Membership plan" },
   { key: "show_period", label: "Membership period" },
-  { key: "show_payment_details", label: "Payment status" },
-  { key: "show_remaining_balance", label: "Remaining balance" },
-  { key: "show_notes", label: "Notes" },
-  { key: "show_footer", label: "Footer text" },
+  { key: "show_amount_received", label: "Amount received" },
+  { key: "show_method", label: "Payment method" },
+  { key: "show_received_by", label: "Received by" },
+  { key: "show_remaining_balance", label: "Remaining amount" },
+  { key: "show_footer", label: "Footer" },
 ];
 
 function PrintSettingsSection({
@@ -594,7 +604,9 @@ function PrintSettingsSection({
             <Select
               label="Destination"
               value={form.destination}
-              onChange={(e) => update({ destination: e.target.value })}
+              onChange={(e) =>
+                update({ destination: e.target.value as PrintSettings["destination"] })
+              }
               options={[
                 { value: "print_window", label: "Print Window (send to printer)" },
                 { value: "pdf", label: "Save as PDF" },
@@ -604,7 +616,9 @@ function PrintSettingsSection({
             <Select
               label="Paper Width"
               value={form.paper_width}
-              onChange={(e) => update({ paper_width: e.target.value })}
+              onChange={(e) =>
+                update({ paper_width: e.target.value as PrintSettings["paper_width"] })
+              }
               options={[
                 { value: "80", label: "80 mm (thermal)" },
                 { value: "58", label: "58 mm (thermal)" },
@@ -651,19 +665,19 @@ function PrintSettingsSection({
           )}
 
           <div>
-            <label className="text-sm font-medium text-text-primary mb-3 block">
-              Include on Receipt
+            <label className="mb-3 block text-sm font-medium text-text-primary">
+              Receipt Information
             </label>
             <div className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
-              {PRINT_FIELDS.map((opt) => (
-                <label key={opt.key} className="flex items-center gap-3 cursor-pointer">
+              {RECEIPT_FIELDS.map((field) => (
+                <label key={field.key} className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
-                    checked={form[opt.key] as boolean}
-                    onChange={(e) => update({ [opt.key]: e.target.checked })}
+                    checked={form[field.key] as boolean}
+                    onChange={(event) => update({ [field.key]: event.target.checked })}
                     className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                   />
-                  <span className="text-sm text-text-primary">{opt.label}</span>
+                  <span className="text-sm text-text-primary">{field.label}</span>
                 </label>
               ))}
             </div>
@@ -677,7 +691,7 @@ function PrintSettingsSection({
               name="receipt_footer"
               className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               rows={2}
-              placeholder="Thank you for being a member!"
+              placeholder="Stay Fit | Stay Healthy"
               value={settings.receipt.receipt_footer ?? ""}
               onChange={async (e) => {
                 const next = e.target.value || null;
@@ -713,91 +727,35 @@ function PrintPreview({
   settings: AllSettings;
   widthMm: number;
 }) {
-  const fontPx = Math.round(print.font_size * 0.9) || 10;
-
   return (
-    <div className="flex justify-center">
-      <div
-        className="bg-white px-3 py-4 font-mono leading-snug text-gray-900"
-        style={{ width: `${widthMm * 3.6}px` }}
-      >
-        <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] items-center">
-          {print.show_gym_name && settings.gym.gym_logo && (
-            <img
-              src={settings.gym.gym_logo}
-              alt="Gym logo"
-              className="h-10 w-10 object-contain"
-            />
-          )}
-          <div className="col-start-2 min-w-0 text-center">
-            {print.show_gym_name && (
-              <div className="font-bold" style={{ fontSize: fontPx + 2 }}>
-                {settings.gym.gym_name}
-              </div>
-            )}
-            {print.show_gym_phone && settings.gym.gym_phone && (
-              <div style={{ fontSize: fontPx }}>{settings.gym.gym_phone}</div>
-            )}
-            {print.show_gym_address && settings.gym.gym_address && (
-              <div style={{ fontSize: fontPx }}>{settings.gym.gym_address}</div>
-            )}
-          </div>
-        </div>
-        <Divider />
-        {print.show_receipt_title && (
-          <div className="text-center font-bold" style={{ fontSize: fontPx }}>
-            RECEIPT
-          </div>
-        )}
-        {print.show_receipt_number && <Row label="Receipt #" value="R-0001" fontPx={fontPx} />}
-        {print.show_date && (
-          <Row label="Date" value={new Date().toISOString().slice(0, 10)} fontPx={fontPx} />
-        )}
-        <Divider />
-        {print.show_member_info && (
-          <>
-            <Row label="Member" value="John Doe" fontPx={fontPx} />
-            <Row label="Member #" value="M-0001" fontPx={fontPx} />
-          </>
-        )}
-        <Divider />
-        {print.show_plan_info && <Row label="Plan" value="Monthly" fontPx={fontPx} />}
-        {print.show_period && (
-          <Row label="Period" value="2026-08-28 to 2026-09-28" fontPx={Math.max(8, fontPx - 1)} />
-        )}
-        {(print.show_remaining_balance || print.show_payment_details || print.show_footer) && (
-          <Divider />
-        )}
-        {print.show_remaining_balance && <Row label="Remaining" value="Rs. 0" fontPx={fontPx} />}
-        {print.show_remaining_balance && (print.show_payment_details || print.show_footer) && (
-          <Divider />
-        )}
-        {print.show_payment_details && (
-          <div className="text-center" style={{ fontSize: fontPx }}>
-            Paid in full
-          </div>
-        )}
-        {print.show_footer && (
-          <div className="text-center" style={{ fontSize: fontPx * 0.9 }}>
-            {settings.receipt.receipt_footer?.trim() || "Thank you for being a member"}
-          </div>
-        )}
+    <div className="flex justify-center overflow-hidden rounded-lg border border-border bg-secondary-bg/50 py-6">
+      <div style={{ zoom: 0.72 }} className="overflow-hidden rounded-md border border-border shadow-sm">
+        <ReceiptPaper
+          widthMm={widthMm}
+          data={{
+            receiptNumber: "RCPT-000582",
+            issuedAt: "2026-08-27T10:24:00+05:00",
+            gymName: settings.gym.gym_name,
+            gymTagline: settings.gym.gym_tagline,
+            gymLogo: settings.gym.gym_logo,
+            gymAddress: settings.gym.gym_address,
+            gymPhone: settings.gym.gym_phone,
+            memberName: "Ali Khan",
+            memberNumber: "MEM-00124",
+            planName: "Monthly",
+            amount: 2000,
+            remainingBalance: 500,
+            paymentMethod: "Cash",
+            membershipStartDate: "2026-08-27",
+            membershipExpiryDate: "2026-09-26",
+          }}
+          print={print}
+          title={settings.receipt.receipt_title}
+          footer={settings.receipt.receipt_footer}
+        />
       </div>
     </div>
   );
-}
-
-function Row({ label, value, fontPx }: { label: string; value: string; fontPx: number }) {
-  return (
-    <div className="flex justify-between" style={{ fontSize: fontPx }}>
-      <span>{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}
-
-function Divider() {
-  return <div className="my-1 border-t border-gray-400" />;
 }
 
 function DataTab({

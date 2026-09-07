@@ -49,7 +49,8 @@ pub async fn print_thermal_receipt(
         .filter(|n| !n.trim().is_empty())
         .map(|n| n.trim().to_string())
         .or_else(|| {
-            print.thermal_printer_name
+            print
+                .thermal_printer_name
                 .clone()
                 .filter(|n| !n.trim().is_empty())
         });
@@ -94,8 +95,7 @@ fn thermal_fallback(
     let pdf = printing_service::render_receipt_pdf(receipt, print, footer)?;
     let mut result = open_in_viewer(pdf, &receipt.receipt_number)?;
     result.mode = "fallback".to_string();
-    result.message =
-        format!("{reason}. Receipt opened as PDF — print it from the PDF viewer.");
+    result.message = format!("{reason}. Receipt opened as PDF — print it from the PDF viewer.");
     Ok(result)
 }
 

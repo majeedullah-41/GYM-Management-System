@@ -63,6 +63,7 @@ pub fn create_member(
             .filter(|v| !v.is_empty()),
         date_of_birth: request.date_of_birth,
         gender: request.gender,
+        blood_group: normalize_blood_group(request.blood_group)?,
         photo_path: None,
         notes: request
             .notes
@@ -97,7 +98,7 @@ pub fn create_member(
 }
 
 pub fn get_member(conn: &Connection, id: &str) -> Result<MemberResponse, AppError> {
-    let member = member_repository::get_by_id(conn, id)?
+    let member = member_repository::get_operational_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
     let membership = get_membership_info(conn, &member.id)?;
     Ok(MemberResponse::from_member(member, membership))
@@ -139,7 +140,7 @@ pub fn update_member(
     id: &str,
     request: UpdateMemberRequest,
 ) -> Result<MemberResponse, AppError> {
-    let mut member = member_repository::get_by_id(conn, id)?
+    let mut member = member_repository::get_operational_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
 
     let full_name = request.full_name.trim().to_string();
@@ -174,6 +175,7 @@ pub fn update_member(
         .filter(|v| !v.is_empty());
     member.date_of_birth = request.date_of_birth;
     member.gender = request.gender;
+    member.blood_group = normalize_blood_group(request.blood_group)?;
     member.notes = request
         .notes
         .map(|v| v.trim().to_string())
@@ -223,8 +225,17 @@ pub fn update_member(
     Ok(MemberResponse::from_member(member, membership))
 }
 
+fn normalize_blood_group(value: Option<String>) -> Result<Option<String>, AppError> {
+    let value = value.map(|group| group.trim().to_uppercase());
+    match value.as_deref() {
+        None | Some("") => Ok(None),
+        Some("A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-") => Ok(value),
+        Some(_) => Err(AppError::ValidationError("Invalid blood group".into())),
+    }
+}
+
 pub fn archive_member(conn: &Connection, id: &str) -> Result<MemberResponse, AppError> {
-    let member = member_repository::get_by_id(conn, id)?
+    let member = member_repository::get_operational_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
 
     let now = now_iso8601();
@@ -251,7 +262,7 @@ pub fn archive_member(conn: &Connection, id: &str) -> Result<MemberResponse, App
 }
 
 pub fn unarchive_member(conn: &Connection, id: &str) -> Result<MemberResponse, AppError> {
-    let member = member_repository::get_by_id(conn, id)?
+    let member = member_repository::get_operational_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
 
     let now = now_iso8601();
@@ -283,12 +294,55 @@ pub fn unarchive_member(conn: &Connection, id: &str) -> Result<MemberResponse, A
     Ok(MemberResponse::from_member(updated, membership))
 }
 
+pub fn permanently_delete_member(conn: &Connection, id: &str) -> Result<(), AppError> {
+    let member = member_repository::get_operational_by_id(conn, id)?
+        .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
+    if !member.is_archived {
+        return Err(AppError::ValidationError(
+            "Archive the member before deleting them permanently".into(),
+        ));
+    }
+
+    let now = now_iso8601();
+    let today = crate::utils::dates::today_iso();
+    let tx = conn.unchecked_transaction()?;
+
+    // Preserve paid amounts, allocations, payments and receipts. Only forgive
+    // the unpaid portion so historical revenue and receipt reprints stay valid.
+    tx.execute(
+        "UPDATE monthly_membership_bills \
+         SET expected_amount = paid_amount, status = 'PAID', updated_at = ?2 \
+         WHERE member_id = ?1 AND expected_amount > paid_amount",
+        rusqlite::params![id, now],
+    )?;
+    tx.execute(
+        "UPDATE memberships \
+         SET status = 'terminated', ended_at = COALESCE(ended_at, ?2), \
+             status_changed_at = ?3, updated_at = ?3 \
+         WHERE member_id = ?1",
+        rusqlite::params![id, today, now],
+    )?;
+    member_repository::mark_permanently_deleted(&tx, id, &now)?;
+    tx.commit()?;
+
+    log::info!(
+        "Permanently removed member from operational views: {} ({})",
+        member.full_name,
+        member.member_number
+    );
+    Ok(())
+}
+
 fn get_membership_info(conn: &Connection, member_id: &str) -> Result<MembershipInfo, AppError> {
     let billing = crate::services::billing_service::get_billing_summary(conn, member_id)?;
     let plan_name = billing.plan_name;
     let start_date = billing.enrollment_date;
     let expiry_date = None;
-    let outstanding = billing.total_outstanding;
+    // Net balance: dues still owed minus any prepaid (advance) credit. A paid
+    // ahead member therefore surfaces a negative balance here.
+    let advance_credit =
+        crate::services::billing_service::advance_credit(conn, member_id)?;
+    let outstanding = billing.total_outstanding - advance_credit;
     let status = billing.membership_status;
 
     Ok(MembershipInfo {
@@ -320,6 +374,7 @@ mod tests {
     use super::*;
     use crate::database::migrations;
     use crate::dto::member::CreateMemberRequest;
+    use crate::dto::payment::CreatePaymentRequest;
     use rusqlite::Connection;
 
     fn test_db() -> Connection {
@@ -338,6 +393,7 @@ mod tests {
             address: None,
             date_of_birth: None,
             gender: None,
+            blood_group: None,
             notes: None,
             membership_plan_id: None,
         }
@@ -368,6 +424,43 @@ mod tests {
         assert_eq!(result.full_name, "Ahmad Khan");
         assert!(result.member_number.starts_with("GYM-"));
         assert!(!result.is_archived);
+    }
+
+    #[test]
+    fn should_store_and_normalize_blood_group() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                blood_group: Some("  ab+  ".to_string()),
+                ..valid_request("Ahmad Khan")
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.blood_group.as_deref(), Some("AB+"));
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT blood_group FROM members WHERE id = ?1",
+                [&result.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.as_deref(), Some("AB+"));
+    }
+
+    #[test]
+    fn should_reject_invalid_blood_group() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                blood_group: Some("X+".to_string()),
+                ..valid_request("Ahmad Khan")
+            },
+        );
+
+        assert!(matches!(result, Err(AppError::ValidationError(_))));
     }
 
     #[test]
@@ -495,6 +588,7 @@ mod tests {
                 address: None,
                 date_of_birth: None,
                 gender: None,
+                blood_group: None,
                 notes: None,
                 membership_plan_id: None,
             },
@@ -512,6 +606,136 @@ mod tests {
 
         let active = list_members(&conn, "", None, false).unwrap();
         assert_eq!(active.len(), 0);
+    }
+
+    #[test]
+    fn permanently_deleted_member_keeps_payment_history_and_clears_dues() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-delete", "Monthly Delete Test");
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                membership_plan_id: Some("plan-delete".to_string()),
+                ..valid_request("Historical Member")
+            },
+        )
+        .unwrap();
+        let payment = crate::services::payment_service::create_payment(
+            &conn,
+            CreatePaymentRequest {
+                member_id: created.id.clone(),
+                membership_plan_id: "plan-delete".to_string(),
+                amount: 500,
+                payment_method: "Cash".to_string(),
+                payment_date: crate::utils::dates::today_iso(),
+                description: None,
+                reference: None,
+                notes: None,
+                idempotency_key: Some("delete-history-test".to_string()),
+            },
+        )
+        .unwrap();
+
+        let revenue_before: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE is_voided = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let receipt_count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM receipts", [], |row| row.get(0))
+            .unwrap();
+        let allocation_count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_allocations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        archive_member(&conn, &created.id).unwrap();
+        assert!(
+            get_membership_info(&conn, &created.id)
+                .unwrap()
+                .outstanding_balance
+                > 0
+        );
+
+        permanently_delete_member(&conn, &created.id).unwrap();
+
+        assert!(get_member(&conn, &created.id).is_err());
+        assert!(list_members(&conn, "", None, true).unwrap().is_empty());
+        assert_eq!(
+            get_membership_info(&conn, &created.id)
+                .unwrap()
+                .outstanding_balance,
+            0
+        );
+        let historical = crate::services::payment_service::get_payment(&conn, &payment.id).unwrap();
+        assert_eq!(historical.member_name.as_deref(), Some("Historical Member"));
+        assert!(
+            crate::services::receipt_service::get_receipt_by_payment_id(&conn, &payment.id).is_ok()
+        );
+        let revenue_after: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE is_voided = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let receipt_count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM receipts", [], |row| row.get(0))
+            .unwrap();
+        let allocation_count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_allocations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(revenue_after, revenue_before);
+        assert_eq!(receipt_count_after, receipt_count_before);
+        assert_eq!(allocation_count_after, allocation_count_before);
+    }
+
+    #[test]
+    fn permanently_deleting_active_member_is_rejected() {
+        let conn = test_db();
+        let created = create_member(&conn, valid_request("Active Member")).unwrap();
+
+        let result = permanently_delete_member(&conn, &created.id);
+
+        assert!(matches!(result, Err(AppError::ValidationError(_))));
+        assert!(get_member(&conn, &created.id).is_ok());
+    }
+
+    #[test]
+    fn member_balance_includes_advance_credit_as_negative() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-credit", "Monthly");
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                membership_plan_id: Some("plan-credit".to_string()),
+                ..valid_request("Ahead Member")
+            },
+        )
+        .unwrap();
+
+        crate::services::advance_payment_service::create(
+            &conn,
+            crate::dto::advance_payment::CreateAdvancePaymentRequest {
+                member_id: created.id.clone(),
+                period_count: 3,
+                payment_method: "Cash".to_string(),
+                note: None,
+                idempotency_key: Some("credit-adv".to_string()),
+            },
+        )
+        .unwrap();
+
+        let listed = list_members(&conn, "", None, false).unwrap();
+        assert_eq!(listed.len(), 1);
+        // Dues are settled and three future periods are prepaid: -3 x 2000.
+        assert_eq!(listed[0].outstanding_balance, -6000);
+        assert!(listed[0].is_paid);
     }
 
     #[test]

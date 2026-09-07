@@ -10,6 +10,7 @@ export interface MemberResponse {
   address: string | null;
   date_of_birth: string | null;
   gender: string | null;
+  blood_group: string | null;
   notes: string | null;
   is_archived: boolean;
   membership_plan_id: string | null;
@@ -31,6 +32,7 @@ export interface CreateMemberRequest {
   address: string | null;
   date_of_birth: string | null;
   gender: string | null;
+  blood_group: string | null;
   notes: string | null;
   membership_plan_id?: string | null;
 }
@@ -43,6 +45,7 @@ export interface UpdateMemberRequest {
   address: string | null;
   date_of_birth: string | null;
   gender: string | null;
+  blood_group: string | null;
   notes: string | null;
   membership_plan_id?: string | null;
 }
@@ -82,4 +85,8 @@ export async function archiveMember(id: string): Promise<MemberResponse> {
 
 export async function unarchiveMember(id: string): Promise<MemberResponse> {
   return invokeCommand<MemberResponse>("unarchive_member", { id });
+}
+
+export async function permanentlyDeleteMember(id: string): Promise<void> {
+  return invokeCommand<void>("permanently_delete_member", { id });
 }

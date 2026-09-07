@@ -2,6 +2,7 @@ import { invokeCommand } from "../tauri";
 
 export interface GymSettings {
   gym_name: string;
+  gym_tagline: string | null;
   gym_logo: string | null;
   gym_address: string | null;
   gym_phone: string | null;
@@ -19,12 +20,14 @@ export interface ReceiptSettings {
 }
 
 export interface PrintSettings {
-  destination: string;
-  paper_width: string;
+  destination: "print_window" | "pdf" | "thermal";
+  paper_width: "58" | "80";
   font_size: number;
-  thermal_printer_name?: string | null;
-  thermal_characters_per_line?: number | null;
+  thermal_printer_name: string | null;
+  thermal_characters_per_line: number | null;
   show_gym_name: boolean;
+  show_gym_logo: boolean;
+  show_gym_tagline: boolean;
   show_gym_phone: boolean;
   show_gym_address: boolean;
   show_receipt_title: boolean;
@@ -33,7 +36,9 @@ export interface PrintSettings {
   show_member_info: boolean;
   show_plan_info: boolean;
   show_period: boolean;
-  show_payment_details: boolean;
+  show_amount_received: boolean;
+  show_method: boolean;
+  show_received_by: boolean;
   show_remaining_balance: boolean;
   show_notes: boolean;
   show_footer: boolean;

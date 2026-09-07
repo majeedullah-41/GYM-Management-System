@@ -1,10 +1,10 @@
 use base64::Engine;
-use printpdf::path::PaintMode;
-use printpdf::{BuiltinFont, Color, Image, ImageTransform, Line, Mm, Point, Rect, Rgb};
+use printpdf::{BuiltinFont, Color, Image, ImageTransform, Mm, Rgb};
 
 use crate::dto::receipt::ReceiptResponse;
 use crate::errors::AppError;
 use crate::repositories::settings_repository::PrintSettings;
+use crate::thermal::model::{Align, LineKind, PrinterProfile};
 
 pub fn render_receipt_pdf(
     receipt: &ReceiptResponse,
@@ -18,122 +18,31 @@ pub fn render_receipt_pdf(
     };
     let base_size: f32 = print.font_size.clamp(8, 16) as f32;
     let margin: f32 = 4.0;
-    let visible_note = receipt
-        .notes
-        .as_deref()
-        .filter(|s| !s.trim().is_empty() && !s.trim().eq_ignore_ascii_case("paid in full"));
-    let has_content_after_remaining = print.show_payment_details
-        || (print.show_notes && visible_note.is_some())
-        || print.show_footer;
-    let has_bottom_section = print.show_remaining_balance || has_content_after_remaining;
-
     let mut lines: Vec<(String, Style)> = Vec::new();
-
-    if print.show_gym_name && !receipt.gym_name.trim().is_empty() {
-        push_centered(&mut lines, receipt.gym_name.trim(), true, base_size + 1.0);
+    if print.show_gym_logo && receipt.gym_logo.is_some() {
+        lines.push((String::new(), style_spacer(15.0)));
     }
-    if print.show_gym_phone {
-        if let Some(p) = receipt
-            .gym_phone
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-        {
-            push_centered(&mut lines, p.trim(), false, base_size * 0.9);
-        }
-    }
-    if print.show_gym_address {
-        if let Some(a) = receipt
-            .gym_address
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-        {
-            for piece in wrap(a.trim(), paper_width_mm - margin * 2.0, base_size * 0.9) {
-                push_centered(&mut lines, &piece, false, base_size * 0.9);
-            }
-        }
-    }
-    push_divider(&mut lines);
-
-    if print.show_receipt_title {
-        push_centered(&mut lines, "RECEIPT", true, base_size);
-    }
-    if print.show_receipt_number {
-        push_row(&mut lines, "Receipt #", &receipt.receipt_number, base_size);
-    }
-    if print.show_date {
-        push_row(&mut lines, "Date", &receipt.payment_date, base_size);
-    }
-    push_divider(&mut lines);
-
-    if print.show_member_info {
-        if !receipt.member_name.trim().is_empty() {
-            push_row(&mut lines, "Member", &receipt.member_name, base_size);
-        }
-        if !receipt.member_number.trim().is_empty() {
-            push_row(&mut lines, "Member #", &receipt.member_number, base_size);
-        }
-    }
-    push_divider(&mut lines);
-
-    if print.show_plan_info {
-        if !receipt.plan_name.trim().is_empty() {
-            push_row(&mut lines, "Plan", &receipt.plan_name, base_size);
-        }
-    }
-    if print.show_period {
-        let period = format!(
-            "{} to {}",
-            receipt.membership_start_date, receipt.membership_expiry_date
-        );
-        push_row(&mut lines, "Period", &period, base_size * 0.9);
-    }
-    if has_bottom_section {
-        push_divider(&mut lines);
-    }
-
-    if print.show_remaining_balance {
-        push_row(
-            &mut lines,
-            "Remaining",
-            &format!("Rs. {}", format_amount(receipt.remaining_balance)),
-            base_size,
-        );
-    }
-    if print.show_remaining_balance && has_content_after_remaining {
-        push_divider(&mut lines);
-    }
-
-    if print.show_payment_details {
-        let status = if receipt.remaining_balance <= 0 {
-            "Paid in full".to_string()
-        } else {
-            format!(
-                "Balance due: Rs. {}",
-                format_amount(receipt.remaining_balance)
-            )
-        };
-        push_centered(&mut lines, &status, false, base_size);
-    }
-
-    if print.show_notes {
-        if let Some(n) = visible_note {
-            for piece in wrap(n.trim(), paper_width_mm - margin * 2.0, base_size) {
-                push_centered(&mut lines, &piece, false, base_size);
-            }
-        }
-    }
-
-    if print.show_footer {
-        let footer = footer
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or("Thank you for being a member");
-        if !footer.is_empty() {
-            for piece in wrap(
-                footer.trim(),
-                paper_width_mm - margin * 2.0,
-                base_size * 0.85,
-            ) {
-                push_centered(&mut lines, &piece, false, base_size * 0.85);
+    let profile = PrinterProfile::for_paper_width(&print.paper_width).with_characters_per_line(
+        print
+            .thermal_characters_per_line
+            .map(|value| value as usize),
+    );
+    let document = crate::thermal::renderer::build_document(receipt, print, footer);
+    for line in
+        crate::thermal::layout::render_document(&document.blocks, profile.characters_per_line)
+    {
+        match line.kind {
+            LineKind::Divider => push_divider(&mut lines),
+            LineKind::Blank => lines.push((String::new(), style_spacer(base_size * 0.3528 * 0.8))),
+            LineKind::Cut => {}
+            LineKind::Text => {
+                let centered = line.align == Align::Center;
+                let text = if centered {
+                    line.text.trim()
+                } else {
+                    line.text.trim_end()
+                };
+                lines.push((text.to_string(), style_text(base_size, centered, line.bold)));
             }
         }
     }
@@ -157,11 +66,18 @@ pub fn render_receipt_pdf(
 
     let layer = doc.get_page(page1).get_layer(layer1);
 
-    if print.show_gym_name {
-        if let Some(logo) = receipt.gym_logo.as_deref() {
-            if let Err(error) = add_logo_to_pdf(&layer, logo, margin, content_height_mm - margin) {
-                log::warn!("Could not render gym logo on receipt: {error}");
-            }
+    if let Some(logo) = print
+        .show_gym_logo
+        .then(|| receipt.gym_logo.as_deref())
+        .flatten()
+    {
+        if let Err(error) = add_logo_to_pdf(
+            &layer,
+            logo,
+            (paper_width_mm - 22.0) / 2.0,
+            content_height_mm - margin,
+        ) {
+            log::warn!("Could not render gym logo on receipt: {error}");
         }
     }
 
@@ -172,22 +88,9 @@ pub fn render_receipt_pdf(
         let baseline_y = cur_y + style.height_mm * 0.30;
 
         if style.divider {
-            let y = baseline_y;
-            layer.set_outline_color(color(0.55, 0.55, 0.55));
-            let rect = Rect::new(
-                Mm(margin),
-                Mm(y - 0.08),
-                Mm(paper_width_mm - margin),
-                Mm(y + 0.08),
-            )
-            .with_mode(PaintMode::Fill);
-            layer.add_rect(rect);
-            let p1 = Point::new(Mm(margin), Mm(y));
-            let p2 = Point::new(Mm(paper_width_mm - margin), Mm(y));
-            layer.add_line(Line {
-                points: vec![(p1, true), (p2, true)],
-                is_closed: false,
-            });
+            let divider = "-".repeat(profile.characters_per_line);
+            layer.set_fill_color(color(0.08, 0.08, 0.08));
+            layer.use_text(divider, base_size, Mm(margin), Mm(baseline_y), &font);
         } else {
             let x = if style.centered {
                 let text_w = text_width_mm(text, style.size);
@@ -239,14 +142,15 @@ fn style_text(size: f32, centered: bool, bold: bool) -> Style {
     }
 }
 
-fn push_row(lines: &mut Vec<(String, Style)>, label: &str, value: &str, size: f32) {
-    let mut style = style_text(size, false, false);
-    style.right_text = Some(value.to_string());
-    lines.push((label.to_string(), style));
-}
-
-fn push_centered(lines: &mut Vec<(String, Style)>, text: &str, bold: bool, size: f32) {
-    lines.push((text.to_string(), style_text(size, true, bold)));
+fn style_spacer(height_mm: f32) -> Style {
+    Style {
+        divider: false,
+        size: 0.0,
+        height_mm,
+        centered: false,
+        bold: false,
+        right_text: None,
+    }
 }
 
 fn push_divider(lines: &mut Vec<(String, Style)>) {
@@ -288,7 +192,7 @@ fn add_logo_to_pdf(
     if native_width_mm <= 0.0 || native_height_mm <= 0.0 {
         return Err("logo has invalid dimensions".to_string());
     }
-    let scale = (12.0 / native_width_mm).min(12.0 / native_height_mm);
+    let scale = (22.0 / native_width_mm).min(14.0 / native_height_mm);
     let rendered_height = native_height_mm * scale;
 
     Image::from_dynamic_image(&decoded).add_to_layer(
@@ -305,6 +209,7 @@ fn add_logo_to_pdf(
     Ok(())
 }
 
+#[cfg(test)]
 fn format_amount(amount: i64) -> String {
     let digits = amount.to_string();
     let mut out = String::new();
@@ -315,30 +220,6 @@ fn format_amount(amount: i64) -> String {
         out.push(c);
     }
     out
-}
-
-fn wrap(text: &str, width_mm: f32, size: f32) -> Vec<String> {
-    let char_w = size * 0.3528 * 0.6;
-    let max_chars = (width_mm / char_w).floor().max(4.0) as usize;
-    let mut result = Vec::new();
-    let mut current = String::new();
-    for w in text.split_whitespace() {
-        if !current.is_empty() && current.chars().count() + 1 + w.chars().count() > max_chars {
-            let taken = std::mem::take(&mut current);
-            result.push(taken);
-        }
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(w);
-    }
-    if !current.is_empty() {
-        result.push(current);
-    }
-    if result.is_empty() {
-        result.push(text.to_string());
-    }
-    result
 }
 
 #[cfg(test)]
@@ -352,6 +233,7 @@ mod tests {
             receipt_number: "R-0001".to_string(),
             issued_at: "2026-08-28T10:00:00Z".to_string(),
             gym_name: "Fitness Zone".to_string(),
+            gym_tagline: Some("Train Today Be Better".to_string()),
             gym_logo: None,
             gym_address: Some("123 Main Street, Lahore".to_string()),
             gym_phone: Some("+92 300 1234567".to_string()),
@@ -377,6 +259,8 @@ mod tests {
             thermal_printer_name: None,
             thermal_characters_per_line: None,
             show_gym_name: true,
+            show_gym_logo: true,
+            show_gym_tagline: true,
             show_gym_phone: true,
             show_gym_address: true,
             show_receipt_title: true,
@@ -385,7 +269,9 @@ mod tests {
             show_member_info: true,
             show_plan_info: true,
             show_period: true,
-            show_payment_details: true,
+            show_amount_received: true,
+            show_method: true,
+            show_received_by: true,
             show_remaining_balance: true,
             show_notes: true,
             show_footer: true,
@@ -425,7 +311,10 @@ mod tests {
         let mut print = default_print();
         print.show_gym_phone = false;
         print.show_gym_address = false;
-        print.show_payment_details = false;
+        print.show_amount_received = false;
+        print.show_method = false;
+        print.show_received_by = false;
+        print.show_remaining_balance = false;
         print.show_notes = false;
         let bytes = render_receipt_pdf(&sample_receipt(), &print, None).unwrap();
         assert!(bytes.starts_with(b"%PDF"));

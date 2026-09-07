@@ -5,6 +5,7 @@ export interface ReceiptResponse {
   receipt_number: string;
   issued_at: string;
   gym_name: string;
+  gym_tagline: string | null;
   gym_logo: string | null;
   gym_address: string | null;
   gym_phone: string | null;
