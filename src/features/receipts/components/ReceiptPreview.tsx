@@ -18,6 +18,7 @@ import {
   formatReceiptDate,
   formatReceiptPeriodDate,
   receiptFooterText,
+  RECEIPT_BRANDING,
 } from "./receiptFormat";
 import { formatCurrency } from "../../../lib/utils/format";
 
@@ -271,6 +272,7 @@ ${
     : ""
 }
 ${print.show_footer ? `${divider}<div class="center footer"><div>Thank you!</div><div>${escapeHtml(receiptFooterText(footer))}</div></div>` : ""}
+${divider}<div class="center footer" style="font-size: ${Math.max(6.5, fontSize - 1)}pt;">${escapeHtml(RECEIPT_BRANDING)}</div>
 </body></html>`;
 
   return new Promise((resolve, reject) => {

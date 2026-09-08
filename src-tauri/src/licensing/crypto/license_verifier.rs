@@ -291,19 +291,42 @@ mod tests {
     }
 
     #[test]
-    fn dev_key_verifies_cli_issued_license() {
-        // End-to-end provisioning check: a license issued by the vendor CLI
-        // (license-generator issue) must validate against the PUBLIC_KEY_HEX
-        // embedded in keys.rs. Reads the file written by the manual e2e step.
+    fn dev_key_verifies_web_issued_license() {
+        // End-to-end provisioning check: a license issued by the Vercel
+        // license server must validate against the PUBLIC_KEY_HEX embedded in
+        // keys.rs. Reads the file saved from a real server response.
         let path = "C:\\Users\\SALMAN~1\\AppData\\Local\\Temp\\opencode\\dev-test.gymlic";
         if !std::path::Path::new(path).exists() {
-            eprintln!("skipping: CLI-issued license file not present");
+            eprintln!("skipping: web-issued license file not present");
             return;
         }
         let data = std::fs::read(path).expect("read issued license");
         let vk = crate::licensing::crypto::keys::verifying_key().expect("embedded dev key");
-        let payload = verify(&data, &vk).expect("embedded dev key must verify CLI-issued license");
-        assert_eq!(payload.gym_name, "Swat Fitness Center");
-        assert_eq!(payload.hwid, "547612b968aadb7316ab1079e628da594c4352a4815f758396af72d7fd205f77");
+        let payload = verify(&data, &vk).expect("embedded dev key must verify web-issued license");
+        assert_eq!(payload.license_id, "LIC-2026-FA6805");
+        assert_eq!(payload.gym_name, "Bloating Fitness");
+        assert_eq!(payload.hwid, "6045253d4f6eb77ebb55a2c92861caeac396a86284adef022f7d92cd6c10d40c");
+        assert_eq!(payload.license_type, LicenseType::Expiring);
+        assert_eq!(payload.expires_at, Some("2026-10-08".to_string()));
+    }
+
+    #[test]
+    fn rejects_tampered_expiry_date() {
+        // A user must NOT be able to extend a license by editing the
+        // `payload_json` expiry in the .gymlic file.
+        let (sk, vk) = keypair(7);
+        let env = envelope_for(&sample_payload(), &sk);
+        let mut value: Value = serde_json::from_slice(&env).unwrap();
+        // Original is permanent: "expires_at":null -> attempt to set it to a
+        // far-future date by hand.
+        value["payload_json"] = Value::String(
+            r#"{"version":1,"license_id":"LIC-2026-000124","customer_name":"Ali Khan","gym_name":"Swat Fitness Center","hwid":"00000000000000000000000000000007","license_type":"permanent","issued_at":"2026-09-05","expires_at":"2099-12-31"}"#
+                .to_string(),
+        );
+        let tampered = serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            verify(&tampered, &vk),
+            Err(LicenseStatus::InvalidSignature)
+        );
     }
 }

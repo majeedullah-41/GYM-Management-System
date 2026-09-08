@@ -8,6 +8,10 @@ use crate::repositories::settings_repository::PrintSettings;
 use crate::thermal::model::{Block, ReceiptDocument};
 use crate::utils::formatting::format_currency;
 
+/// Supplier branding shown at the end of every receipt. Deliberately not tied
+/// to any print setting so it cannot be removed from the printed output.
+pub const RECEIPT_BRANDING: &str = "Software provided by EagleNest Creations (0346-4451505)";
+
 pub fn build_document(
     receipt: &ReceiptResponse,
     print: &PrintSettings,
@@ -146,6 +150,9 @@ pub fn build_document(
             footer.trim().to_string(),
         ]));
     }
+
+    blocks.push(Block::Divider);
+    blocks.push(Block::Centered(vec![RECEIPT_BRANDING.to_string()]));
 
     ReceiptDocument { blocks }
 }

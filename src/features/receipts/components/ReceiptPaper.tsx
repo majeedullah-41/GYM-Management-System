@@ -5,6 +5,7 @@ import {
   formatReceiptDate,
   formatReceiptPeriodDate,
   receiptFooterText,
+  RECEIPT_BRANDING,
 } from "./receiptFormat";
 
 export interface ReceiptPaperData {
@@ -147,6 +148,11 @@ export function ReceiptPaper({
           </footer>
         </>
       )}
+
+      <ReceiptDash />
+      <footer className="py-1 text-center" style={{ fontSize: fontPx }}>
+        {RECEIPT_BRANDING}
+      </footer>
     </div>
   );
 }
