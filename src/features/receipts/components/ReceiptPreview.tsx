@@ -169,11 +169,12 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
                 memberName: receipt.member_name,
                 memberNumber: receipt.member_number,
                 planName: receipt.plan_name,
-amount: receipt.amount,
-              remainingBalance: receipt.remaining_balance,
-              paymentMethod: receipt.payment_method,
+                amount: receipt.amount,
+                remainingBalance: receipt.remaining_balance,
+                paymentMethod: receipt.payment_method,
                 membershipStartDate: receipt.membership_start_date,
                 membershipExpiryDate: receipt.membership_expiry_date,
+                paymentMonth: receipt.payment_month,
               }}
               print={print}
               footer={footer}
@@ -257,6 +258,7 @@ ${divider}
 ${print.show_member_info ? row("Member", receipt.member_name) + row("Member ID", receipt.member_number) : ""}
 ${print.show_plan_info ? row("Plan", receipt.plan_name) : ""}
 ${print.show_period ? row("Period", `${formatReceiptPeriodDate(receipt.membership_start_date)} - ${formatReceiptPeriodDate(receipt.membership_expiry_date)}`) : ""}
+${print.show_payment_month && receipt.payment_month && receipt.payment_month.trim() !== "" ? row("Payment Month", receipt.payment_month.trim()) : ""}
 ${
   print.show_amount_received ||
   print.show_method ||

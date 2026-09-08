@@ -106,6 +106,17 @@ pub fn build_document(
             ),
         ));
     }
+    
+    if print.show_payment_month {
+        if let Some(month) = &receipt.payment_month {
+            if !month.trim().is_empty() {
+                blocks.push(Block::Row(
+                    "Payment Month".to_string(),
+                    month.trim().to_string(),
+                ));
+            }
+        }
+    }
 
     if print.show_amount_received
         || print.show_method
@@ -196,6 +207,7 @@ mod tests {
             payment_date: "2026-08-28".to_string(),
             membership_start_date: "2026-08-28".to_string(),
             membership_expiry_date: "2026-09-28".to_string(),
+            payment_month: Some("August 2026".to_string()),
             notes: Some("Paid in full".to_string()),
             remaining_balance: 0,
             allocations: Vec::new(),
@@ -220,6 +232,7 @@ mod tests {
             show_member_info: true,
             show_plan_info: true,
             show_period: true,
+            show_payment_month: true,
             show_amount_received: true,
             show_method: true,
             show_received_by: true,
@@ -248,8 +261,8 @@ mod tests {
             kinds,
             vec![
                 "header", "centered", "divider", "header", "divider", "row", "row", "divider",
-                "row", "row", "row", "row", "divider", "row", "row", "row", "row", "divider",
-                "centered"
+                "row", "row", "row", "row", "row", "divider", "row", "row", "row", "row",
+                "divider", "centered", "divider", "centered"
             ]
         );
     }

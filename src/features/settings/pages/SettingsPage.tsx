@@ -550,6 +550,7 @@ const RECEIPT_FIELDS: { key: keyof PrintSettings; label: string }[] = [
   { key: "show_member_info", label: "Member name and ID" },
   { key: "show_plan_info", label: "Membership plan" },
   { key: "show_period", label: "Membership period" },
+  { key: "show_payment_month", label: "Payment month" },
   { key: "show_amount_received", label: "Amount received" },
   { key: "show_method", label: "Payment method" },
   { key: "show_received_by", label: "Received by" },
@@ -751,6 +752,7 @@ function PrintPreview({
             paymentMethod: "Cash",
             membershipStartDate: "2026-08-27",
             membershipExpiryDate: "2026-09-26",
+            paymentMonth: "August 2026",
           }}
           print={print}
           title={settings.receipt.receipt_title}

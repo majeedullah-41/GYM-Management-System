@@ -94,7 +94,9 @@ fn reg_query_string(root: HKEY, subkey: PCWSTR, value: PCWSTR) -> Option<String>
     result
 }
 
-fn query_string_value(key: HKEY, value: PCWSTR) -> Option<String> {
+/// Reads a REG_SZ value from an opened registry key. Also reused by the
+/// licensing repository to read its clock-rollback anchor.
+pub(crate) fn query_string_value(key: HKEY, value: PCWSTR) -> Option<String> {
     let mut size: u32 = 0;
     let status = unsafe {
         RegQueryValueExW(

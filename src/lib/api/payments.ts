@@ -13,6 +13,7 @@ export interface PaymentResponse {
   membership_plan_name: string | null;
   membership_start_date: string;
   membership_expiry_date: string;
+  payment_month?: string | null;
   description: string | null;
   reference: string | null;
   notes: string | null;
@@ -65,6 +66,7 @@ export interface CreatePaymentRequest {
   amount: number;
   payment_method: string;
   payment_date: string;
+  payment_month?: string | null;
   description?: string | null;
   reference?: string | null;
   notes?: string | null;

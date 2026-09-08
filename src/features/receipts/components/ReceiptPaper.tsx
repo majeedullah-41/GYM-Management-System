@@ -24,6 +24,7 @@ export interface ReceiptPaperData {
   paymentMethod: string;
   membershipStartDate: string;
   membershipExpiryDate: string;
+  paymentMonth?: string | null;
 }
 
 interface ReceiptPaperProps {
@@ -113,6 +114,9 @@ export function ReceiptPaper({
             label="Period"
             value={`${formatReceiptPeriodDate(data.membershipStartDate)} - ${formatReceiptPeriodDate(data.membershipExpiryDate)}`}
           />
+        )}
+        {print.show_payment_month && data.paymentMonth && data.paymentMonth.trim() !== "" && (
+          <ReceiptField label="Payment Month" value={data.paymentMonth.trim()} />
         )}
       </section>
 

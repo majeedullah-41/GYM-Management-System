@@ -104,6 +104,7 @@ fn assemble_receipt(
         payment_date: payment.payment_date.clone(),
         membership_start_date: payment.membership_start_date.clone(),
         membership_expiry_date: payment.membership_expiry_date.clone(),
+        payment_month: payment.payment_month.clone(),
         notes: if receipt_settings.show_notes {
             payment.notes.clone()
         } else {

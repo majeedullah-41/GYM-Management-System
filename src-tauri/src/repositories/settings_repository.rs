@@ -42,6 +42,7 @@ pub struct PrintSettings {
     pub show_member_info: bool,
     pub show_plan_info: bool,
     pub show_period: bool,
+    pub show_payment_month: bool,
     pub show_amount_received: bool,
     pub show_method: bool,
     pub show_received_by: bool,
@@ -270,6 +271,7 @@ pub fn get_print_settings(conn: &Connection) -> Result<PrintSettings, AppError> 
         show_member_info: visible("print_show_member_info"),
         show_plan_info: visible("print_show_plan_info"),
         show_period: visible("print_show_period"),
+        show_payment_month: visible("print_show_payment_month"),
         show_amount_received: get_bool_default(conn, "print_show_amount_received", true),
         show_method: get_bool_default(conn, "print_show_method", true),
         show_received_by: get_bool_default(conn, "print_show_received_by", true),
@@ -326,6 +328,7 @@ pub fn save_print_settings(conn: &Connection, print: &PrintSettings) -> Result<(
     set_bool("print_show_member_info", print.show_member_info)?;
     set_bool("print_show_plan_info", print.show_plan_info)?;
     set_bool("print_show_period", print.show_period)?;
+    set_bool("print_show_payment_month", print.show_payment_month)?;
     set_bool("print_show_amount_received", print.show_amount_received)?;
     set_bool("print_show_method", print.show_method)?;
     set_bool("print_show_received_by", print.show_received_by)?;

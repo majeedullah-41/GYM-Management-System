@@ -6,7 +6,7 @@ use crate::errors::AppError;
 use crate::models::Payment;
 
 const SELECT_COLS: &str = "id, receipt_number, member_id, amount, payment_method, payment_date, \
-     membership_plan_id, membership_start_date, membership_expiry_date, description, reference, \
+     membership_plan_id, membership_start_date, membership_expiry_date, payment_month, description, reference, \
      notes, is_voided, voided_at, void_reason, created_at, updated_at";
 
 /// Represents a distinct membership period for a member (one cycle of a plan):
@@ -23,8 +23,8 @@ pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
     conn.execute(
         "INSERT INTO payments (id, receipt_number, member_id, amount, payment_method, \
          payment_date, membership_plan_id, membership_start_date, membership_expiry_date, \
-         description, reference, notes, is_voided, voided_at, void_reason, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, NULL, NULL, ?13, ?14)",
+         payment_month, description, reference, notes, is_voided, voided_at, void_reason, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0, NULL, NULL, ?14, ?15)",
         params![
             payment.id,
             payment.receipt_number,
@@ -35,6 +35,7 @@ pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
             payment.membership_plan_id,
             payment.membership_start_date,
             payment.membership_expiry_date,
+            payment.payment_month,
             payment.description,
             payment.reference,
             payment.notes,
@@ -138,7 +139,7 @@ pub fn list(
     let sql = format!(
         "SELECT p.id, p.receipt_number, p.member_id, p.amount, p.payment_method, \
          p.payment_date, p.membership_plan_id, p.membership_start_date, \
-         p.membership_expiry_date, p.description, p.reference, p.notes, p.is_voided, \
+         p.membership_expiry_date, p.payment_month, p.description, p.reference, p.notes, p.is_voided, \
          p.voided_at, p.void_reason, p.created_at, p.updated_at \
          FROM payments p \
          LEFT JOIN members m ON m.id = p.member_id \
@@ -451,14 +452,15 @@ fn row_to_payment(row: &rusqlite::Row) -> Result<Payment, rusqlite::Error> {
         membership_plan_id: row.get(6)?,
         membership_start_date: row.get(7)?,
         membership_expiry_date: row.get(8)?,
-        description: row.get(9)?,
-        reference: row.get(10)?,
-        notes: row.get(11)?,
-        is_voided: row.get::<_, i32>(12)? != 0,
-        voided_at: row.get(13)?,
-        void_reason: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
+        payment_month: row.get(9)?,
+        description: row.get(10)?,
+        reference: row.get(11)?,
+        notes: row.get(12)?,
+        is_voided: row.get::<_, i32>(13)? != 0,
+        voided_at: row.get(14)?,
+        void_reason: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
     })
 }
 
@@ -513,6 +515,7 @@ mod tests {
             membership_plan_id: plan_id.to_string(),
             membership_start_date: "2025-01-15".to_string(),
             membership_expiry_date: "2025-02-15".to_string(),
+            payment_month: None,
             description: None,
             reference: None,
             notes: None,

@@ -46,31 +46,57 @@ pub struct LicenseService {
     state_path: std::path::PathBuf,
     hardware: Box<dyn HwIdProvider>,
     public_key: Option<VerifyingKey>,
+    persist_registry_anchor: bool,
     cached: Mutex<Cached>,
 }
 
 impl LicenseService {
     pub fn new(app_dir: &Path) -> Self {
         let public_key = keys::verifying_key().ok();
-        Self::with_deps(app_dir, Box::new(RegistryHwIdProvider), public_key)
+        let last_seen = license_repository::load_anchor(
+            &app_dir.join(license_repository::LICENSE_STATE_FILE_NAME),
+        )
+        .and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok());
+        Self::from_parts(
+            app_dir,
+            Box::new(RegistryHwIdProvider),
+            public_key,
+            last_seen,
+            true,
+        )
     }
 
-    /// Construction with injectable dependencies, used by tests.
+    /// Construction with injectable dependencies, used by tests. Only reads
+    /// the sidecar file so tests stay hermetic (no real registry access).
+    #[cfg(test)]
     pub fn with_deps(
         app_dir: &Path,
         hardware: Box<dyn HwIdProvider>,
         public_key: Option<VerifyingKey>,
     ) -> Self {
+        let last_seen = license_repository::load_state(
+            &app_dir.join(license_repository::LICENSE_STATE_FILE_NAME),
+        )
+        .and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok());
+        Self::from_parts(app_dir, hardware, public_key, last_seen, false)
+    }
+
+    fn from_parts(
+        app_dir: &Path,
+        hardware: Box<dyn HwIdProvider>,
+        public_key: Option<VerifyingKey>,
+        last_seen: Option<NaiveDate>,
+        persist_registry_anchor: bool,
+    ) -> Self {
         let license_path = app_dir.join(license_repository::LICENSE_FILE_NAME);
         let state_path = app_dir.join(license_repository::LICENSE_STATE_FILE_NAME);
-        let last_seen = license_repository::load_state(&state_path)
-            .and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok());
 
         Self {
             license_path,
             state_path,
             hardware,
             public_key,
+            persist_registry_anchor,
             cached: Mutex::new(Cached {
                 status: LicenseStatus::Missing,
                 license: None,
@@ -175,6 +201,9 @@ impl LicenseService {
         self.cached.lock().expect("license cache lock").last_seen = Some(date);
         let value = date.format("%Y-%m-%d").to_string();
         license_repository::save_state(&self.state_path, &value);
+        if self.persist_registry_anchor {
+            license_repository::registry_anchor::save(&value);
+        }
     }
 
     fn apply(&self, status: LicenseStatus, payload: Option<LicensePayload>) -> LicenseStatus {
@@ -382,6 +411,44 @@ mod tests {
 
     fn write_to(path: &std::path::Path, bytes: &[u8]) {
         std::fs::write(path, bytes).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn valid_license_anchors_last_seen_in_registry_when_enabled() {
+        use crate::licensing::repositories::license_repository::{
+            registry_anchor, REGISTRY_ANCHOR_TEST_LOCK,
+        };
+
+        let _guard = REGISTRY_ANCHOR_TEST_LOCK.lock().unwrap();
+        registry_anchor::delete();
+
+        let dir = std::env::temp_dir().join(format!("gympos-lic-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = VerifyingKey::from(&signing_key);
+
+        let service = LicenseService::from_parts(
+            &dir,
+            Box::new(MockHwIdProvider(MACHINE.to_string())),
+            Some(verifying_key),
+            None,
+            true,
+        );
+        let env = expiring(&signing_key, MACHINE, "2099-01-01");
+        write_to(&service.license_path, &env);
+
+        assert_eq!(service.validate(), LicenseStatus::Valid);
+
+        let today = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+        assert_eq!(
+            registry_anchor::load().as_deref(),
+            Some(today.as_str()),
+            "a valid license must write its last-seen date to the registry"
+        );
+
+        registry_anchor::delete();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

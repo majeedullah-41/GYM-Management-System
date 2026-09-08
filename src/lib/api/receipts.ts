@@ -17,6 +17,7 @@ export interface ReceiptResponse {
   payment_date: string;
   membership_start_date: string;
   membership_expiry_date: string;
+  payment_month: string | null;
   notes: string | null;
   remaining_balance: number;
   allocations: {

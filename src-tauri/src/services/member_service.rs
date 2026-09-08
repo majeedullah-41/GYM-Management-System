@@ -628,7 +628,7 @@ mod tests {
                 amount: 500,
                 payment_method: "Cash".to_string(),
                 payment_date: crate::utils::dates::today_iso(),
-                description: None,
+                payment_month: None, description: None,
                 reference: None,
                 notes: None,
                 idempotency_key: Some("delete-history-test".to_string()),

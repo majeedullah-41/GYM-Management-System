@@ -62,6 +62,10 @@ fn get_migrations() -> Vec<Migration> {
             id: "013_permanently_deleted_members",
             sql: include_str!("013_permanently_deleted_members.sql"),
         },
+        Migration {
+            id: "014_payment_month",
+            sql: include_str!("014_payment_month.sql"),
+        },
     ]
 }
 

@@ -36,6 +36,7 @@ export interface PrintSettings {
   show_member_info: boolean;
   show_plan_info: boolean;
   show_period: boolean;
+  show_payment_month: boolean;
   show_amount_received: boolean;
   show_method: boolean;
   show_received_by: boolean;

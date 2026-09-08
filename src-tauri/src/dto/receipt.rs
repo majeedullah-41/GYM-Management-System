@@ -19,6 +19,7 @@ pub struct ReceiptResponse {
     pub payment_date: String,
     pub membership_start_date: String,
     pub membership_expiry_date: String,
+    pub payment_month: Option<String>,
     pub notes: Option<String>,
     pub remaining_balance: i64,
     pub allocations: Vec<PaymentAllocationResponse>,
