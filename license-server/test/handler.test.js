@@ -31,3 +31,17 @@ test("rejects requests when a token IS configured but missing", async () => {
   assert.strictEqual(result.code, 401);
   delete process.env.LICENSE_ACCESS_TOKEN;
 });
+
+test("returns a clear error when LICENSE_PRIVATE_KEY is missing", async () => {
+  delete process.env.LICENSE_PRIVATE_KEY;
+  const result = await callHandler({
+    method: "POST",
+    body: {
+      hwid: "547612b968aadb7316ab1079e628da594c4352a4815f758396af72d7fd205f77",
+      gym_name: "Swat",
+      license_type: "permanent",
+    },
+  });
+  assert.strictEqual(result.code, 500);
+  assert.match(result.body.error, /LICENSE_PRIVATE_KEY/);
+});

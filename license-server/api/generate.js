@@ -75,6 +75,12 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     console.error("Signing error:", err);
+    if (err.message === "seed must be 32 bytes") {
+      return res.status(500).json({
+        error:
+          "Signing misconfigured: LICENSE_PRIVATE_KEY is missing, invalid, or has whitespace",
+      });
+    }
     return res.status(500).json({ error: "Internal signing error" });
   }
 };

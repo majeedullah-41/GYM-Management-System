@@ -61,11 +61,10 @@ function todayISO() {
 }
 
 function buildEnvelope(payload) {
+  const seedBase64 = (process.env.LICENSE_PRIVATE_KEY || "").trim();
+  if (!seedBase64) throw new Error("seed must be 32 bytes");
   const canonical = canonicalPayload(payload);
-  const signatureHex = signCanonicalPayload(
-    canonical,
-    process.env.LICENSE_PRIVATE_KEY
-  );
+  const signatureHex = signCanonicalPayload(canonical, seedBase64);
 
   const payloadJson = JSON.stringify({
     version: payload.version,
