@@ -11,7 +11,8 @@ module.exports = async function handler(req, res) {
   const { token, hwid, customer_name, gym_name, license_type, expires_at } =
     req.body || {};
 
-  if (!token || token !== process.env.LICENSE_ACCESS_TOKEN) {
+  const expected = (process.env.LICENSE_ACCESS_TOKEN || "").trim();
+  if (expected && (!token || token.trim() !== expected)) {
     return res.status(401).json({ error: "Invalid or missing token" });
   }
 
