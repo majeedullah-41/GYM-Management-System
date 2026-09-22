@@ -11,7 +11,7 @@ use super::super::domain::license::{
     canonical_payload, validate_payload_version, LicensePayload, LicenseType,
     LICENSE_FILE_FORMAT,
 };
-#[cfg(test)]
+#[allow(unused_imports)]
 use super::super::domain::license::LICENSE_FILE_VERSION;
 use super::super::domain::license_status::LicenseStatus;
 
@@ -23,10 +23,9 @@ pub fn v2_encryption_key() -> [u8; 32] {
 }
 
 pub fn decrypt_v2_payload(ciphertext_and_tag: &[u8], iv: &[u8]) -> Result<String, LicenseStatus> {
-    let iv_arr: [u8; 12] = iv.try_into().map_err(|_| LicenseStatus::Corrupted)?;
     let key = v2_encryption_key();
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| LicenseStatus::Corrupted)?;
-    let nonce = Nonce::from(iv_arr);
+    let cipher = Aes256Gcm::new(&key.into());
+    let nonce = Nonce::try_from(iv).map_err(|_| LicenseStatus::Corrupted)?;
     let plaintext_bytes = cipher
         .decrypt(&nonce, ciphertext_and_tag)
         .map_err(|_| LicenseStatus::Corrupted)?;
@@ -266,7 +265,8 @@ mod tests {
         let signature = signing_key.sign(&canonical_payload(payload));
         let iv = custom_iv.unwrap_or([1u8; 12]);
         let key = v2_encryption_key();
-        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let cipher = Aes256Gcm::new(&key.into());
+        let nonce = Nonce::try_from(iv.as_slice()).expect("valid iv length");
         let payload_json = serde_json::to_string(&serde_json::json!({
             "version": payload.version,
             "license_id": payload.license_id,
@@ -279,7 +279,7 @@ mod tests {
         }))
         .expect("serialize payload");
         let ct = cipher
-            .encrypt(&Nonce::from(iv), payload_json.as_bytes())
+            .encrypt(&nonce, payload_json.as_bytes())
             .unwrap();
         let envelope = serde_json::json!({
             "format": LICENSE_FILE_FORMAT,
