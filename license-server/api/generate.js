@@ -1,4 +1,20 @@
-const { generateLicenseId, todayISO, buildEnvelope } = require("./signer");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { generateLicenseId, todayISO, buildEnvelope, buildLicenseFile } = require("./signer");
+
+// Automatically load .env or .env.local if present locally
+try {
+  const envLocal = path.resolve(__dirname, "../.env.local");
+  const envDefault = path.resolve(__dirname, "../.env");
+  if (typeof process.loadEnvFile === "function") {
+    if (fs.existsSync(envLocal)) {
+      process.loadEnvFile(envLocal);
+    } else if (fs.existsSync(envDefault)) {
+      process.loadEnvFile(envDefault);
+    }
+  }
+} catch (_) {}
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -11,9 +27,22 @@ module.exports = async function handler(req, res) {
   const { token, hwid, customer_name, gym_name, license_type, expires_at } =
     req.body || {};
 
-  const expected = (process.env.LICENSE_ACCESS_TOKEN || "").trim();
-  if (expected && (!token || token.trim() !== expected)) {
-    return res.status(401).json({ error: "Invalid or missing token" });
+  const expected = (process.env.LICENSE_VENDOR_KEY || process.env.LICENSE_ACCESS_TOKEN || "").trim();
+  if (!expected) {
+    return res
+      .status(500)
+      .json({ error: "Vendor key is not configured on the server" });
+  }
+  if (!token || !token.trim()) {
+    return res.status(401).json({ error: "Vendor secret key is required" });
+  }
+  const provided = Buffer.from(token.trim(), "utf8");
+  const configured = Buffer.from(expected, "utf8");
+  if (
+    provided.length !== configured.length ||
+    !crypto.timingSafeEqual(provided, configured)
+  ) {
+    return res.status(401).json({ error: "Invalid vendor secret key" });
   }
 
   if (!hwid || !HEX64.test(hwid)) {
@@ -59,8 +88,13 @@ module.exports = async function handler(req, res) {
 
   try {
     const envelope = buildEnvelope(payload);
+    const licenseFileContent = buildLicenseFile(envelope);
 
-    const envelopeJson = JSON.stringify(envelope, null, 2);
+    const slug = (gym_name.trim() || "license")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    const filename = `${slug || "license"}.gymlic`;
 
     res.setHeader("Content-Type", "application/json");
     return res.status(200).json({
@@ -71,7 +105,8 @@ module.exports = async function handler(req, res) {
       license_type: payload.license_type,
       issued_at: payload.issued_at,
       expires_at: payload.expires_at,
-      envelope: envelopeJson,
+      filename: filename,
+      license_file: licenseFileContent,
     });
   } catch (err) {
     console.error("Signing error:", err);

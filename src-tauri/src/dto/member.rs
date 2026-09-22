@@ -13,6 +13,7 @@ pub struct CreateMemberRequest {
     pub gender: Option<String>,
     pub blood_group: Option<String>,
     pub notes: Option<String>,
+    pub admission_date: Option<String>,
     pub membership_plan_id: Option<String>,
 }
 
@@ -27,6 +28,7 @@ pub struct UpdateMemberRequest {
     pub gender: Option<String>,
     pub blood_group: Option<String>,
     pub notes: Option<String>,
+    pub admission_date: Option<String>,
     pub membership_plan_id: Option<String>,
 }
 
@@ -44,6 +46,7 @@ pub struct MemberResponse {
     pub blood_group: Option<String>,
     pub notes: Option<String>,
     pub is_archived: bool,
+    pub admission_date: Option<String>,
     pub membership_plan_id: Option<String>,
     pub membership_plan_name: Option<String>,
     pub membership_start_date: Option<String>,
@@ -68,9 +71,10 @@ impl MemberResponse {
             date_of_birth: member.date_of_birth,
             gender: member.gender,
             blood_group: member.blood_group,
-            notes: member.notes,
+            notes: member.notes.clone(),
             is_archived: member.is_archived,
-            membership_plan_id: member.membership_plan_id,
+            admission_date: member.admission_date.clone(),
+            membership_plan_id: member.membership_plan_id.clone(),
             membership_plan_name: membership.plan_name,
             membership_start_date: membership.start_date,
             membership_expiry_date: membership.expiry_date,

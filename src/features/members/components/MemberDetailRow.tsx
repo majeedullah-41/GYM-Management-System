@@ -106,6 +106,12 @@ export function MemberDetailRow({ member }: { member: MemberResponse }) {
                 <div>{member.date_of_birth}</div>
               </div>
             )}
+            {member.admission_date && (
+              <div>
+                <span className="text-text-muted">Admission Date</span>
+                <div>{member.admission_date}</div>
+              </div>
+            )}
             {member.address && (
               <div className="col-span-2">
                 <span className="text-text-muted">Address</span>

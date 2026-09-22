@@ -70,6 +70,7 @@ pub fn create_member(
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty()),
         admission_fee: None,
+        admission_date: Some(default_admission_date(request.admission_date.as_deref())?),
         membership_plan_id: request.membership_plan_id,
         is_archived: false,
         created_at: now.clone(),
@@ -181,6 +182,15 @@ pub fn update_member(
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty());
     member.admission_fee = None;
+    member.admission_date = match request
+        .admission_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        Some(value) => Some(default_admission_date(Some(value))?),
+        None => member.admission_date.clone(),
+    };
     let old_plan_id = member.membership_plan_id.clone();
     member.membership_plan_id = request.membership_plan_id.clone();
     member.updated_at = now_iso8601();
@@ -223,6 +233,30 @@ pub fn update_member(
 
     let membership = get_membership_info(conn, &member.id)?;
     Ok(MemberResponse::from_member(member, membership))
+}
+
+fn default_admission_date(value: Option<&str>) -> Result<String, AppError> {
+    let Some(trimmed) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(crate::utils::dates::today_iso());
+    };
+    if !is_iso_date(trimmed) {
+        return Err(AppError::ValidationError(format!(
+            "Invalid admission date '{trimmed}'"
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn is_iso_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+        && chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
 }
 
 fn normalize_blood_group(value: Option<String>) -> Result<Option<String>, AppError> {
@@ -395,6 +429,7 @@ mod tests {
             gender: None,
             blood_group: None,
             notes: None,
+            admission_date: None,
             membership_plan_id: None,
         }
     }
@@ -546,6 +581,112 @@ mod tests {
     }
 
     #[test]
+    fn should_default_admission_date_to_today() {
+        let conn = test_db();
+        let expected = crate::utils::dates::today_iso();
+        let result = create_member(&conn, valid_request("Ahmad")).unwrap();
+        assert_eq!(result.admission_date.as_deref(), Some(expected.as_str()));
+    }
+
+    #[test]
+    fn should_reject_invalid_admission_date() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                admission_date: Some("2026-02-30".to_string()),
+                ..valid_request("Ahmad")
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_reject_unpadded_admission_date() {
+        let conn = test_db();
+        for bad in ["2026-2-3", "2026-02-3", "2026-2-03"] {
+            let result = create_member(
+                &conn,
+                CreateMemberRequest {
+                    admission_date: Some(bad.to_string()),
+                    ..valid_request("Ahmad")
+                },
+            );
+            assert!(result.is_err(), "expected '{bad}' to be rejected");
+        }
+    }
+
+    #[test]
+    fn should_reject_invalid_admission_date_on_update() {
+        let conn = test_db();
+        let created = create_member(&conn, valid_request("Ahmad")).unwrap();
+        let result = update_member(
+            &conn,
+            &created.id,
+            UpdateMemberRequest {
+                full_name: "Ahmad".to_string(),
+                father_name: None,
+                phone: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                admission_date: Some("2026-02-30".to_string()),
+                membership_plan_id: None,
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_use_provided_admission_date() {
+        let conn = test_db();
+        let result = create_member(
+            &conn,
+            CreateMemberRequest {
+                admission_date: Some("2025-01-15".to_string()),
+                ..valid_request("Ahmad")
+            },
+        )
+        .unwrap();
+        assert_eq!(result.admission_date.as_deref(), Some("2025-01-15"));
+    }
+
+    #[test]
+    fn should_update_admission_date() {
+        let conn = test_db();
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                admission_date: Some("2025-01-15".to_string()),
+                ..valid_request("Ahmad")
+            },
+        )
+        .unwrap();
+        let updated = update_member(
+            &conn,
+            &created.id,
+            UpdateMemberRequest {
+                full_name: "Ahmad".to_string(),
+                father_name: None,
+                phone: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                admission_date: Some("2026-02-20".to_string()),
+                membership_plan_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.admission_date.as_deref(), Some("2026-02-20"));
+    }
+
+    #[test]
     fn should_get_member() {
         let conn = test_db();
         let created = create_member(&conn, valid_request("Ahmad")).unwrap();
@@ -590,6 +731,7 @@ mod tests {
                 gender: None,
                 blood_group: None,
                 notes: None,
+                admission_date: None,
                 membership_plan_id: None,
             },
         )

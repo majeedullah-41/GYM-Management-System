@@ -23,11 +23,14 @@ use std::process::ExitCode;
 
 use rand_core::OsRng;
 use rand_core::RngCore;
-use license_generator::{canonical_payload, hex_encode, LicensePayload, LicenseType};
+use license_generator::{
+    build_v2_license_file, canonical_payload, encrypt_v2_payload, hex_encode, LicensePayload,
+    LicenseType,
+};
 
 const DEFAULT_KEY_FILE: &str = "keys/private.key";
 const FORMAT: &str = "GYMLIC";
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 const KEY_ID: &str = "dev";
 
 fn new_signing_key() -> ed25519_dalek::SigningKey {
@@ -62,7 +65,7 @@ fn usage() -> String {
   gen-keys [--out path]
   issue --hwid <HWID> [--customer NAME] [--gym NAME]
         [--type permanent|expiring] [--expires YYYY-MM-DD]
-        [--license-id ID] [--key PATH] [--out PATH]"
+        [--license-id ID] [--key PATH] [--out PATH] [--vendor-key KEY]"
         .to_string()
 }
 
@@ -100,6 +103,19 @@ fn gen_keys(args: Vec<String>) -> ExitCode {
 }
 
 fn issue(args: Vec<String>) -> ExitCode {
+    let expected = match std::env::var("LICENSE_VENDOR_KEY") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => {
+            eprintln!("ERROR: LICENSE_VENDOR_KEY is not configured");
+            return ExitCode::FAILURE;
+        }
+    };
+    let provided = get_flag(&args, "--vendor-key");
+    if provided.as_deref() != Some(expected.as_str()) {
+        eprintln!("ERROR: Invalid or missing --vendor-key");
+        return ExitCode::FAILURE;
+    }
+
     let hwid = match get_flag(&args, "--hwid") {
         Some(h) if !h.trim().is_empty() => h,
         _ => {
@@ -154,16 +170,23 @@ fn issue(args: Vec<String>) -> ExitCode {
         hex_encode(&sig.to_bytes())
     };
 
+    let mut iv = [0u8; 12];
+    OsRng.fill_bytes(&mut iv);
+    let payload_json_str = payload_to_json(&payload);
+    let ciphertext_bytes = encrypt_v2_payload(&payload_json_str, &iv);
+
     let envelope = LicenseEnvelope {
         format: FORMAT.to_string(),
         version: FORMAT_VERSION,
         key_id: KEY_ID.to_string(),
-        payload_json: payload_to_json(&payload),
+        iv: hex_encode(&iv),
+        ciphertext: hex_encode(&ciphertext_bytes),
         signature_hex,
     };
-    let json = serde_json::to_string_pretty(&envelope).expect("serialize envelope");
+    let json = serde_json::to_string(&envelope).expect("serialize envelope");
+    let token = build_v2_license_file(&json);
 
-    std::fs::write(&out_path, json).expect("write license file");
+    std::fs::write(&out_path, token).expect("write license file");
 
     println!("License generated successfully.");
     println!("License ID: {}", payload.license_id);
@@ -184,7 +207,8 @@ struct LicenseEnvelope {
     format: String,
     version: u32,
     key_id: String,
-    payload_json: String,
+    iv: String,
+    ciphertext: String,
     signature_hex: String,
 }
 

@@ -78,6 +78,141 @@ pub struct AllSettings {
     pub backup: BackupSettings,
 }
 
+pub const MEMBER_FORM_REQUIRED_FIELD: &str = "full_name";
+
+const DEFAULT_MEMBER_FORM_FIELDS: [&str; 10] = [
+    "full_name",
+    "father_name",
+    "phone",
+    "cnic",
+    "address",
+    "date_of_birth",
+    "admission_date",
+    "gender",
+    "blood_group",
+    "membership_plan_id",
+];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberFormSettings {
+    pub visible_fields: Vec<String>,
+}
+
+impl MemberFormSettings {
+    pub fn default_visible_fields() -> Vec<String> {
+        DEFAULT_MEMBER_FORM_FIELDS
+            .iter()
+            .map(|field| field.to_string())
+            .collect()
+    }
+}
+
+pub fn get_member_form_settings(conn: &Connection) -> Result<MemberFormSettings, AppError> {
+    let visible_fields = match get_setting(conn, "member_form_visible_fields") {
+        Ok(raw) => serde_json::from_str::<Vec<String>>(&raw)
+            .unwrap_or_else(|_| MemberFormSettings::default_visible_fields()),
+        Err(AppError::DatabaseError(rusqlite::Error::QueryReturnedNoRows)) => {
+            MemberFormSettings::default_visible_fields()
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(MemberFormSettings { visible_fields })
+}
+
+pub fn save_member_form_settings(
+    conn: &Connection,
+    settings: &MemberFormSettings,
+) -> Result<(), AppError> {
+    let mut fields: Vec<String> = Vec::with_capacity(settings.visible_fields.len());
+    for field in &settings.visible_fields {
+        let key = field.trim().to_string();
+        if key.is_empty() || fields.contains(&key) {
+            continue;
+        }
+        fields.push(key);
+    }
+    if !fields.contains(&MEMBER_FORM_REQUIRED_FIELD.to_string()) {
+        fields.insert(0, MEMBER_FORM_REQUIRED_FIELD.to_string());
+    }
+
+    let encoded = serde_json::to_string(&fields)
+        .map_err(|error| AppError::InternalError(format!("Could not encode member form settings: {error}")))?;
+    let now = chrono::Utc::now().to_rfc3339();
+    set_setting(conn, "member_form_visible_fields", &encoded, &now)
+}
+
+pub const PAYMENT_FORM_REQUIRED_FIELDS: [&str; 5] = [
+    "member",
+    "membership_plan",
+    "amount",
+    "payment_method",
+    "payment_date",
+];
+
+const DEFAULT_PAYMENT_FORM_FIELDS: [&str; 8] = [
+    "member",
+    "membership_plan",
+    "amount",
+    "payment_method",
+    "payment_date",
+    "summary",
+    "payment_month",
+    "notes",
+];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentFormSettings {
+    pub visible_fields: Vec<String>,
+}
+
+impl PaymentFormSettings {
+    pub fn default_visible_fields() -> Vec<String> {
+        DEFAULT_PAYMENT_FORM_FIELDS
+            .iter()
+            .map(|field| field.to_string())
+            .collect()
+    }
+}
+
+pub fn get_payment_form_settings(conn: &Connection) -> Result<PaymentFormSettings, AppError> {
+    let visible_fields = match get_setting(conn, "payment_form_visible_fields") {
+        Ok(raw) => serde_json::from_str::<Vec<String>>(&raw)
+            .unwrap_or_else(|_| PaymentFormSettings::default_visible_fields()),
+        Err(AppError::DatabaseError(rusqlite::Error::QueryReturnedNoRows)) => {
+            PaymentFormSettings::default_visible_fields()
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(PaymentFormSettings { visible_fields })
+}
+
+pub fn save_payment_form_settings(
+    conn: &Connection,
+    settings: &PaymentFormSettings,
+) -> Result<(), AppError> {
+    let mut fields: Vec<String> = Vec::with_capacity(
+        PAYMENT_FORM_REQUIRED_FIELDS.len() + settings.visible_fields.len(),
+    );
+    for required in PAYMENT_FORM_REQUIRED_FIELDS {
+        fields.push(required.to_string());
+    }
+    for field in &settings.visible_fields {
+        let key = field.trim().to_string();
+        if key.is_empty()
+            || fields.contains(&key)
+            || PAYMENT_FORM_REQUIRED_FIELDS.contains(&key.as_str())
+        {
+            continue;
+        }
+        fields.push(key);
+    }
+
+    let encoded = serde_json::to_string(&fields)
+        .map_err(|error| AppError::InternalError(format!("Could not encode payment form settings: {error}")))?;
+    let now = chrono::Utc::now().to_rfc3339();
+    set_setting(conn, "payment_form_visible_fields", &encoded, &now)
+}
+
 pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
     let mut settings = GymSettings::default();
 
@@ -415,5 +550,215 @@ fn set_setting_optional(
             conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::migrations;
+
+    fn test_db() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        migrations::run_migrations(&mut conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn member_form_settings_defaults_to_all_fields() {
+        let conn = test_db();
+        let settings = get_member_form_settings(&conn).unwrap();
+        assert_eq!(
+            settings.visible_fields,
+            MemberFormSettings::default_visible_fields()
+        );
+    }
+
+    #[test]
+    fn member_form_settings_roundtrip() {
+        let conn = test_db();
+        save_member_form_settings(
+            &conn,
+            &MemberFormSettings {
+                visible_fields: vec![
+                    "full_name".to_string(),
+                    "phone".to_string(),
+                    "cnic".to_string(),
+                ],
+            },
+        )
+        .unwrap();
+
+        let loaded = get_member_form_settings(&conn).unwrap();
+        assert_eq!(
+            loaded.visible_fields,
+            vec![
+                "full_name".to_string(),
+                "phone".to_string(),
+                "cnic".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn member_form_settings_always_keeps_required_field_and_dedupes() {
+        let conn = test_db();
+        save_member_form_settings(
+            &conn,
+            &MemberFormSettings {
+                visible_fields: vec![
+                    "phone".to_string(),
+                    "full_name".to_string(),
+                    "full_name".to_string(),
+                    "".to_string(),
+                ],
+            },
+        )
+        .unwrap();
+
+        let loaded = get_member_form_settings(&conn).unwrap();
+        assert_eq!(
+            loaded.visible_fields,
+            vec!["phone".to_string(), "full_name".to_string()]
+        );
+    }
+
+    #[test]
+    fn member_form_settings_reinserts_required_field_when_missing() {
+        let conn = test_db();
+        save_member_form_settings(
+            &conn,
+            &MemberFormSettings {
+                visible_fields: vec!["phone".to_string()],
+            },
+        )
+        .unwrap();
+
+        let loaded = get_member_form_settings(&conn).unwrap();
+        assert_eq!(loaded.visible_fields[0], "full_name");
+        assert!(loaded.visible_fields.contains(&"phone".to_string()));
+    }
+
+    #[test]
+    fn corrupted_settings_fall_back_to_defaults() {
+        let conn = test_db();
+        let now = chrono::Utc::now().to_rfc3339();
+        set_setting(&conn, "member_form_visible_fields", "not-json", &now).unwrap();
+
+        let settings = get_member_form_settings(&conn).unwrap();
+        assert_eq!(
+            settings.visible_fields,
+            MemberFormSettings::default_visible_fields()
+        );
+    }
+
+    #[test]
+    fn payment_form_settings_defaults_to_all_fields() {
+        let conn = test_db();
+        let settings = get_payment_form_settings(&conn).unwrap();
+        assert_eq!(
+            settings.visible_fields,
+            PaymentFormSettings::default_visible_fields()
+        );
+    }
+
+    #[test]
+    fn payment_form_settings_roundtrip() {
+        let conn = test_db();
+        save_payment_form_settings(
+            &conn,
+            &PaymentFormSettings {
+                visible_fields: vec![
+                    "member".to_string(),
+                    "membership_plan".to_string(),
+                    "amount".to_string(),
+                    "payment_method".to_string(),
+                    "payment_date".to_string(),
+                    "summary".to_string(),
+                    "notes".to_string(),
+                ],
+            },
+        )
+        .unwrap();
+
+        let loaded = get_payment_form_settings(&conn).unwrap();
+        assert_eq!(
+            loaded.visible_fields,
+            vec![
+                "member".to_string(),
+                "membership_plan".to_string(),
+                "amount".to_string(),
+                "payment_method".to_string(),
+                "payment_date".to_string(),
+                "summary".to_string(),
+                "notes".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn payment_form_settings_always_keeps_required_fields_and_dedupes() {
+        let conn = test_db();
+        save_payment_form_settings(
+            &conn,
+            &PaymentFormSettings {
+                visible_fields: vec![
+                    "payment_date".to_string(),
+                    "member".to_string(),
+                    "payment_date".to_string(),
+                    "".to_string(),
+                    "payment_month".to_string(),
+                    "payment_month".to_string(),
+                ],
+            },
+        )
+        .unwrap();
+
+        let loaded = get_payment_form_settings(&conn).unwrap();
+        assert_eq!(
+            loaded.visible_fields,
+            vec![
+                "member".to_string(),
+                "membership_plan".to_string(),
+                "amount".to_string(),
+                "payment_method".to_string(),
+                "payment_date".to_string(),
+                "payment_month".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn payment_form_settings_reinserts_required_fields_when_missing() {
+        let conn = test_db();
+        save_payment_form_settings(
+            &conn,
+            &PaymentFormSettings {
+                visible_fields: vec!["notes".to_string(), "summary".to_string()],
+            },
+        )
+        .unwrap();
+
+        let loaded = get_payment_form_settings(&conn).unwrap();
+        for required in PAYMENT_FORM_REQUIRED_FIELDS {
+            assert!(loaded.visible_fields.contains(&required.to_string()));
+        }
+        assert_eq!(loaded.visible_fields[0], "member");
+        assert!(loaded.visible_fields.contains(&"notes".to_string()));
+        assert!(loaded.visible_fields.contains(&"summary".to_string()));
+    }
+
+    #[test]
+    fn corrupted_payment_form_settings_fall_back_to_defaults() {
+        let conn = test_db();
+        let now = chrono::Utc::now().to_rfc3339();
+        set_setting(&conn, "payment_form_visible_fields", "not-json", &now).unwrap();
+
+        let settings = get_payment_form_settings(&conn).unwrap();
+        assert_eq!(
+            settings.visible_fields,
+            PaymentFormSettings::default_visible_fields()
+        );
     }
 }

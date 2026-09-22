@@ -4,6 +4,7 @@ use crate::database::Database;
 use crate::dto::member::{CreateMemberRequest, MemberResponse, UpdateMemberRequest};
 use crate::errors::AppError;
 use crate::services::member_service;
+use crate::repositories::member_repository;
 
 use super::db::run_db;
 
@@ -42,6 +43,14 @@ pub async fn list_members(
         )
     })
     .await
+}
+
+#[tauri::command]
+pub async fn list_member_addresses(
+    state: State<'_, Database>,
+) -> Result<Vec<String>, AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, member_repository::list_addresses).await
 }
 
 #[tauri::command]

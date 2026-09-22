@@ -10,11 +10,13 @@ import {
   UserRoundPlus,
   Users,
   Wallet,
+  Dumbbell,
 } from "lucide-react";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { useNavigation } from "../../../components/layout/NavigationContext";
+import { useGym } from "../../../context/GymContext";
 import { formatCurrency } from "../../../lib/utils/format";
 import {
   getDashboardSummary,
@@ -254,7 +256,13 @@ function RecentMembers({ summary }: { summary: DashboardSummary }) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">
-      <div className="h-12 w-52 animate-pulse rounded bg-gray-200" />
+      <div className="flex items-center gap-3.5">
+        <div className="h-12 w-12 animate-pulse rounded-xl bg-gray-200" />
+        <div className="space-y-2">
+          <div className="h-6 w-48 animate-pulse rounded bg-gray-200" />
+          <div className="h-3 w-36 animate-pulse rounded bg-gray-200" />
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
         {Array.from({ length: 5 }).map((_, index) => (
           <StatCardSkeleton key={index} />
@@ -269,6 +277,7 @@ function DashboardSkeleton() {
 }
 
 export function DashboardPage() {
+  const { gymName, gymLogo, gymTagline } = useGym();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -314,15 +323,41 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary">Dashboard</h1>
-          <p className="mt-1 text-sm text-text-muted">{currentDate}</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3.5">
+          {gymLogo ? (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-white p-1 shadow-xs">
+              <img
+                src={gymLogo}
+                alt={gymName}
+                className="h-full w-full object-contain"
+              />
+            </div>
+          ) : (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 shadow-xs">
+              <Dumbbell size={24} />
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-text-primary">
+                Dashboard
+              </h1>
+              <span className="text-sm font-semibold text-text-muted">&bull;</span>
+              <span className="text-base font-semibold text-primary">{gymName}</span>
+            </div>
+            <p className="mt-0.5 text-xs text-text-muted">
+              Today's business summary &bull; {currentDate}
+              {gymTagline ? ` &bull; ${gymTagline}` : ""}
+            </p>
+          </div>
         </div>
-        <Button variant="secondary" onClick={load}>
-          <RefreshCw size={15} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2.5">
+          <Button variant="secondary" onClick={load}>
+            <RefreshCw size={15} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">

@@ -59,8 +59,36 @@ export interface AllSettings {
   backup: BackupSettings;
 }
 
+export interface MemberFormSettings {
+  visible_fields: string[];
+}
+
+export interface PaymentFormSettings {
+  visible_fields: string[];
+}
+
 export async function getAllSettings(): Promise<AllSettings> {
   return invokeCommand<AllSettings>("get_all_settings");
+}
+
+export async function getMemberFormSettings(): Promise<MemberFormSettings> {
+  return invokeCommand<MemberFormSettings>("get_member_form_settings");
+}
+
+export async function saveMemberFormSettings(
+  settings: MemberFormSettings,
+): Promise<void> {
+  return invokeCommand<void>("save_member_form_settings", { settings });
+}
+
+export async function getPaymentFormSettings(): Promise<PaymentFormSettings> {
+  return invokeCommand<PaymentFormSettings>("get_payment_form_settings");
+}
+
+export async function savePaymentFormSettings(
+  settings: PaymentFormSettings,
+): Promise<void> {
+  return invokeCommand<void>("save_payment_form_settings", { settings });
 }
 
 export async function saveGymSettings(gym: GymSettings): Promise<void> {

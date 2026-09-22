@@ -121,6 +121,24 @@
       background: #f9fafb;
       resize: vertical;
     }
+    .success-banner {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      color: #065f46;
+    }
+    .success-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .success-file {
+      font-size: 13px;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      color: #047857;
+    }
     .btn-secondary {
       background: #ffffff;
       color: #374151;
@@ -146,9 +164,9 @@
     <h1>Gym POS</h1>
     <p class="subtitle">License Generator — for vendor use only</p>
 
-    <label for="token">Access token (optional)</label>
-    <input type="password" id="token" autocomplete="off" />
-    <div class="hint">Leave empty if no token is configured yet.</div>
+    <label for="token">Vendor Secret Key *</label>
+    <input type="password" id="token" placeholder="Enter vendor secret key" autocomplete="off" />
+    <div class="hint">Required. Only the authorized vendor can generate licenses.</div>
 
     <label for="hwid">Hardware ID (64 hex chars)</label>
     <input type="text" id="hwid" placeholder="e.g. 547612b968aadb7316ab1079e628da594c4352a4815f758396af72d7fd205f77" />
@@ -177,17 +195,32 @@
     <div class="error hidden" id="error"></div>
 
     <div class="result hidden" id="result">
+      <div class="success-banner">
+        <div class="success-title">✓ License Generated & Downloaded</div>
+        <div class="success-file" id="downloaded-filename"></div>
+      </div>
       <div class="summary" id="summary"></div>
-      <label for="envelope">License text (paste into the app)</label>
-      <textarea id="envelope" readonly></textarea>
-      <button class="btn-secondary" id="copy">Copy license text</button>
-      <button class="btn-secondary" id="download">Download .gymlic file</button>
+      <button class="btn-secondary" id="download-again">Download again</button>
     </div>
 
     <script>
       const $ = (id) => document.getElementById(id);
       const radioExpiring = $("type-expiring");
       const radioPermanent = $("type-permanent");
+
+      let lastGenerated = null;
+
+      function triggerDownload(content, filename) {
+        const blob = new Blob([content], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
 
       function toggleExpiry() {
         $("expiry-row").classList.toggle("hidden", !radioExpiring.checked);
@@ -196,70 +229,90 @@
       radioPermanent.addEventListener("change", toggleExpiry);
 
       $("generate").addEventListener("click", async () => {
-        $("error").classList.add("hidden");
+        const errEl = $("error");
+        errEl.classList.add("hidden");
         $("result").classList.add("hidden");
+
+        const token = $("token").value.trim();
+        const hwid = $("hwid").value.trim();
+        const gym = $("gym").value.trim();
+
+        if (!token) {
+          errEl.textContent = "Vendor Secret Key is required.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        if (!hwid) {
+          errEl.textContent = "Hardware ID is required.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        if (!gym) {
+          errEl.textContent = "Gym name is required.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+
         const statusEl = $("status");
         statusEl.classList.remove("hidden");
         statusEl.textContent = "Generating...";
         $("generate").disabled = true;
 
         const body = {
-          token: $("token").value.trim(),
-          hwid: $("hwid").value.trim(),
-          gym_name: $("gym").value.trim(),
+          token: token,
+          hwid: hwid,
+          gym_name: gym,
           customer_name: $("customer").value.trim(),
           license_type: $("type-expiring").checked ? "expiring" : "permanent",
           expires_at: $("type-expiring").checked ? $("expiry").value : undefined,
         };
 
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        try {
+          const res = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
 
-        const data = await res.json();
-        $("generate").disabled = false;
-        statusEl.classList.add("hidden");
+          const data = await res.json();
+          $("generate").disabled = false;
+          statusEl.classList.add("hidden");
 
-        if (!res.ok) {
-          const err = $("error");
-          err.textContent = data.error || "Something went wrong.";
-          err.classList.remove("hidden");
-          return;
+          if (!res.ok) {
+            errEl.textContent = data.error || "Something went wrong.";
+            errEl.classList.remove("hidden");
+            return;
+          }
+
+          lastGenerated = {
+            content: data.license_file,
+            filename: data.filename || ((gym || "license") + ".gymlic"),
+          };
+
+          // Automatically trigger download
+          triggerDownload(lastGenerated.content, lastGenerated.filename);
+
+          $("downloaded-filename").textContent = "File: " + lastGenerated.filename;
+          $("summary").innerHTML =
+            "<b>License ID:</b> " + data.license_id +
+            " &nbsp; <b>Type:</b> " + data.license_type +
+            "<br><b>Gym:</b> " + (data.gym_name || "—") +
+            " &nbsp; <b>Customer:</b> " + (data.customer_name || "—") +
+            "<br><b>Issued:</b> " + data.issued_at +
+            " &nbsp; <b>Expires:</b> " + (data.expires_at || "Permanent");
+          $("result").classList.remove("hidden");
+        } catch (err) {
+          $("generate").disabled = false;
+          statusEl.classList.add("hidden");
+          errEl.textContent = "Network error: Could not reach license server.";
+          errEl.classList.remove("hidden");
         }
-
-        $("envelope").value = data.envelope;
-        $("summary").innerHTML =
-          "<b>License ID:</b> " + data.license_id +
-          " &nbsp; <b>Type:</b> " + data.license_type +
-          "<br><b>Gym:</b> " + (data.gym_name || "—") +
-          " &nbsp; <b>Customer:</b> " + (data.customer_name || "—") +
-          "<br><b>Issued:</b> " + data.issued_at +
-          " &nbsp; <b>Expires:</b> " + (data.expires_at || "Permanent");
-        $("result").classList.remove("hidden");
       });
 
-      $("copy").addEventListener("click", async () => {
-        const text = $("envelope").value;
-        await navigator.clipboard.writeText(text);
-        $("copy").textContent = "Copied!";
-        setTimeout(() => ($("copy").textContent = "Copy license text"), 1500);
-      });
-
-      $("download").addEventListener("click", () => {
-        const text = $("envelope").value;
-        const gym = ($("gym").value.trim() || "license")
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "");
-        const blob = new Blob([text], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = (gym || "license") + ".gymlic";
-        a.click();
-        URL.revokeObjectURL(url);
+      $("download-again").addEventListener("click", () => {
+        if (lastGenerated) {
+          triggerDownload(lastGenerated.content, lastGenerated.filename);
+        }
       });
     </script>
   </div>

@@ -33,15 +33,20 @@ import {
 } from "../../../lib/api/membership-plans";
 import type { AuthUser } from "../../../lib/api/auth";
 import { UserInformationTab } from "../components/UserInformationTab";
+import { MemberFormSettingsTab } from "../components/MemberFormSettingsTab";
+import { PaymentFormSettingsTab } from "../components/PaymentFormSettingsTab";
 import { ReceiptPaper } from "../../receipts/components/ReceiptPaper";
 import { LicenseInfoTab } from "../../licensing/components/LicenseInfoTab";
+import { useGym } from "../../../context/GymContext";
 
-type Tab = "user" | "gym" | "plans" | "receipts" | "data" | "license";
+type Tab = "user" | "gym" | "plans" | "member-form" | "payment-form" | "receipts" | "data" | "license";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "user", label: "User Information" },
   { key: "gym", label: "Gym Info" },
   { key: "plans", label: "Membership Plans" },
+  { key: "member-form", label: "Member Form" },
+  { key: "payment-form", label: "Payment Form" },
   { key: "receipts", label: "Receipts" },
   { key: "data", label: "Data & Backup" },
   { key: "license", label: "License" },
@@ -105,6 +110,8 @@ export function SettingsPage({ user, onUserUpdated, onSignedOut }: { user: AuthU
           {activeTab === "user" && <UserInformationTab user={user} onUserUpdated={onUserUpdated} onSignedOut={onSignedOut} />}
           {activeTab === "gym" && <GymInfoTab settings={settings} onSave={setSettings} />}
           {activeTab === "plans" && <PlansTab />}
+          {activeTab === "member-form" && <MemberFormSettingsTab />}
+          {activeTab === "payment-form" && <PaymentFormSettingsTab />}
           {activeTab === "receipts" && <ReceiptsTab settings={settings} onSave={setSettings} />}
           {activeTab === "data" && (
             <DataTab
@@ -130,6 +137,7 @@ function GymInfoTab({
   onSave: (s: AllSettings) => void;
 }) {
   const { addToast } = useToast();
+  const { setGymInfo } = useGym();
   const [form, setForm] = useState(settings.gym);
   const [saving, setSaving] = useState(false);
   const [selectingLogo, setSelectingLogo] = useState(false);
@@ -145,6 +153,7 @@ function GymInfoTab({
       setSaving(true);
       await saveGymSettings(form);
       onSave({ ...settings, gym: form });
+      setGymInfo(form);
       setDirty(false);
       addToast({ variant: "success", title: "Gym info saved" });
     } catch (err) {

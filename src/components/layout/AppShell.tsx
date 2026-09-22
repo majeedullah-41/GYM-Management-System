@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
 import { Sidebar } from "./Sidebar";
+import { TopBar } from "./TopBar";
 import { NavigationContext } from "./NavigationContext";
 import { ToastProvider } from "../feedback/ToastProvider";
+import { GymProvider } from "../../context/GymContext";
 import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
 import { MembersPage } from "../../features/members/pages/MembersPage";
 import { FinancesPage } from "../../features/finances/pages/FinancesPage";
@@ -22,7 +24,15 @@ const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   "member-detail": MembersPage,
 };
 
-export function AppShell({ user, onSignedOut, onUserUpdated }: { user: AuthUser; onSignedOut: () => void; onUserUpdated: (user: AuthUser) => void }) {
+export function AppShell({
+  user,
+  onSignedOut,
+  onUserUpdated,
+}: {
+  user: AuthUser;
+  onSignedOut: () => void;
+  onUserUpdated: (user: AuthUser) => void;
+}) {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [paymentMemberId, setPaymentMemberId] = useState<string | null>(null);
@@ -55,44 +65,58 @@ export function AppShell({ user, onSignedOut, onUserUpdated }: { user: AuthUser;
   }, []);
 
   return (
-    <NavigationContext.Provider
-      value={{
-        navigateTo,
-        navigateToMember,
-        openAddMember,
-        openRecordPayment,
-        openPaymentForMember,
-      }}
-    >
-      <ToastProvider>
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar
-            currentPage={currentPage}
-            username={user.username}
-            onLogout={async () => { await logout(); onSignedOut(); }}
-            onNavigate={(page) => {
-              setSelectedMemberId(null);
-              setPaymentMemberId(null);
-              setCurrentPage(page);
-            }}
-          />
-          <main className="flex-1 overflow-auto p-6">
-            {(() => {
-              const Component = PAGE_COMPONENTS[currentPage];
-              if (currentPage === "members") {
-                return <MembersPage initialExpandedId={selectedMemberId} />;
-              }
-              if (currentPage === "payments") {
-                return <PaymentsPage initialMemberId={paymentMemberId} />;
-              }
-              if (currentPage === "settings") {
-                return <SettingsPage user={user} onUserUpdated={onUserUpdated} onSignedOut={onSignedOut} />;
-              }
-              return <Component />;
-            })()}
-          </main>
-        </div>
-      </ToastProvider>
-    </NavigationContext.Provider>
+    <GymProvider>
+      <NavigationContext.Provider
+        value={{
+          navigateTo,
+          navigateToMember,
+          openAddMember,
+          openRecordPayment,
+          openPaymentForMember,
+        }}
+      >
+        <ToastProvider>
+          <div className="flex h-screen overflow-hidden bg-background">
+            <Sidebar
+              currentPage={currentPage}
+              username={user.username}
+              onLogout={async () => {
+                await logout();
+                onSignedOut();
+              }}
+              onNavigate={(page) => {
+                setSelectedMemberId(null);
+                setPaymentMemberId(null);
+                setCurrentPage(page);
+              }}
+            />
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <TopBar currentPage={currentPage} user={user} />
+              <main className="flex-1 overflow-auto p-6">
+                {(() => {
+                  const Component = PAGE_COMPONENTS[currentPage];
+                  if (currentPage === "members") {
+                    return <MembersPage initialExpandedId={selectedMemberId} />;
+                  }
+                  if (currentPage === "payments") {
+                    return <PaymentsPage initialMemberId={paymentMemberId} />;
+                  }
+                  if (currentPage === "settings") {
+                    return (
+                      <SettingsPage
+                        user={user}
+                        onUserUpdated={onUserUpdated}
+                        onSignedOut={onSignedOut}
+                      />
+                    );
+                  }
+                  return <Component />;
+                })()}
+              </main>
+            </div>
+          </div>
+        </ToastProvider>
+      </NavigationContext.Provider>
+    </GymProvider>
   );
 }

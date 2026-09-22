@@ -124,6 +124,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                 blood_group: m.blood_group.clone(),
                 notes: m.notes.clone(),
                 is_archived: m.is_archived,
+                admission_date: m.admission_date.clone(),
                 membership_plan_id: m.membership_plan_id.clone(),
                 membership_plan_name: membership.0,
                 membership_start_date: membership.1,

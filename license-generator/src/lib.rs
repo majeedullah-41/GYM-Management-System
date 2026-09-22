@@ -84,6 +84,44 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+pub const ENCRYPTION_SECRET: &[u8] = b"gympos_license_v2_payload_encryption_key_2026";
+
+pub fn encryption_key() -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(ENCRYPTION_SECRET).into()
+}
+
+pub fn encrypt_v2_payload(payload_json: &str, iv: &[u8; 12]) -> Vec<u8> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    let key = encryption_key();
+    let cipher = Aes256Gcm::new_from_slice(&key).expect("valid key length");
+    cipher
+        .encrypt(&Nonce::from(*iv), payload_json.as_bytes())
+        .expect("encryption success")
+}
+
+pub fn decrypt_v2_payload(ciphertext_and_tag: &[u8], iv: &[u8; 12]) -> Result<String, String> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    let key = encryption_key();
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
+    let pt = cipher
+        .decrypt(&Nonce::from(*iv), ciphertext_and_tag)
+        .map_err(|e| e.to_string())?;
+    String::from_utf8(pt).map_err(|e| e.to_string())
+}
+
+pub fn build_v2_license_file(envelope_json: &str) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(envelope_json.as_bytes());
+    format!("GYMLIC2.{b64}")
+}
+
 /// Ed25519 signs the canonical payload bytes and returns the signature as
 /// lowercase hex.
 pub fn sign(payload: &LicensePayload, signing_key: &ed25519_dalek::SigningKey) -> String {
@@ -91,6 +129,7 @@ pub fn sign(payload: &LicensePayload, signing_key: &ed25519_dalek::SigningKey) -
     let sig = signing_key.sign(&canonical_payload(payload));
     hex_encode(&sig.to_bytes())
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -150,6 +189,15 @@ mod tests {
         let sig_bytes: [u8; 64] = hex_decode_64(&sig);
         let signature = Signature::from_bytes(&sig_bytes);
         assert!(verifying_key.verify(&canonical_payload(&p), &signature).is_ok());
+    }
+
+    #[test]
+    fn v2_encrypt_decrypt_round_trip() {
+        let iv = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let json = r#"{"test":"data"}"#;
+        let ct = encrypt_v2_payload(json, &iv);
+        let pt = decrypt_v2_payload(&ct, &iv).unwrap();
+        assert_eq!(pt, json);
     }
 
     fn hex_decode_64(hex: &str) -> [u8; 64] {

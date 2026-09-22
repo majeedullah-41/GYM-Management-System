@@ -13,6 +13,7 @@ export interface MemberResponse {
   blood_group: string | null;
   notes: string | null;
   is_archived: boolean;
+  admission_date: string | null;
   membership_plan_id: string | null;
   membership_plan_name: string | null;
   membership_start_date: string | null;
@@ -34,6 +35,7 @@ export interface CreateMemberRequest {
   gender: string | null;
   blood_group: string | null;
   notes: string | null;
+  admission_date?: string | null;
   membership_plan_id?: string | null;
 }
 
@@ -47,6 +49,7 @@ export interface UpdateMemberRequest {
   gender: string | null;
   blood_group: string | null;
   notes: string | null;
+  admission_date?: string | null;
   membership_plan_id?: string | null;
 }
 
@@ -70,6 +73,10 @@ export async function listMembers(args: {
     status: args.status ?? null,
     includeArchived: args.include_archived ?? false,
   });
+}
+
+export async function listMemberAddresses(): Promise<string[]> {
+  return invokeCommand<string[]>("list_member_addresses");
 }
 
 export async function updateMember(

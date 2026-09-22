@@ -4,7 +4,8 @@ use tauri::State;
 use crate::database::Database;
 use crate::errors::AppError;
 use crate::repositories::settings_repository::{
-    self, AllSettings, BackupSettings, GymSettings, PrintSettings, ReceiptSettings,
+    self, AllSettings, BackupSettings, GymSettings, MemberFormSettings, PaymentFormSettings,
+    PrintSettings, ReceiptSettings,
 };
 use crate::services::auth_service;
 use crate::services::backup_service::{self, BackupKind};
@@ -15,6 +16,46 @@ use super::db::run_db;
 pub async fn get_all_settings(state: State<'_, Database>) -> Result<AllSettings, AppError> {
     let conn = state.inner().clone_conn();
     run_db(conn, |c| settings_repository::get_all_settings(c)).await
+}
+
+#[tauri::command]
+pub async fn get_member_form_settings(
+    state: State<'_, Database>,
+) -> Result<MemberFormSettings, AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, |c| settings_repository::get_member_form_settings(c)).await
+}
+
+#[tauri::command]
+pub async fn save_member_form_settings(
+    state: State<'_, Database>,
+    settings: MemberFormSettings,
+) -> Result<(), AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| {
+        settings_repository::save_member_form_settings(c, &settings)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_payment_form_settings(
+    state: State<'_, Database>,
+) -> Result<PaymentFormSettings, AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, |c| settings_repository::get_payment_form_settings(c)).await
+}
+
+#[tauri::command]
+pub async fn save_payment_form_settings(
+    state: State<'_, Database>,
+    settings: PaymentFormSettings,
+) -> Result<(), AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| {
+        settings_repository::save_payment_form_settings(c, &settings)
+    })
+    .await
 }
 
 #[tauri::command]

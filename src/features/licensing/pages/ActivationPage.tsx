@@ -133,7 +133,7 @@ export function ActivationPage({
               data-testid="license-paste"
               className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               rows={5}
-              placeholder='{"format":"GYMLIC","version":1,...}'
+              placeholder="GYMLIC2.... or paste .gymlic file contents"
               value={pasted}
               onChange={(event) => setPasted(event.target.value)}
             />

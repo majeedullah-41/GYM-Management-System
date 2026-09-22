@@ -1,5 +1,7 @@
-//! Ed25519 verification of Gym POS license envelopes.
-
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 #[cfg(test)]
 use ed25519_dalek::SigningKey;
@@ -7,14 +9,46 @@ use serde_json::Value;
 
 use super::super::domain::license::{
     canonical_payload, validate_payload_version, LicensePayload, LicenseType,
-    LICENSE_FILE_FORMAT, LICENSE_FILE_VERSION,
+    LICENSE_FILE_FORMAT,
 };
+#[cfg(test)]
+use super::super::domain::license::LICENSE_FILE_VERSION;
 use super::super::domain::license_status::LicenseStatus;
+
+pub const V2_ENCRYPTION_SECRET: &[u8] = b"gympos_license_v2_payload_encryption_key_2026";
+
+pub fn v2_encryption_key() -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(V2_ENCRYPTION_SECRET).into()
+}
+
+pub fn decrypt_v2_payload(ciphertext_and_tag: &[u8], iv: &[u8]) -> Result<String, LicenseStatus> {
+    let iv_arr: [u8; 12] = iv.try_into().map_err(|_| LicenseStatus::Corrupted)?;
+    let key = v2_encryption_key();
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| LicenseStatus::Corrupted)?;
+    let nonce = Nonce::from(iv_arr);
+    let plaintext_bytes = cipher
+        .decrypt(&nonce, ciphertext_and_tag)
+        .map_err(|_| LicenseStatus::Corrupted)?;
+    String::from_utf8(plaintext_bytes).map_err(|_| LicenseStatus::Corrupted)
+}
 
 /// Verifies a license envelope byte-for-byte. Returns the payload on success,
 /// or a `LicenseStatus` describing why the file is not a valid license.
 pub fn verify(data: &[u8], public_key: &VerifyingKey) -> Result<LicensePayload, LicenseStatus> {
-    let root: Value = serde_json::from_slice(data).map_err(|_| LicenseStatus::Corrupted)?;
+    let trimmed = std::str::from_utf8(data).map(|s| s.trim()).unwrap_or("");
+    let json_bytes: std::borrow::Cow<[u8]> = if trimmed.starts_with("GYMLIC2.") {
+        use base64::Engine;
+        let b64 = &trimmed["GYMLIC2.".len()..];
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(b64.trim())
+            .map_err(|_| LicenseStatus::Corrupted)?;
+        std::borrow::Cow::Owned(decoded)
+    } else {
+        std::borrow::Cow::Borrowed(data)
+    };
+
+    let root: Value = serde_json::from_slice(&json_bytes).map_err(|_| LicenseStatus::Corrupted)?;
     let envelope = root.as_object().ok_or(LicenseStatus::Corrupted)?;
 
     let format = envelope
@@ -29,20 +63,42 @@ pub fn verify(data: &[u8], public_key: &VerifyingKey) -> Result<LicensePayload, 
         .get("version")
         .and_then(Value::as_u64)
         .ok_or(LicenseStatus::Corrupted)?;
-    if version != u64::from(LICENSE_FILE_VERSION) {
-        return Err(LicenseStatus::UnsupportedVersion);
-    }
 
-    let payload_json = envelope
-        .get("payload_json")
-        .and_then(Value::as_str)
-        .ok_or(LicenseStatus::Corrupted)?;
-    let signature_hex = envelope
-        .get("signature_hex")
-        .and_then(Value::as_str)
-        .ok_or(LicenseStatus::Corrupted)?;
+    let (payload_json, signature_hex) = match version {
+        1 => {
+            let payload_json = envelope
+                .get("payload_json")
+                .and_then(Value::as_str)
+                .ok_or(LicenseStatus::Corrupted)?;
+            let signature_hex = envelope
+                .get("signature_hex")
+                .and_then(Value::as_str)
+                .ok_or(LicenseStatus::Corrupted)?;
+            (payload_json.to_string(), signature_hex)
+        }
+        2 => {
+            let iv_hex = envelope
+                .get("iv")
+                .and_then(Value::as_str)
+                .ok_or(LicenseStatus::Corrupted)?;
+            let ct_hex = envelope
+                .get("ciphertext")
+                .and_then(Value::as_str)
+                .ok_or(LicenseStatus::Corrupted)?;
+            let signature_hex = envelope
+                .get("signature_hex")
+                .and_then(Value::as_str)
+                .ok_or(LicenseStatus::Corrupted)?;
 
-    let payload = parse_payload(payload_json)?;
+            let iv = decode_hex_bytes(iv_hex).ok_or(LicenseStatus::Corrupted)?;
+            let ct = decode_hex_bytes(ct_hex).ok_or(LicenseStatus::Corrupted)?;
+            let decrypted = decrypt_v2_payload(&ct, &iv)?;
+            (decrypted, signature_hex)
+        }
+        _ => return Err(LicenseStatus::UnsupportedVersion),
+    };
+
+    let payload = parse_payload(&payload_json)?;
     validate_payload_version(&payload).map_err(|_| LicenseStatus::UnsupportedVersion)?;
 
     let signature_bytes = decode_hex_64(signature_hex).ok_or(LicenseStatus::Corrupted)?;
@@ -55,6 +111,7 @@ pub fn verify(data: &[u8], public_key: &VerifyingKey) -> Result<LicensePayload, 
 
     Ok(payload)
 }
+
 
 /// Builds a signed envelope for a payload with the given key. Test/vendor
 /// utility only; the shipped app never signs.
@@ -127,8 +184,20 @@ fn parse_payload(json: &str) -> Result<LicensePayload, LicenseStatus> {
     })
 }
 
+fn decode_hex_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 || !hex.is_ascii() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(hex.len() / 2);
+    for i in 0..(hex.len() / 2) {
+        let byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        out.push(byte);
+    }
+    Some(out)
+}
+
 fn decode_hex_64(hex: &str) -> Option<[u8; 64]> {
-    if hex.len() != 128 {
+    if hex.len() != 128 || !hex.is_ascii() {
         return None;
     }
     let mut out = [0u8; 64];
@@ -166,6 +235,14 @@ mod tests {
         build_envelope(payload, key)
     }
 
+    pub fn envelope_v2_for(
+        payload: &LicensePayload,
+        key: &SigningKey,
+        custom_iv: Option<[u8; 12]>,
+    ) -> Vec<u8> {
+        build_envelope_v2(payload, key, custom_iv)
+    }
+
     pub fn hex(bytes: &[u8]) -> String {
         hex_bytes(bytes)
     }
@@ -174,6 +251,48 @@ mod tests {
         let sk = SigningKey::from_bytes(&[seed; 32]);
         let vk = VerifyingKey::from(&sk);
         (sk, vk)
+    }
+
+    pub fn build_envelope_v2(
+        payload: &LicensePayload,
+        signing_key: &SigningKey,
+        custom_iv: Option<[u8; 12]>,
+    ) -> Vec<u8> {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        use ed25519_dalek::Signer;
+        let signature = signing_key.sign(&canonical_payload(payload));
+        let iv = custom_iv.unwrap_or([1u8; 12]);
+        let key = v2_encryption_key();
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let payload_json = serde_json::to_string(&serde_json::json!({
+            "version": payload.version,
+            "license_id": payload.license_id,
+            "customer_name": payload.customer_name,
+            "gym_name": payload.gym_name,
+            "hwid": payload.hwid,
+            "license_type": payload.license_type.as_str(),
+            "issued_at": payload.issued_at,
+            "expires_at": payload.expires_at,
+        }))
+        .expect("serialize payload");
+        let ct = cipher
+            .encrypt(&Nonce::from(iv), payload_json.as_bytes())
+            .unwrap();
+        let envelope = serde_json::json!({
+            "format": LICENSE_FILE_FORMAT,
+            "version": 2,
+            "key_id": "dev",
+            "iv": hex_bytes(&iv),
+            "ciphertext": hex_bytes(&ct),
+            "signature_hex": hex_bytes(&signature.to_bytes()),
+        });
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD
+            .encode(serde_json::to_vec(&envelope).unwrap());
+        format!("GYMLIC2.{b64}").into_bytes()
     }
 
     #[test]
@@ -185,6 +304,40 @@ mod tests {
         assert_eq!(payload.customer_name, "Ali Khan");
         assert_eq!(payload.license_type, LicenseType::Permanent);
         assert_eq!(payload.expires_at, None);
+    }
+
+    #[test]
+    fn verifies_genuine_v2_license_token() {
+        let (sk, vk) = keypair(7);
+        let env_v2 = envelope_v2_for(&sample_payload(), &sk, None);
+        assert!(env_v2.starts_with(b"GYMLIC2."));
+        let payload = verify(&env_v2, &vk).unwrap();
+        assert_eq!(payload.license_id, "LIC-2026-000124");
+        assert_eq!(payload.customer_name, "Ali Khan");
+        assert_eq!(payload.gym_name, "Swat Fitness Center");
+        assert_eq!(payload.license_type, LicenseType::Permanent);
+        assert_eq!(payload.expires_at, None);
+    }
+
+    #[test]
+    fn rejects_tampered_v2_ciphertext() {
+        let (sk, vk) = keypair(7);
+        let env_v2 = envelope_v2_for(&sample_payload(), &sk, None);
+        let str_v2 = std::str::from_utf8(&env_v2).unwrap();
+        use base64::Engine;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&str_v2["GYMLIC2.".len()..])
+            .unwrap();
+        let mut value: Value = serde_json::from_slice(&decoded).unwrap();
+        let ct = value["ciphertext"].as_str().unwrap().to_string();
+        // Flip one character in ciphertext
+        let mut corrupted_ct = ct.into_bytes();
+        corrupted_ct[0] = if corrupted_ct[0] == b'a' { b'b' } else { b'a' };
+        value["ciphertext"] = Value::String(String::from_utf8(corrupted_ct).unwrap());
+        let reencoded = base64::engine::general_purpose::STANDARD
+            .encode(serde_json::to_vec(&value).unwrap());
+        let bad_token = format!("GYMLIC2.{reencoded}").into_bytes();
+        assert_eq!(verify(&bad_token, &vk), Err(LicenseStatus::Corrupted));
     }
 
     #[test]
@@ -264,7 +417,7 @@ mod tests {
         let (sk, vk) = keypair(7);
         let env = envelope_for(&sample_payload(), &sk);
         let mut value: Value = serde_json::from_slice(&env).unwrap();
-        value["version"] = Value::from(2u32);
+        value["version"] = Value::from(99u32);
         let bad = serde_json::to_vec(&value).unwrap();
         assert_eq!(verify(&bad, &vk), Err(LicenseStatus::UnsupportedVersion));
     }
@@ -286,6 +439,16 @@ mod tests {
         let env = envelope_for(&sample_payload(), &sk);
         let mut value: Value = serde_json::from_slice(&env).unwrap();
         value["signature_hex"] = Value::String("zz".repeat(64));
+        let bad = serde_json::to_vec(&value).unwrap();
+        assert_eq!(verify(&bad, &vk), Err(LicenseStatus::Corrupted));
+    }
+
+    #[test]
+    fn rejects_non_ascii_hex_as_corrupted() {
+        let (sk, vk) = keypair(7);
+        let env = envelope_for(&sample_payload(), &sk);
+        let mut value: Value = serde_json::from_slice(&env).unwrap();
+        value["signature_hex"] = Value::String("é".repeat(64));
         let bad = serde_json::to_vec(&value).unwrap();
         assert_eq!(verify(&bad, &vk), Err(LicenseStatus::Corrupted));
     }

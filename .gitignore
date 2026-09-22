@@ -27,3 +27,6 @@ dist-ssr
 license-generator/keys/
 *.key
 *.gymlic
+.env
+*.env
+.env.local

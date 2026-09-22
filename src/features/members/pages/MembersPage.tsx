@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { PageHeader } from "../../../components/ui/PageHeader";
 import { Button } from "../../../components/ui/Button";
-import { Input } from "../../../components/ui/Input";
 import { Select } from "../../../components/ui/Select";
 import { Modal } from "../../../components/ui/Modal";
 import { Dialog } from "../../../components/ui/Dialog";
@@ -21,41 +20,29 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { useToast } from "../../../components/feedback/ToastProvider";
 import {
   listMembers,
+  listMemberAddresses,
   createMember,
   updateMember,
   archiveMember,
   unarchiveMember,
   permanentlyDeleteMember,
   type MemberResponse,
+  type CreateMemberRequest,
 } from "../../../lib/api/members";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
+import { getMemberFormSettings } from "../../../lib/api/settings";
 import { useNavigation } from "../../../components/layout/NavigationContext";
 import { formatCurrency } from "../../../lib/utils/format";
 import { MemberDetailRow } from "../components/MemberDetailRow";
-
-interface FormData {
-  full_name: string;
-  father_name: string;
-  phone: string;
-  cnic: string;
-  address: string;
-  date_of_birth: string;
-  gender: string;
-  blood_group: string;
-  membership_plan_id: string;
-}
-
-const EMPTY_FORM: FormData = {
-  full_name: "",
-  father_name: "",
-  phone: "",
-  cnic: "",
-  address: "",
-  date_of_birth: "",
-  gender: "",
-  blood_group: "",
-  membership_plan_id: "",
-};
+import { MemberFormFields } from "../components/MemberFormFields";
+import {
+  EMPTY_FORM,
+  DEFAULT_VISIBLE_MEMBER_FIELDS,
+  MEMBER_FIELDS,
+  todayIso,
+  type FormData,
+  type MemberFieldKey,
+} from "../memberFields";
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const BLOOD_GROUP_OPTIONS = [
@@ -151,10 +138,6 @@ function formatCnic(value: string): string {
   return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
 }
 
-function formatPhone(value: string): string {
-  return value.replace(/\D/g, "").slice(0, 11);
-}
-
 export function MembersPage({
   initialExpandedId,
 }: {
@@ -193,6 +176,44 @@ export function MembersPage({
   const [reactivateTarget, setReactivateTarget] = useState<MemberResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MemberResponse | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [formFieldKeys, setFormFieldKeys] = useState<MemberFieldKey[]>(
+    DEFAULT_VISIBLE_MEMBER_FIELDS,
+  );
+
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+
+  const loadAddressSuggestions = useCallback(async () => {
+    try {
+      setAddressSuggestions(await listMemberAddresses());
+    } catch {
+      setAddressSuggestions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAddressSuggestions();
+  }, [loadAddressSuggestions]);
+
+  const loadFormFields = useCallback(async () => {
+    try {
+      const settings = await getMemberFormSettings();
+      const known = new Set(MEMBER_FIELDS.map((f) => f.key));
+      const fields = settings.visible_fields.filter(
+        (k): k is MemberFieldKey => known.has(k as MemberFieldKey),
+      );
+      if (!fields.includes("full_name")) fields.unshift("full_name");
+      setFormFieldKeys(fields);
+    } catch {
+      setFormFieldKeys(DEFAULT_VISIBLE_MEMBER_FIELDS);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFormFields();
+  }, [loadFormFields]);
+
+  const visibleFields = useMemo(() => new Set(formFieldKeys), [formFieldKeys]);
 
   const loadMembers = useCallback(async () => {
     try {
@@ -255,9 +276,11 @@ export function MembersPage({
 
   const openCreateForm = () => {
     setEditingMember(null);
-    setFormData(EMPTY_FORM);
+    setFormData({ ...EMPTY_FORM, admission_date: todayIso() });
     setFormErrors({});
     setFormOpen(true);
+    loadFormFields();
+    loadAddressSuggestions();
   };
 
   const openEditForm = (member: MemberResponse) => {
@@ -269,12 +292,16 @@ export function MembersPage({
       cnic: member.cnic ? formatCnic(member.cnic) : "",
       address: member.address ?? "",
       date_of_birth: member.date_of_birth ?? "",
+      admission_date: member.admission_date ?? "",
       gender: member.gender ?? "",
       blood_group: member.blood_group ?? "",
+      notes: member.notes ?? "",
       membership_plan_id: member.membership_plan_id ?? "",
     });
     setFormErrors({});
     setFormOpen(true);
+    loadFormFields();
+    loadAddressSuggestions();
   };
 
   const validateForm = (): boolean => {
@@ -294,17 +321,44 @@ export function MembersPage({
     let newEnrollmentId: string | null = null;
     try {
       setSubmitting(true);
-      const payload = {
+      const visible = (key: MemberFieldKey) => visibleFields.has(key);
+      const existingField = (key: keyof MemberResponse): string | null =>
+        editingMember ? (editingMember[key] as string | null) : null;
+
+      const payload: CreateMemberRequest = {
         full_name: formData.full_name.trim(),
-        father_name: formData.father_name.trim() || null,
-        phone: formData.phone.trim() || null,
-        cnic: formData.cnic.trim() ? formData.cnic.replace(/-/g, "") : null,
-        address: formData.address.trim() || null,
-        date_of_birth: formData.date_of_birth || null,
-        gender: formData.gender || null,
-        blood_group: formData.blood_group || null,
-        notes: null as string | null,
-        membership_plan_id: formData.membership_plan_id || null,
+        father_name: visible("father_name")
+          ? formData.father_name.trim() || null
+          : existingField("father_name"),
+        phone: visible("phone")
+          ? formData.phone.trim() || null
+          : existingField("phone"),
+        cnic: visible("cnic")
+          ? formData.cnic.trim()
+            ? formData.cnic.replace(/-/g, "")
+            : null
+          : existingField("cnic"),
+        address: visible("address")
+          ? formData.address.trim() || null
+          : existingField("address"),
+        date_of_birth: visible("date_of_birth")
+          ? formData.date_of_birth || null
+          : existingField("date_of_birth"),
+        admission_date: visible("admission_date")
+          ? formData.admission_date || null
+          : existingField("admission_date"),
+        gender: visible("gender")
+          ? formData.gender || null
+          : existingField("gender"),
+        blood_group: visible("blood_group")
+          ? formData.blood_group || null
+          : existingField("blood_group"),
+        notes: visible("notes")
+          ? formData.notes.trim() || null
+          : existingField("notes"),
+        membership_plan_id: visible("membership_plan_id")
+          ? formData.membership_plan_id || null
+          : existingField("membership_plan_id"),
       };
 
       if (editingMember) {
@@ -691,89 +745,14 @@ export function MembersPage({
           </>
         }
       >
-        <div className="space-y-4">
-          <Input
-            label="Full Name *"
-            placeholder="e.g. Ahmad Khan"
-            value={formData.full_name}
-            onChange={(e) => setFormData((p) => ({ ...p, full_name: e.target.value }))}
-            error={formErrors.full_name}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Father Name"
-              value={formData.father_name}
-              onChange={(e) => setFormData((p) => ({ ...p, father_name: e.target.value }))}
-            />
-            <Input
-              label="Phone"
-              placeholder="03xxxxxxxxx"
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData((p) => ({ ...p, phone: formatPhone(e.target.value) }))}
-              error={formErrors.phone}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="CNIC"
-              placeholder="XXXXX-XXXXXXX-X"
-              value={formData.cnic}
-              onChange={(e) => setFormData((p) => ({ ...p, cnic: formatCnic(e.target.value) }))}
-              error={formErrors.cnic}
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">Gender</label>
-              <select
-                name="member_gender"
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
-                value={formData.gender}
-                onChange={(e) => setFormData((p) => ({ ...p, gender: e.target.value }))}
-              >
-                <option value="">Select</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </div>
-          </div>
-          <Input
-            label="Date of Birth"
-            type="date"
-            value={formData.date_of_birth}
-            onChange={(e) => setFormData((p) => ({ ...p, date_of_birth: e.target.value }))}
-          />
-          <Select
-            label="Blood Group"
-            options={[
-              { value: "", label: "Select blood group..." },
-              ...BLOOD_GROUPS.map((group) => ({ value: group, label: group })),
-            ]}
-            value={formData.blood_group}
-            onChange={(e) => setFormData((p) => ({ ...p, blood_group: e.target.value }))}
-          />
-          <Input
-            label="Address"
-            value={formData.address}
-            onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))}
-          />
-          <Select
-            label="Membership Plan"
-            options={[
-              { value: "", label: "Select a plan (optional)..." },
-              ...plans.map((p) => ({
-                value: p.id,
-                label: `${p.name} — ${formatCurrency(p.price)} (${p.duration_days} days)`,
-              })),
-            ]}
-            value={formData.membership_plan_id}
-            onChange={(e) =>
-              setFormData((p) => ({
-                ...p,
-                membership_plan_id: e.target.value,
-              }))
-            }
-          />
-        </div>
+        <MemberFormFields
+          visibleFields={visibleFields}
+          formData={formData}
+          errors={formErrors}
+          onChange={(key, value) => setFormData((p) => ({ ...p, [key]: value }))}
+          plans={plans}
+          addressSuggestions={addressSuggestions}
+        />
       </Modal>
 
       <Dialog

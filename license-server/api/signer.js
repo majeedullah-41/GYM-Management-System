@@ -60,7 +60,30 @@ function todayISO() {
   return `${y}-${m}-${d}`;
 }
 
-function buildEnvelope(payload) {
+const ENCRYPTION_SECRET = "gympos_license_v2_payload_encryption_key_2026";
+
+function getEncryptionKey() {
+  return crypto.createHash("sha256").update(ENCRYPTION_SECRET).digest();
+}
+
+function encryptPayload(payloadJson, iv) {
+  const key = getEncryptionKey();
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(payloadJson, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([encrypted, tag]);
+}
+
+function decryptPayload(ciphertextAndTag, iv) {
+  const key = getEncryptionKey();
+  const tag = ciphertextAndTag.subarray(ciphertextAndTag.length - 16);
+  const ct = ciphertextAndTag.subarray(0, ciphertextAndTag.length - 16);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ct), decipher.final()]).toString("utf8");
+}
+
+function buildEnvelope(payload, customIv) {
   const seedBase64 = (process.env.LICENSE_PRIVATE_KEY || "").trim();
   if (!seedBase64) throw new Error("seed must be 32 bytes");
   const canonical = canonicalPayload(payload);
@@ -77,13 +100,23 @@ function buildEnvelope(payload) {
     expires_at: payload.expires_at,
   });
 
+  const iv = customIv || crypto.randomBytes(12);
+  const encryptedBytes = encryptPayload(payloadJson, iv);
+
   return {
     format: "GYMLIC",
-    version: 1,
+    version: 2,
     key_id: "dev",
-    payload_json: payloadJson,
+    iv: hexEncode(iv),
+    ciphertext: hexEncode(encryptedBytes),
     signature_hex: signatureHex,
   };
+}
+
+function buildLicenseFile(envelope) {
+  const jsonStr = JSON.stringify(envelope);
+  const b64 = Buffer.from(jsonStr, "utf8").toString("base64");
+  return `GYMLIC2.${b64}`;
 }
 
 module.exports = {
@@ -92,5 +125,10 @@ module.exports = {
   signCanonicalPayload,
   generateLicenseId,
   todayISO,
+  getEncryptionKey,
+  encryptPayload,
+  decryptPayload,
   buildEnvelope,
+  buildLicenseFile,
+  ENCRYPTION_SECRET,
 };

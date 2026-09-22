@@ -4,6 +4,10 @@ const {
   canonicalPayload,
   hexEncode,
   signCanonicalPayload,
+  encryptPayload,
+  decryptPayload,
+  buildEnvelope,
+  buildLicenseFile,
 } = require("../api/signer");
 
 const SAMPLE = {
@@ -40,4 +44,35 @@ test("Ed25519 signature matches the Rust golden vector", () => {
 
 test("hexEncode produces lowercase hex", () => {
   assert.strictEqual(hexEncode(Buffer.from([0xff, 0x0a, 0x01])), "ff0a01");
+});
+
+test("AES-256-GCM encrypts and decrypts payload cleanly", () => {
+  const iv = Buffer.from("0102030405060708090a0b0c", "hex");
+  const json = JSON.stringify(SAMPLE);
+  const encrypted = encryptPayload(json, iv);
+  const decrypted = decryptPayload(encrypted, iv);
+  assert.strictEqual(decrypted, json);
+});
+
+test("buildEnvelope produces v2 envelope and buildLicenseFile produces GYMLIC2 token", () => {
+  process.env.LICENSE_PRIVATE_KEY = Buffer.alloc(32, 9).toString("base64");
+  try {
+    const iv = Buffer.from("0102030405060708090a0b0c", "hex");
+    const envelope = buildEnvelope(SAMPLE, iv);
+    assert.strictEqual(envelope.format, "GYMLIC");
+    assert.strictEqual(envelope.version, 2);
+    assert.strictEqual(envelope.iv, "0102030405060708090a0b0c");
+    assert.strictEqual(envelope.signature_hex, GOLDEN_SIG);
+    assert.ok(envelope.ciphertext);
+
+    const token = buildLicenseFile(envelope);
+    assert.ok(token.startsWith("GYMLIC2."));
+
+    const b64 = token.slice("GYMLIC2.".length);
+    const parsed = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+    assert.strictEqual(parsed.version, 2);
+    assert.strictEqual(parsed.signature_hex, GOLDEN_SIG);
+  } finally {
+    delete process.env.LICENSE_PRIVATE_KEY;
+  }
 });

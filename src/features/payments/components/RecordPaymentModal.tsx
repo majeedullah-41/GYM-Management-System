@@ -8,14 +8,20 @@ import {
   createPayment,
   getPaymentSummary,
   listMemberPayments,
-  PAYMENT_METHODS,
   type PaymentResponse,
   type PaymentSummary,
 } from "../../../lib/api/payments";
 import { listMembers, type MemberResponse } from "../../../lib/api/members";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
+import { getPaymentFormSettings } from "../../../lib/api/settings";
 import { formatCurrency } from "../../../lib/utils/format";
 import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
+import { PaymentFormFields } from "./PaymentFormFields";
+import {
+  DEFAULT_VISIBLE_PAYMENT_FIELDS,
+  normalizePaymentFields,
+  type PaymentFieldKey,
+} from "../paymentFields";
 
 interface Props {
   isOpen: boolean;
@@ -71,6 +77,26 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
   const [currentPlanLoading, setCurrentPlanLoading] = useState(false);
   const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [formFieldKeys, setFormFieldKeys] = useState<PaymentFieldKey[]>(
+    DEFAULT_VISIBLE_PAYMENT_FIELDS,
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getPaymentFormSettings()
+      .then((settings) => {
+        if (!cancelled) setFormFieldKeys(normalizePaymentFields(settings.visible_fields));
+      })
+      .catch(() => {
+        if (!cancelled) setFormFieldKeys(DEFAULT_VISIBLE_PAYMENT_FIELDS);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  const visibleFields = useMemo(() => new Set<PaymentFieldKey>(formFieldKeys), [formFieldKeys]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -364,7 +390,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
 
             {summaryLoading && <div className="py-2 text-center text-sm text-text-muted">Loading payment details...</div>}
 
-            {summary && selectedMember && (
+            {summary && selectedMember && visibleFields.has("summary") && (
               <div className="overflow-hidden rounded-xl bg-secondary-bg">
                 <div className="grid grid-cols-[1fr_auto_1.2fr] items-center gap-3 p-3">
                   <div>
@@ -424,63 +450,19 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
               </div>
             )}
 
-            <div className="grid gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
-                <input
-                  type="number"
-                  name="payment_amount"
-                  min={1}
-                  value={amount}
-                  placeholder="e.g. 2000"
-                  onChange={(event) => setAmount(event.target.value)}
-                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:ring-1 focus:ring-primary"
-                />
-              </div>
-              <Select
-                label="Payment Method *"
-                options={PAYMENT_METHODS.map((paymentMethod) => ({ value: paymentMethod, label: paymentMethod }))}
-                value={method}
-                onChange={(event) => setMethod(event.target.value)}
-                className="py-1.5"
-              />
-            </div>
-
-            <div className="grid gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-text-primary">Payment Date *</label>
-                <input
-                  type="date"
-                  name="payment_date"
-                  value={paymentDate}
-                  onChange={(event) => setPaymentDate(event.target.value)}
-                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-text-primary">Payment Month (Optional)</label>
-                <input
-                  type="text"
-                  name="payment_month"
-                  value={paymentMonth}
-                  placeholder="e.g. January 2026"
-                  onChange={(event) => setPaymentMonth(event.target.value)}
-                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:ring-1 focus:ring-primary"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">Note (Optional)</label>
-              <textarea
-                name="payment_notes"
-                rows={1}
-                value={notes}
-                placeholder="Add a note..."
-                onChange={(event) => setNotes(event.target.value)}
-                className="w-full resize-none rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
+            <PaymentFormFields
+              visibleFields={visibleFields}
+              amount={amount}
+              onAmountChange={setAmount}
+              method={method}
+              onMethodChange={setMethod}
+              paymentDate={paymentDate}
+              onPaymentDateChange={setPaymentDate}
+              paymentMonth={paymentMonth}
+              onPaymentMonthChange={setPaymentMonth}
+              notes={notes}
+              onNotesChange={setNotes}
+            />
           </div>
         )}
       </Modal>
