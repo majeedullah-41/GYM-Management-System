@@ -55,6 +55,7 @@ function makePayment(overrides: Partial<PaymentResponse> = {}): PaymentResponse 
     member_name: "Ali Khan",
     member_number: "MEM-00124",
     amount: 6000,
+    discount_amount: 0,
     payment_method: "Cash",
     payment_date: "2026-09-06",
     membership_plan_id: "plan-1",

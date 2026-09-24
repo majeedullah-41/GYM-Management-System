@@ -13,6 +13,7 @@ export interface ReceiptResponse {
   member_number: string;
   plan_name: string;
   amount: number;
+  discount_amount: number;
   payment_method: string;
   payment_date: string;
   membership_start_date: string;

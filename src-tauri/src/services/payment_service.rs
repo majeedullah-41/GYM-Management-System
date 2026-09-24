@@ -16,9 +16,9 @@ pub fn create_payment(
     conn: &Connection,
     request: CreatePaymentRequest,
 ) -> Result<PaymentResponse, AppError> {
-    if request.amount <= 0 {
+    if request.amount < 0 {
         return Err(AppError::ValidationError(
-            "Payment amount must be greater than zero".into(),
+            "Payment amount cannot be negative".into(),
         ));
     }
 
@@ -82,19 +82,88 @@ pub fn create_payment(
                 "Selected plan does not match the member's active membership".into(),
             ))
         }
-        None => crate::services::billing_service::create_membership_for_plan(
-            &tx,
-            &request.member_id,
-            &request.membership_plan_id,
-            &request.payment_date,
-        )?,
+        None => {
+            let has_no_history = !crate::repositories::billing_repository::has_membership_history(
+                &tx,
+                &request.member_id,
+            )? && !member_repository::has_any_payments(&tx, &request.member_id)?;
+            let start_date = if has_no_history {
+                member
+                    .admission_date
+                    .as_deref()
+                    .filter(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())
+                    .filter(|d| *d <= request.payment_date.as_str())
+                    .unwrap_or(request.payment_date.as_str())
+            } else {
+                request.payment_date.as_str()
+            };
+            crate::services::billing_service::create_membership_for_plan(
+                &tx,
+                &request.member_id,
+                &request.membership_plan_id,
+                start_date,
+                None,
+            )?
+        }
     };
     crate::services::billing_service::ensure_monthly_billing_generated(&tx, &request.member_id)?;
     let targets =
         crate::repositories::billing_repository::list_outstanding_bills(&tx, &request.member_id)?;
-    let ledger_due: i64 = targets
+    let discounts = request.discounts.unwrap_or_default();
+    let discount_pairs: Vec<(&str, i64)> = discounts
         .iter()
-        .map(|b| b.expected_amount - b.paid_amount)
+        .map(|d| (d.monthly_bill_id.as_str(), d.amount))
+        .collect();
+    let total_discount: i64 = discount_pairs.iter().map(|(_, a)| *a).sum();
+    if request.amount == 0 && total_discount == 0 {
+        return Err(AppError::ValidationError(
+            "A payment without any amount must grant a discount".into(),
+        ));
+    }
+    let mut seen_bill_ids: Vec<&str> = Vec::new();
+    for (bill_id, amount) in &discount_pairs {
+        if seen_bill_ids.contains(bill_id) {
+            return Err(AppError::ValidationError(
+                "Each period can have at most one discount per payment".into(),
+            ));
+        }
+        seen_bill_ids.push(bill_id);
+        if *amount < 0 {
+            return Err(AppError::ValidationError(
+                "Discount amounts cannot be negative".into(),
+            ));
+        }
+        let bill = targets
+            .iter()
+            .find(|b| b.id.as_str() == *bill_id)
+            .ok_or_else(|| {
+                AppError::ValidationError(format!(
+                    "Discount period '{}' is not outstanding for this member",
+                    bill_id
+                ))
+            })?;
+        if *amount > bill.expected_amount - bill.paid_amount - bill.discount_amount {
+            return Err(AppError::ValidationError(
+                "Discount exceeds the outstanding amount for a period".into(),
+            ));
+        }
+    }
+    let effective_targets: Vec<crate::models::MonthlyBill> = targets
+        .iter()
+        .map(|b| {
+            let mut nb = b.clone();
+            nb.discount_amount = b.discount_amount
+                + discount_pairs
+                    .iter()
+                    .find(|(id, _)| *id == b.id.as_str())
+                    .map(|(_, a)| *a)
+                    .unwrap_or(0);
+            nb
+        })
+        .collect();
+    let ledger_due: i64 = effective_targets
+        .iter()
+        .map(|b| (b.expected_amount - b.paid_amount - b.discount_amount).max(0))
         .sum();
     let max_allowed = ledger_due;
     if request.amount > max_allowed {
@@ -107,12 +176,30 @@ pub fn create_payment(
     let membership_amount = request.amount;
     let now = now_iso8601();
     let receipt_number = payment_repository::next_receipt_number(&tx)?;
-    let first_target = targets.first();
-    let start_date = first_target
+    let mut remaining = membership_amount;
+    let mut covered_bills: Vec<&crate::models::MonthlyBill> = Vec::new();
+    for bill in &effective_targets {
+        let has_discount = discount_pairs
+            .iter()
+            .any(|(id, amt)| *id == bill.id.as_str() && *amt > 0);
+        let due = (bill.expected_amount - bill.paid_amount - bill.discount_amount).max(0);
+        if remaining > 0 && due > 0 {
+            let allocated = remaining.min(due);
+            remaining -= allocated;
+            covered_bills.push(bill);
+        } else if has_discount {
+            covered_bills.push(bill);
+        }
+    }
+    let start_date = covered_bills
+        .first()
         .map(|b| b.period_start.clone())
+        .or_else(|| targets.first().map(|b| b.period_start.clone()))
         .unwrap_or_else(|| request.payment_date.clone());
-    let expiry_date = first_target
+    let expiry_date = covered_bills
+        .last()
         .map(|b| b.period_end.clone())
+        .or_else(|| targets.first().map(|b| b.period_end.clone()))
         .unwrap_or_else(|| request.payment_date.clone());
 
     let payment = Payment {
@@ -120,6 +207,7 @@ pub fn create_payment(
         receipt_number: receipt_number.clone(),
         member_id: request.member_id.clone(),
         amount: request.amount,
+        discount_amount: total_discount,
         payment_method: request.payment_method.clone(),
         payment_date: request.payment_date.clone(),
         membership_plan_id: request.membership_plan_id.clone(),
@@ -142,10 +230,35 @@ pub fn create_payment(
         &payment.id,
         request.idempotency_key.as_deref(),
     )?;
+    let today = crate::utils::dates::today_iso();
+    for (bill_id, amount) in &discount_pairs {
+        if *amount <= 0 {
+            continue;
+        }
+        let bill = targets
+            .iter()
+            .find(|b| b.id.as_str() == *bill_id)
+            .expect("discount target validated");
+        let cumulative = bill.discount_amount + *amount;
+        let status = crate::services::billing_service::bill_status(
+            &bill.period_start,
+            &bill.period_end,
+            bill.paid_amount,
+            cumulative,
+            bill.expected_amount,
+            &today,
+        );
+        crate::repositories::billing_repository::set_bill_discount(
+            &tx, bill_id, cumulative, status, &now,
+        )?;
+        crate::repositories::billing_repository::create_payment_discount(
+            &tx, &payment.id, bill_id, &request.member_id, *amount, &now,
+        )?;
+    }
     crate::services::billing_service::allocate_payment(
         &tx,
         &payment.id,
-        &targets,
+        &effective_targets,
         membership_amount,
         &now,
     )?;
@@ -235,7 +348,11 @@ pub fn get_payment_summary(
     let outstanding = back_due + current_month_fee;
 
     Ok(PaymentSummary {
-        plan_price: plan.price,
+        plan_price: if has_open_membership {
+            billing.monthly_fee
+        } else {
+            plan.price
+        },
         back_due,
         new_period_due,
         previously_paid,
@@ -337,29 +454,48 @@ pub fn void_payment(
 
     let now = now_iso8601();
     let tx = conn.unchecked_transaction()?;
+    let today = crate::utils::dates::today_iso();
     for (bill_id, paid, amount) in
         crate::repositories::billing_repository::list_payment_bill_allocations(&tx, id)?
     {
-        let new_paid = (paid - amount).max(0);
-        let (period_start, period_end): (String, String) = tx.query_row(
-            "SELECT period_start,period_end FROM monthly_membership_bills WHERE id=?1",
-            rusqlite::params![bill_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+        let bill = crate::repositories::billing_repository::get_bill(&tx, &bill_id)?.ok_or_else(
+            || AppError::NotFoundError(format!("Bill '{}' not found", bill_id)),
         )?;
-        let current = crate::utils::dates::today_iso();
-        let status = if new_paid > 0 {
-            "PARTIALLY_PAID"
-        } else if period_start <= current && period_end >= current {
-            "CURRENT"
-        } else {
-            "DUE"
-        };
+        let new_paid = (paid - amount).max(0);
+        let status = crate::services::billing_service::bill_status(
+            &bill.period_start,
+            &bill.period_end,
+            new_paid,
+            bill.discount_amount,
+            bill.expected_amount,
+            &today,
+        );
         crate::repositories::billing_repository::set_bill_paid(
             &tx, &bill_id, new_paid, status, &now,
         )?;
     }
+    for (bill_id, amount) in
+        crate::repositories::billing_repository::list_payment_discounts(&tx, id)?
+    {
+        let bill = crate::repositories::billing_repository::get_bill(&tx, &bill_id)?.ok_or_else(
+            || AppError::NotFoundError(format!("Bill '{}' not found", bill_id)),
+        )?;
+        let new_discount = (bill.discount_amount - amount).max(0);
+        let status = crate::services::billing_service::bill_status(
+            &bill.period_start,
+            &bill.period_end,
+            bill.paid_amount,
+            new_discount,
+            bill.expected_amount,
+            &today,
+        );
+        crate::repositories::billing_repository::set_bill_discount(
+            &tx, &bill_id, new_discount, status, &now,
+        )?;
+    }
     payment_repository::void_payment(&tx, id, reason.trim(), &now)?;
     payment_repository::delete_allocations_for_payment(&tx, id)?;
+    crate::repositories::billing_repository::delete_payment_discounts_for_payment(&tx, id)?;
     tx.commit()?;
 
     log::info!("Voided payment {}: {}", payment.receipt_number, reason);
@@ -401,6 +537,7 @@ fn resolve_payment_response(
 mod tests {
     use super::*;
     use crate::database::migrations;
+    use crate::dto::payment::PaymentDiscountRequest;
     use rusqlite::params;
 
     fn test_db() -> Connection {
@@ -429,6 +566,22 @@ mod tests {
             "INSERT INTO members (id, member_number, full_name, admission_fee, is_archived, created_at, updated_at) \
              VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
             params![id, "GYM-000001", name, fee, now, now],
+        )
+        .unwrap();
+        id
+    }
+
+    fn insert_test_member_with_admission(
+        conn: &Connection,
+        name: &str,
+        admission_date: &str,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_iso8601();
+        conn.execute(
+            "INSERT INTO members (id, member_number, full_name, admission_date, is_archived, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
+            params![id, "GYM-000001", name, admission_date, now, now],
         )
         .unwrap();
         id
@@ -463,6 +616,7 @@ mod tests {
             reference: None,
             notes: None,
             idempotency_key: None,
+            discounts: None,
         }
     }
 
@@ -479,6 +633,82 @@ mod tests {
         assert_eq!(result.membership_plan_name.as_deref(), Some("Monthly"));
         assert!(!result.membership_start_date.is_empty());
         assert!(!result.membership_expiry_date.is_empty());
+    }
+
+    #[test]
+    fn should_backfill_dues_to_admission_date_for_first_plan() {
+        let conn = test_db();
+        let today = crate::utils::dates::today_iso();
+        let admission = (chrono::Local::now().date_naive() - chrono::Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+        let member_id = insert_test_member_with_admission(&conn, "Ahmad", &admission);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.payment_date = today.clone();
+        create_payment(&conn, request).unwrap();
+
+        let membership =
+            crate::repositories::billing_repository::get_open_membership(&conn, &member_id)
+                .unwrap()
+                .expect("open membership");
+        assert_eq!(membership.enrollment_date, admission);
+
+        let bills =
+            crate::repositories::billing_repository::list_member_bills(&conn, &member_id).unwrap();
+        assert_eq!(bills.len(), 4);
+        assert_eq!(bills[0].period_start, admission);
+        assert_eq!(
+            bills.iter().map(|b| b.status.as_str()).collect::<Vec<_>>(),
+            vec!["PAID", "DUE", "DUE", "CURRENT"]
+        );
+    }
+
+    #[test]
+    fn should_not_backfill_to_admission_when_member_has_history() {
+        let conn = test_db();
+        let today = crate::utils::dates::today_iso();
+        let admission = (chrono::Local::now().date_naive() - chrono::Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        let member = crate::services::member_service::create_member(
+            &conn,
+            crate::dto::member::CreateMemberRequest {
+                full_name: "Ahmad".to_string(),
+                father_name: None,
+                phone: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                admission_date: Some(admission.clone()),
+                membership_plan_id: Some(plan_id.clone()),
+                monthly_fee: None,
+            },
+        )
+        .unwrap();
+        crate::services::billing_service::end_active_membership(
+            &conn,
+            &member.id,
+            "cancelled",
+            &today,
+        )
+        .unwrap();
+
+        let mut request = valid_request(&member.id, &plan_id, 2000);
+        request.payment_date = today.clone();
+        create_payment(&conn, request).unwrap();
+
+        let membership =
+            crate::repositories::billing_repository::get_open_membership(&conn, &member.id)
+                .unwrap()
+                .expect("open membership");
+        assert_eq!(membership.enrollment_date, today);
+        assert_ne!(membership.enrollment_date, admission);
     }
 
     #[test]
@@ -597,6 +827,7 @@ mod tests {
             reference: None,
             notes: None,
             idempotency_key: None,
+            discounts: None,
         };
         let created = create_payment(&conn, req).unwrap();
 
@@ -1102,5 +1333,298 @@ mod tests {
         let response = crate::services::member_service::get_member(&conn, &member_id).unwrap();
         assert!(!response.is_paid);
         assert_eq!(response.outstanding_balance, 5000);
+    }
+
+    fn member_with_outstanding_periods(conn: &Connection) -> (String, String, Vec<crate::models::MonthlyBill>) {
+        let today = crate::utils::dates::today_iso();
+        let admission = (chrono::Local::now().date_naive() - chrono::Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        let member_id = insert_test_member_with_admission(conn, "Ahmad", &admission);
+        let plan_id = insert_test_plan(conn, "Monthly", 2000, 30, true);
+
+        let mut first = valid_request(&member_id, &plan_id, 2000);
+        first.payment_date = today.clone();
+        create_payment(conn, first).unwrap();
+
+        let bills =
+            crate::repositories::billing_repository::list_member_bills(conn, &member_id).unwrap();
+        (member_id, plan_id, bills)
+    }
+
+    #[test]
+    fn should_apply_discount_to_period_and_pay_remaining_cash() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let due = bills.iter().find(|b| b.status == "DUE").expect("a due bill");
+        let current = bills.iter().find(|b| b.status == "CURRENT").expect("current bill");
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.payment_date = crate::utils::dates::today_iso();
+        request.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: current.id.clone(),
+            amount: 2000,
+        }]);
+        let result = create_payment(&conn, request).unwrap();
+        assert_eq!(result.amount, 2000);
+        assert_eq!(result.discount_amount, 2000);
+
+        let updated =
+            crate::repositories::billing_repository::list_member_bills(&conn, &member_id).unwrap();
+        assert_eq!(updated.len(), 3);
+        assert!(updated.iter().all(|b| b.status == "PAID"));
+        assert!(updated.iter().all(|b| b.paid_amount + b.discount_amount == 2000));
+        assert_eq!(
+            crate::services::billing_service::get_billing_summary(&conn, &member_id)
+                .unwrap()
+                .total_outstanding,
+            0
+        );
+    }
+
+    #[test]
+    fn should_allow_zero_cash_full_discount_forgiveness() {
+        let conn = test_db();
+        let today = crate::utils::dates::today_iso();
+        let admission = (chrono::Local::now().date_naive() - chrono::Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        let member_id = insert_test_member_with_admission(&conn, "Ahmad", &admission);
+        let plan_id = insert_test_plan(&conn, "Monthly", 2000, 30, true);
+        crate::services::billing_service::create_membership_for_plan(
+            &conn,
+            &member_id,
+            &plan_id,
+            &admission,
+            None,
+        )
+        .unwrap();
+        crate::services::billing_service::ensure_monthly_billing_generated(&conn, &member_id)
+            .unwrap();
+
+        let mut request = valid_request(&member_id, &plan_id, 0);
+        request.payment_date = today.clone();
+        let discount_bills =
+            crate::repositories::billing_repository::list_member_bills(&conn, &member_id).unwrap();
+        assert_eq!(discount_bills.len(), 3);
+        request.discounts = Some(
+            discount_bills
+                .iter()
+                .map(|b| PaymentDiscountRequest {
+                    monthly_bill_id: b.id.clone(),
+                    amount: b.expected_amount,
+                })
+                .collect(),
+        );
+        let result = create_payment(&conn, request).unwrap();
+        assert_eq!(result.amount, 0);
+        assert_eq!(result.discount_amount, 6000);
+
+        let bills =
+            crate::repositories::billing_repository::list_member_bills(&conn, &member_id).unwrap();
+        assert_eq!(bills.len(), 3);
+        assert!(bills.iter().all(|b| b.status == "PAID"));
+        assert_eq!(
+            crate::services::billing_service::get_billing_summary(&conn, &member_id)
+                .unwrap()
+                .total_outstanding,
+            0
+        );
+        let discount_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_discounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(discount_rows, 3);
+    }
+
+    #[test]
+    fn should_void_payment_and_reverse_discounts() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let current = bills.iter().find(|b| b.status == "CURRENT").expect("current bill");
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.payment_date = crate::utils::dates::today_iso();
+        request.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: current.id.clone(),
+            amount: 2000,
+        }]);
+        let result = create_payment(&conn, request).unwrap();
+
+        void_payment(&conn, &result.id, "Refund issued").unwrap();
+
+        let bills =
+            crate::repositories::billing_repository::list_member_bills(&conn, &member_id).unwrap();
+        assert!(bills.iter().all(|b| b.discount_amount == 0));
+        // Only the oldest bill (settled by the *first* payment) stays paid; the
+        // due + current bills must revert to unpaid after the void.
+        assert_eq!(
+            bills.iter().filter(|b| b.status == "PAID").count(),
+            1
+        );
+        assert_eq!(
+            crate::services::billing_service::get_billing_summary(&conn, &member_id)
+                .unwrap()
+                .total_outstanding,
+            4000
+        );
+        let discount_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_discounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(discount_rows, 0);
+        let voided = payment_repository::get_by_id(&conn, &result.id).unwrap().unwrap();
+        assert!(voided.is_voided);
+    }
+
+    #[test]
+    fn should_accumulate_discounts_across_payments_and_void_only_first() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        // The oldest outstanding bill: cash is allocated FIFO, so targeting this
+        // bill means each payment's cash lands on the same bill as its discount.
+        let due = bills.iter().find(|b| b.status == "DUE").expect("due bill");
+
+        // First payment: partial discount + partial cash on the due bill.
+        let mut first = valid_request(&member_id, &plan_id, 600);
+        first.payment_date = crate::utils::dates::today_iso();
+        first.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: due.id.clone(),
+            amount: 400,
+        }]);
+        let first_payment = create_payment(&conn, first).unwrap();
+        assert_eq!(first_payment.discount_amount, 400);
+
+        let bill =
+            crate::repositories::billing_repository::get_bill(&conn, &due.id).unwrap().unwrap();
+        assert_eq!(bill.discount_amount, 400);
+        assert_eq!(bill.paid_amount, 600);
+        assert_eq!(bill.status, "PARTIALLY_PAID");
+
+        // Second payment on the same bill: its discount must accumulate with the
+        // stored one (400 + 600 = 1000), not overwrite it.
+        let mut second = valid_request(&member_id, &plan_id, 400);
+        second.payment_date = crate::utils::dates::today_iso();
+        second.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: due.id.clone(),
+            amount: 600,
+        }]);
+        let second_payment = create_payment(&conn, second).unwrap();
+        assert_eq!(second_payment.discount_amount, 600);
+
+        let bill =
+            crate::repositories::billing_repository::get_bill(&conn, &due.id).unwrap().unwrap();
+        assert_eq!(bill.discount_amount, 1000);
+        assert_eq!(bill.paid_amount, 1000);
+        assert_eq!(bill.status, "PAID");
+
+        // Voiding only the first payment must leave the second payment's
+        // discount (600) and cash (400) intact on the bill.
+        void_payment(&conn, &first_payment.id, "Reversed").unwrap();
+        let bill =
+            crate::repositories::billing_repository::get_bill(&conn, &due.id).unwrap().unwrap();
+        assert_eq!(bill.discount_amount, 600);
+        assert_eq!(bill.paid_amount, 400);
+        assert_eq!(bill.status, "PARTIALLY_PAID");
+        assert_eq!(
+            crate::services::billing_service::get_billing_summary(&conn, &member_id)
+                .unwrap()
+                .total_outstanding,
+            // CURRENT bill (2000) + due remaining 2000 - 400 - 600 = 1000.
+            3000
+        );
+        let discount_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_discounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(discount_rows, 1);
+    }
+
+    #[test]
+    fn should_reject_discount_exceeding_period_remaining() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let current = bills.iter().find(|b| b.status == "CURRENT").expect("current bill");
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: current.id.clone(),
+            amount: 2500,
+        }]);
+        let result = create_payment(&conn, request);
+        assert!(matches!(result, Err(AppError::ValidationError(_))));
+    }
+
+    #[test]
+    fn should_reject_discount_for_not_outstanding_period() {
+        let conn = test_db();
+        let (member_id, plan_id, _) = member_with_outstanding_periods(&conn);
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: uuid::Uuid::new_v4().to_string(),
+            amount: 500,
+        }]);
+        let result = create_payment(&conn, request);
+        assert!(matches!(result, Err(AppError::ValidationError(_))));
+    }
+
+    #[test]
+    fn should_reject_negative_discount() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let current = bills.iter().find(|b| b.status == "CURRENT").expect("current bill");
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: current.id.clone(),
+            amount: -1,
+        }]);
+        let result = create_payment(&conn, request);
+        assert!(matches!(result, Err(AppError::ValidationError(_))));
+    }
+
+    #[test]
+    fn should_reject_duplicate_discount_entries_for_same_bill() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let due = bills.iter().find(|b| b.status == "DUE").expect("due bill");
+
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.discounts = Some(vec![
+            PaymentDiscountRequest {
+                monthly_bill_id: due.id.clone(),
+                amount: 500,
+            },
+            PaymentDiscountRequest {
+                monthly_bill_id: due.id.clone(),
+                amount: 500,
+            },
+        ]);
+        let result = create_payment(&conn, request);
+        assert!(matches!(result, Err(AppError::ValidationError(_))));
+        let discount_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_discounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(discount_rows, 0);
+    }
+
+    #[test]
+    fn should_span_membership_dates_across_multiple_paid_periods() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let unpaid: Vec<_> = bills.iter().filter(|b| b.paid_amount == 0).collect();
+        assert!(unpaid.len() >= 2);
+
+        let expected_start = unpaid.first().unwrap().period_start.clone();
+        let expected_expiry = unpaid.get(1).unwrap().period_end.clone();
+
+        // Paying 4000 covers two 2000-priced periods
+        let request = valid_request(&member_id, &plan_id, 4000);
+        let payment = create_payment(&conn, request).unwrap();
+
+        assert_eq!(payment.membership_start_date, expected_start);
+        assert_eq!(payment.membership_expiry_date, expected_expiry);
+
+        let receipt = crate::services::receipt_service::get_receipt_by_payment_id(&conn, &payment.id).unwrap();
+        assert_eq!(receipt.membership_start_date, expected_start);
+        assert_eq!(receipt.membership_expiry_date, expected_expiry);
     }
 }

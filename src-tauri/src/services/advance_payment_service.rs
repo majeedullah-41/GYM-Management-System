@@ -168,7 +168,7 @@ pub fn create(
     let targets = billing_repository::list_outstanding_bills(&tx, &request.member_id)?;
     let ledger_due: i64 = targets
         .iter()
-        .map(|b| b.expected_amount - b.paid_amount)
+        .map(|b| (b.expected_amount - b.paid_amount - b.discount_amount).max(0))
         .sum();
     let amount = pre_advance_due + future_total;
     if amount != ledger_due {
@@ -193,6 +193,7 @@ pub fn create(
         receipt_number: receipt_number.clone(),
         member_id: request.member_id.clone(),
         amount,
+        discount_amount: 0,
         payment_method: request.payment_method.clone(),
         payment_date: crate::utils::dates::today_iso(),
         membership_plan_id: membership.membership_plan_id.clone(),
@@ -293,6 +294,7 @@ mod tests {
                 reference: None,
                 notes: None,
                 idempotency_key: Some("current-payment".into()),
+                discounts: None,
             },
         )
         .unwrap();
@@ -435,6 +437,7 @@ mod tests {
                 reference: None,
                 notes: None,
                 idempotency_key: Some("partial".into()),
+                discounts: None,
             },
         )
         .unwrap();

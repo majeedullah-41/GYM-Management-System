@@ -7,6 +7,7 @@ export interface PaymentResponse {
   member_name: string | null;
   member_number: string | null;
   amount: number;
+  discount_amount: number;
   payment_method: string;
   payment_date: string;
   membership_plan_id: string;
@@ -35,6 +36,7 @@ export interface MonthlyBill {
   due_date: string;
   expected_amount: number;
   paid_amount: number;
+  discount_amount: number;
   remaining_amount: number;
   status: "CURRENT" | "DUE" | "PARTIALLY_PAID" | "PAID";
 }
@@ -60,6 +62,11 @@ export interface PaymentSummary {
   bills: MonthlyBill[];
 }
 
+export interface PaymentDiscountRequest {
+  monthly_bill_id: string;
+  amount: number;
+}
+
 export interface CreatePaymentRequest {
   member_id: string;
   membership_plan_id: string;
@@ -71,6 +78,7 @@ export interface CreatePaymentRequest {
   reference?: string | null;
   notes?: string | null;
   idempotency_key?: string | null;
+  discounts?: PaymentDiscountRequest[] | null;
 }
 
 export interface UpdatePaymentRequest {

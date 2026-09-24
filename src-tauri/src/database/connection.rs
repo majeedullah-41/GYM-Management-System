@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_zero_amount_payments() {
+    fn should_reject_negative_amount_payments() {
         let conn = test_db();
 
         conn.execute(
@@ -105,7 +105,7 @@ mod tests {
         let result = conn.execute(
             "INSERT INTO payments (id, receipt_number, member_id, amount, payment_method, \
              payment_date, membership_plan_id, membership_start_date, membership_expiry_date, \
-             created_at, updated_at) VALUES ('p1', 'RCP-002', 'm1', 0, 'Cash', '2026-01-01', \
+             created_at, updated_at) VALUES ('p1', 'RCP-002', 'm1', -1, 'Cash', '2026-01-01', \
              'plan1', '2026-01-01', '2026-02-01', '2026-01-01T00:00:00Z', \
              '2026-01-01T00:00:00Z')",
             [],

@@ -297,6 +297,7 @@ export function MembersPage({
       blood_group: member.blood_group ?? "",
       notes: member.notes ?? "",
       membership_plan_id: member.membership_plan_id ?? "",
+      monthly_fee: member.monthly_fee ? String(member.monthly_fee) : "",
     });
     setFormErrors({});
     setFormOpen(true);
@@ -356,10 +357,17 @@ export function MembersPage({
         notes: visible("notes")
           ? formData.notes.trim() || null
           : existingField("notes"),
-        membership_plan_id: visible("membership_plan_id")
-          ? formData.membership_plan_id || null
+membership_plan_id: visible("membership_plan_id")
+          ? formData.membership_plan_id
+            ? formData.membership_plan_id || null
+            : null
           : existingField("membership_plan_id"),
-      };
+      monthly_fee: visible("membership_plan_id") && formData.membership_plan_id
+        ? formData.monthly_fee
+          ? Number(formData.monthly_fee)
+          : null
+        : editingMember?.monthly_fee ?? null,
+    };
 
       if (editingMember) {
         await updateMember(editingMember.id, payload);
@@ -749,7 +757,19 @@ export function MembersPage({
           visibleFields={visibleFields}
           formData={formData}
           errors={formErrors}
-          onChange={(key, value) => setFormData((p) => ({ ...p, [key]: value }))}
+          onChange={(key, value) =>
+            setFormData((prev) => {
+              if (key === "membership_plan_id") {
+                const plan = plans.find((p) => p.id === value);
+                return {
+                  ...prev,
+                  membership_plan_id: value,
+                  monthly_fee: plan ? String(plan.price) : "",
+                };
+              }
+              return { ...prev, [key]: value };
+            })
+          }
           plans={plans}
           addressSuggestions={addressSuggestions}
         />

@@ -4,6 +4,12 @@ use crate::dto::billing::{MonthlyBillResponse, PaymentAllocationResponse};
 use crate::models::Payment;
 
 #[derive(Debug, Deserialize)]
+pub struct PaymentDiscountRequest {
+    pub monthly_bill_id: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreatePaymentRequest {
     pub member_id: String,
     pub membership_plan_id: String,
@@ -15,6 +21,7 @@ pub struct CreatePaymentRequest {
     pub reference: Option<String>,
     pub notes: Option<String>,
     pub idempotency_key: Option<String>,
+    pub discounts: Option<Vec<PaymentDiscountRequest>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +44,7 @@ pub struct PaymentResponse {
     pub member_name: Option<String>,
     pub member_number: Option<String>,
     pub amount: i64,
+    pub discount_amount: i64,
     pub payment_method: String,
     pub payment_date: String,
     pub membership_plan_id: String,
@@ -88,6 +96,7 @@ impl PaymentResponse {
             member_name,
             member_number,
             amount: payment.amount,
+            discount_amount: payment.discount_amount,
             payment_method: payment.payment_method,
             payment_date: payment.payment_date,
             membership_plan_id: payment.membership_plan_id,

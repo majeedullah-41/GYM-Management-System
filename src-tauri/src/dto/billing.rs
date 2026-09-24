@@ -13,6 +13,7 @@ pub struct MonthlyBillResponse {
     pub due_date: String,
     pub expected_amount: i64,
     pub paid_amount: i64,
+    pub discount_amount: i64,
     pub remaining_amount: i64,
     pub status: String,
 }
@@ -29,7 +30,8 @@ impl From<MonthlyBill> for MonthlyBillResponse {
             due_date: bill.due_date,
             expected_amount: bill.expected_amount,
             paid_amount: bill.paid_amount,
-            remaining_amount: bill.expected_amount - bill.paid_amount,
+            discount_amount: bill.discount_amount,
+            remaining_amount: bill.expected_amount - bill.paid_amount - bill.discount_amount,
             status: bill.status,
         }
     }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { FolderOpen, RefreshCw, Save } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FolderOpen, RefreshCw, UploadCloud } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { useToast } from "../../../components/feedback/ToastProvider";
 import {
@@ -26,9 +26,11 @@ export function LicenseInfoTab() {
     | null
   >(null);
   const [hardwareId, setHardwareId] = useState<string | null>(null);
-  const [pasted, setPasted] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const busyRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     try {
@@ -74,29 +76,103 @@ export function LicenseInfoTab() {
     }
   };
 
+  const processLicenseFile = (file: File) => {
+    if (busy || busyRef.current) return;
+
+    const nameLower = file.name.toLowerCase();
+    if (!nameLower.endsWith(".gymlic") && !nameLower.endsWith(".txt")) {
+      addToast({
+        variant: "error",
+        title: "Invalid file format",
+        message: "Please upload a valid .gymlic license file.",
+      });
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const contents = reader.result;
+        if (typeof contents === "string" && contents.trim().length > 0) {
+          await applyContents(contents);
+        } else {
+          addToast({
+            variant: "error",
+            title: "Empty license file",
+            message: "The selected license file is empty.",
+          });
+        }
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    };
+    reader.onerror = () => {
+      busyRef.current = false;
+      setBusy(false);
+      addToast({
+        variant: "error",
+        title: "Could not read file",
+        message: "Failed to read the selected license file.",
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (busy || busyRef.current) {
+      e.target.value = "";
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (file) {
+      processLicenseFile(file);
+    }
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (busy || busyRef.current) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processLicenseFile(file);
+    }
+  };
+
+  const openBrowserFilePicker = () => {
+    if (busy || busyRef.current) return;
+    fileInputRef.current?.click();
+  };
+
   const chooseFile = async () => {
+    if (busy || busyRef.current) return;
     try {
+      busyRef.current = true;
       setBusy(true);
       const contents = await selectLicenseFile();
-      if (!contents) return;
+      if (contents === null) return;
+      if (!contents.trim()) {
+        addToast({
+          variant: "error",
+          title: "Empty license file",
+          message: "The selected license file is empty.",
+        });
+        return;
+      }
       await applyContents(contents);
     } catch (err) {
       addToast({
         variant: "error",
-        title: "Could not open license file",
-        message: err instanceof Error ? err.message : "Unknown error",
+        title: "Could not open file picker",
+        message: err instanceof Error ? err.message : "Failed to open native file picker.",
       });
     } finally {
-      setBusy(false);
-    }
-  };
-
-  const activatePasted = async () => {
-    try {
-      setBusy(true);
-      await applyContents(pasted);
-      setPasted("");
-    } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -188,28 +264,70 @@ export function LicenseInfoTab() {
       </div>
 
       <div className="rounded-lg border border-border bg-surface p-5">
-        <h3 className="mb-1 text-base font-semibold text-text-primary">Activate from text</h3>
-        <p className="mb-3 text-sm text-text-muted">
-          If you received a license as text, paste it here.
-        </p>
-        <textarea
-          data-testid="settings-license-paste"
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
-          rows={5}
-          placeholder='{"format":"GYMLIC","version":1,...}'
-          value={pasted}
-          onChange={(event) => setPasted(event.target.value)}
+        <div className="mb-4">
+          <h3 className="text-base font-semibold text-text-primary">Upload License File</h3>
+          <p className="text-sm text-text-muted">
+            Upload your <code className="rounded bg-secondary-bg px-1.5 py-0.5 text-xs font-semibold text-text-primary">.gymlic</code> license file to activate or update Gym POS.
+          </p>
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".gymlic,.txt"
+          className="hidden"
+          onChange={handleFileInputChange}
         />
-        <Button
-          type="button"
-          className="mt-2"
-          loading={busy}
-          disabled={pasted.trim() === ""}
-          onClick={activatePasted}
+
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!busy && !busyRef.current) {
+              setIsDragging(true);
+            }
+          }}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            if (!busy && !busyRef.current) {
+              setIsDragging(true);
+            }
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={openBrowserFilePicker}
+          className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center transition-all cursor-pointer ${
+            isDragging
+              ? "border-primary bg-primary/5 scale-[1.005]"
+              : "border-border hover:border-primary/60 hover:bg-secondary-bg/40"
+          } ${busy ? "opacity-60 cursor-not-allowed" : ""}`}
         >
-          <Save size={14} />
-          Activate License
-        </Button>
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <UploadCloud size={24} />
+          </div>
+
+          <p className="text-sm font-medium text-text-primary">
+            Click to choose file or drag and drop here
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            Supports <span className="font-semibold text-text-primary">.gymlic</span> license files
+          </p>
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-4"
+            loading={busy}
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              openBrowserFilePicker();
+            }}
+          >
+            <FolderOpen size={14} />
+            Browse file...
+          </Button>
+        </div>
       </div>
     </div>
   );

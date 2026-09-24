@@ -22,6 +22,7 @@ pub fn create_membership_for_plan(
     member_id: &str,
     plan_id: &str,
     enrollment_date: &str,
+    monthly_fee: Option<i64>,
 ) -> Result<Membership, AppError> {
     let plan = membership_plan_repository::get_by_id(conn, plan_id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Plan '{plan_id}' not found")))?;
@@ -29,6 +30,13 @@ pub fn create_membership_for_plan(
         return Err(AppError::ValidationError(
             "Cannot enroll in an inactive plan".into(),
         ));
+    }
+    if let Some(fee) = monthly_fee {
+        if fee < 0 {
+            return Err(AppError::ValidationError(
+                "Monthly fee cannot be negative".into(),
+            ));
+        }
     }
     let date = parse_date(enrollment_date)?;
     let now = now_iso8601();
@@ -38,7 +46,7 @@ pub fn create_membership_for_plan(
         membership_plan_id: plan_id.to_string(),
         enrollment_date: enrollment_date.to_string(),
         billing_start_date: date.format("%Y-%m-%d").to_string(),
-        agreed_fee: plan.price,
+        agreed_fee: monthly_fee.unwrap_or(plan.price),
         billing_cycle_days: plan.duration_days,
         status: "active".into(),
         status_changed_at: enrollment_date.into(),
@@ -153,6 +161,7 @@ fn ensure_billing_generated_at(
             due_date: cursor.format("%Y-%m-%d").to_string(),
             expected_amount: membership.agreed_fee,
             paid_amount: 0,
+            discount_amount: 0,
             status: if current < following {
                 "CURRENT".into()
             } else {
@@ -184,7 +193,7 @@ pub fn outstanding_amount(conn: &Connection, member_id: &str) -> Result<i64, App
     let bills = billing_repository::list_outstanding_bills(conn, member_id)?;
     Ok(bills
         .iter()
-        .map(|b| b.expected_amount - b.paid_amount)
+        .map(|b| (b.expected_amount - b.paid_amount - b.discount_amount).max(0))
         .sum())
 }
 
@@ -299,6 +308,7 @@ pub fn generate_future_bills(
             due_date: period.period_start.clone(),
             expected_amount: membership.agreed_fee,
             paid_amount: 0,
+            discount_amount: 0,
             status: "CURRENT".into(),
             created_at: now.clone(),
             updated_at: now.clone(),
@@ -308,6 +318,28 @@ pub fn generate_future_bills(
         }
     }
     Ok(bills)
+}
+
+/// Computes the status a bill should carry given its cash paid and discount
+/// balances. A bill is PAID once cash + discount covers its expected amount.
+pub fn bill_status(
+    period_start: &str,
+    period_end: &str,
+    paid: i64,
+    discount: i64,
+    expected: i64,
+    today: &str,
+) -> &'static str {
+    if expected - paid - discount <= 0 {
+        return "PAID";
+    }
+    if paid > 0 {
+        return "PARTIALLY_PAID";
+    }
+    if period_start <= today && period_end >= today {
+        return "CURRENT";
+    }
+    "DUE"
 }
 
 /// Allocates `amount` across the given bills oldest-first, recording one ledger
@@ -326,7 +358,7 @@ pub fn allocate_payment(
         if remaining <= 0 {
             break;
         }
-        let allocated = remaining.min(bill.expected_amount - bill.paid_amount);
+        let allocated = remaining.min(bill.expected_amount - bill.paid_amount - bill.discount_amount);
         billing_repository::create_bill_allocation(
             conn,
             payment_id,
@@ -338,7 +370,7 @@ pub fn allocate_payment(
             now,
         )?;
         let paid = bill.paid_amount + allocated;
-        let status = if paid >= bill.expected_amount {
+        let status = if paid + bill.discount_amount >= bill.expected_amount {
             "PAID"
         } else {
             "PARTIALLY_PAID"
@@ -368,18 +400,22 @@ pub fn get_billing_summary(
     let previous_dues = bills
         .iter()
         .filter(|b| b.period_end.as_str() < today.as_str())
-        .map(|b| b.expected_amount - b.paid_amount)
+        .map(|b| {
+            (b.expected_amount - b.paid_amount - b.discount_amount).max(0)
+        })
         .sum();
     let current_month_fee = bills
         .iter()
         .filter(|b| {
             b.period_start.as_str() <= today.as_str() && b.period_end.as_str() >= today.as_str()
         })
-        .map(|b| b.expected_amount - b.paid_amount)
+        .map(|b| {
+            (b.expected_amount - b.paid_amount - b.discount_amount).max(0)
+        })
         .sum();
     let total_outstanding = bills
         .iter()
-        .map(|b| b.expected_amount - b.paid_amount)
+        .map(|b| (b.expected_amount - b.paid_amount - b.discount_amount).max(0))
         .sum();
     let plan_name = match &membership {
         Some(m) => {
@@ -437,7 +473,7 @@ mod tests {
         let (conn, member, plan) = setup();
         let current = parse_date(&today_iso()).unwrap();
         let start = current - Duration::days(300);
-        create_membership_for_plan(&conn, &member, &plan, &start.format("%Y-%m-%d").to_string())
+        create_membership_for_plan(&conn, &member, &plan, &start.format("%Y-%m-%d").to_string(), None)
             .unwrap();
         ensure_monthly_billing_generated(&conn, &member).unwrap();
         ensure_monthly_billing_generated(&conn, &member).unwrap();
@@ -453,7 +489,7 @@ mod tests {
         let (conn, member, plan) = setup();
         let current = parse_date(&today_iso()).unwrap();
         let start = current - Duration::days(90);
-        create_membership_for_plan(&conn, &member, &plan, &start.format("%Y-%m-%d").to_string())
+        create_membership_for_plan(&conn, &member, &plan, &start.format("%Y-%m-%d").to_string(), None)
             .unwrap();
         let payment = crate::services::payment_service::create_payment(
             &conn,
@@ -467,6 +503,7 @@ mod tests {
                 reference: None,
                 notes: None,
                 idempotency_key: Some("fifo-test".into()),
+                discounts: None,
             },
         )
         .unwrap();
@@ -499,7 +536,7 @@ mod tests {
     #[test]
     fn advance_credit_sums_only_future_bills_paid_in_advance() {
         let (conn, member, plan) = setup();
-        create_membership_for_plan(&conn, &member, &plan, &today_iso()).unwrap();
+        create_membership_for_plan(&conn, &member, &plan, &today_iso(), None).unwrap();
         ensure_monthly_billing_generated(&conn, &member).unwrap();
         let from = next_billing_start(&conn, &member).unwrap();
         generate_future_bills(&conn, &member, &from, 3).unwrap();
@@ -516,6 +553,7 @@ mod tests {
                 reference: None,
                 notes: None,
                 idempotency_key: Some("adv-credit".into()),
+                discounts: None,
             },
         )
         .unwrap();
@@ -527,7 +565,7 @@ mod tests {
     #[test]
     fn ended_membership_does_not_generate_future_bills() {
         let (conn, member, plan) = setup();
-        create_membership_for_plan(&conn, &member, &plan, &today_iso()).unwrap();
+        create_membership_for_plan(&conn, &member, &plan, &today_iso(), None).unwrap();
         end_active_membership(&conn, &member, "cancelled", &today_iso()).unwrap();
         assert_eq!(ensure_monthly_billing_generated(&conn, &member).unwrap(), 0);
         assert_eq!(
@@ -541,7 +579,7 @@ mod tests {
     #[test]
     fn duplicate_request_returns_original_payment() {
         let (conn, member, plan) = setup();
-        create_membership_for_plan(&conn, &member, &plan, &today_iso()).unwrap();
+        create_membership_for_plan(&conn, &member, &plan, &today_iso(), None).unwrap();
         let make_request = || CreatePaymentRequest {
             member_id: member.clone(),
             membership_plan_id: plan.clone(),
@@ -552,6 +590,7 @@ mod tests {
             reference: None,
             notes: None,
             idempotency_key: Some("same-request".into()),
+            discounts: None,
         };
         let first =
             crate::services::payment_service::create_payment(&conn, make_request()).unwrap();
@@ -567,7 +606,7 @@ mod tests {
     #[test]
     fn receipt_failure_rolls_back_payment_and_allocations() {
         let (conn, member, plan) = setup();
-        create_membership_for_plan(&conn, &member, &plan, &today_iso()).unwrap();
+        create_membership_for_plan(&conn, &member, &plan, &today_iso(), None).unwrap();
         conn.execute_batch("CREATE TRIGGER fail_receipt BEFORE INSERT ON receipts BEGIN SELECT RAISE(ABORT, 'receipt failed'); END;").unwrap();
         let result = crate::services::payment_service::create_payment(
             &conn,
@@ -581,6 +620,7 @@ mod tests {
                 reference: None,
                 notes: None,
                 idempotency_key: Some("rollback-test".into()),
+                discounts: None,
             },
         );
         assert!(result.is_err());
@@ -622,6 +662,7 @@ mod tests {
                 reference: None,
                 notes: None,
                 idempotency_key: Some("day-pass-payment".into()),
+                discounts: None,
             },
         )
         .unwrap();
@@ -682,6 +723,7 @@ mod tests {
             &member,
             "weekly",
             &start.format("%Y-%m-%d").to_string(),
+            None,
         )
         .unwrap();
 

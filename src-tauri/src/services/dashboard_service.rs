@@ -130,6 +130,7 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
                 membership_start_date: membership.1,
                 membership_expiry_date: membership.2,
                 membership_status: Some(status),
+                monthly_fee: (billing.monthly_fee > 0).then_some(billing.monthly_fee),
                 outstanding_balance: outstanding,
                 is_paid: outstanding <= 0,
                 created_at: m.created_at.clone(),

@@ -170,6 +170,7 @@ export function ReceiptPreview({ isOpen, onClose, paymentId }: Props) {
                 memberNumber: receipt.member_number,
                 planName: receipt.plan_name,
                 amount: receipt.amount,
+                discountAmount: receipt.discount_amount,
                 remainingBalance: receipt.remaining_balance,
                 paymentMethod: receipt.payment_method,
                 membershipStartDate: receipt.membership_start_date,
@@ -267,6 +268,9 @@ ${
     ? divider +
       (print.show_received_by ? row("Received By", "Admin") : "") +
       (print.show_amount_received ? row("Amount Received", formatCurrency(receipt.amount)) : "") +
+      (receipt.discount_amount > 0
+        ? row("Discount", formatCurrency(receipt.discount_amount))
+        : "") +
       (print.show_method ? row("Method", receipt.payment_method) : "") +
       (print.show_remaining_balance
         ? row("Remaining Amount", formatCurrency(receipt.remaining_balance))

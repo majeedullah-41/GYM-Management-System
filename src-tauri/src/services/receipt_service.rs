@@ -62,7 +62,7 @@ fn assemble_receipt(
     let remaining_balance =
         crate::services::billing_service::get_billing_summary(conn, &payment.member_id)?
             .total_outstanding;
-    let allocations =
+    let allocations: Vec<crate::dto::billing::PaymentAllocationResponse> =
         crate::repositories::billing_repository::list_payment_allocations(conn, &payment.id)?
             .into_iter()
             .map(|(billing_period, period_start, period_end, amount)| {
@@ -74,6 +74,33 @@ fn assemble_receipt(
                 }
             })
             .collect();
+
+    let mut covered_starts: Vec<String> = allocations.iter().map(|a| a.period_start.clone()).collect();
+    let mut covered_ends: Vec<String> = allocations.iter().map(|a| a.period_end.clone()).collect();
+
+    let discounts = crate::repositories::billing_repository::list_payment_discounts(
+        conn,
+        &payment.id,
+    )?;
+    for (bill_id, _) in discounts {
+        if let Some(bill) =
+            crate::repositories::billing_repository::get_bill(conn, &bill_id)?
+        {
+            covered_starts.push(bill.period_start);
+            covered_ends.push(bill.period_end);
+        }
+    }
+
+    let membership_start_date = covered_starts
+        .iter()
+        .min()
+        .cloned()
+        .unwrap_or_else(|| payment.membership_start_date.clone());
+    let membership_expiry_date = covered_ends
+        .iter()
+        .max()
+        .cloned()
+        .unwrap_or_else(|| payment.membership_expiry_date.clone());
 
     Ok(ReceiptResponse {
         id: uuid::Uuid::new_v4().to_string(),
@@ -100,10 +127,11 @@ fn assemble_receipt(
         member_number,
         plan_name,
         amount: payment.amount,
+        discount_amount: payment.discount_amount,
         payment_method: payment.payment_method.clone(),
         payment_date: payment.payment_date.clone(),
-        membership_start_date: payment.membership_start_date.clone(),
-        membership_expiry_date: payment.membership_expiry_date.clone(),
+        membership_start_date,
+        membership_expiry_date,
         payment_month: payment.payment_month.clone(),
         notes: if receipt_settings.show_notes {
             payment.notes.clone()

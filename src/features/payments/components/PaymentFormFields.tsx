@@ -44,8 +44,16 @@ export function PaymentFormFields({
 
   return (
     <div className="space-y-3">
-      {(showAmount || showMethod) && (
-        <div className={showAmount && showMethod ? "grid grid-cols-2 gap-3" : undefined}>
+      {!showMonth && (showAmount || showMethod || showDate) && (
+        <div
+          className={`grid gap-3 ${
+            [showAmount, showMethod, showDate].filter(Boolean).length === 3
+              ? "grid-cols-3"
+              : [showAmount, showMethod, showDate].filter(Boolean).length === 2
+              ? "grid-cols-2"
+              : "grid-cols-1"
+          }`}
+        >
           {showAmount && (
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
@@ -71,11 +79,6 @@ export function PaymentFormFields({
               onChange={(e) => onMethodChange(e.target.value)}
             />
           )}
-        </div>
-      )}
-
-      {(showDate || showMonth) && (
-        <div className={showDate && showMonth ? "grid grid-cols-2 gap-3" : undefined}>
           {showDate && (
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-text-primary">Payment Date *</label>
@@ -89,7 +92,55 @@ export function PaymentFormFields({
               />
             </div>
           )}
-          {showMonth && (
+        </div>
+      )}
+
+      {showMonth && (
+        <>
+          {(showAmount || showMethod) && (
+            <div className={showAmount && showMethod ? "grid grid-cols-2 gap-3" : undefined}>
+              {showAmount && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
+                  <input
+                    type="number"
+                    name="payment_amount"
+                    min={1}
+                    max={amountMax}
+                    placeholder="e.g. 2000"
+                    value={amount}
+                    disabled={disabled}
+                    onChange={(e) => onAmountChange(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              )}
+              {showMethod && (
+                <Select
+                  label="Payment Method *"
+                  options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
+                  value={method}
+                  disabled={disabled}
+                  onChange={(e) => onMethodChange(e.target.value)}
+                />
+              )}
+            </div>
+          )}
+
+          <div className={showDate ? "grid grid-cols-2 gap-3" : undefined}>
+            {showDate && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-text-primary">Payment Date *</label>
+                <input
+                  type="date"
+                  name="payment_date"
+                  value={paymentDate}
+                  disabled={disabled}
+                  onChange={(e) => onPaymentDateChange(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-text-primary">Payment Month</label>
               <input
@@ -102,8 +153,8 @@ export function PaymentFormFields({
                 className={inputClass}
               />
             </div>
-          )}
-        </div>
+          </div>
+        </>
       )}
 
       {showNotes && (

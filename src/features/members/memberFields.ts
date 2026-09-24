@@ -9,7 +9,8 @@ export type MemberFieldKey =
   | "blood_group"
   | "address"
   | "notes"
-  | "membership_plan_id";
+  | "membership_plan_id"
+  | "monthly_fee";
 
 export interface MemberFieldDef {
   key: MemberFieldKey;
@@ -80,6 +81,7 @@ export interface FormData {
   blood_group: string;
   notes: string;
   membership_plan_id: string;
+  monthly_fee: string;
 }
 
 export const EMPTY_FORM: FormData = {
@@ -94,6 +96,7 @@ export const EMPTY_FORM: FormData = {
   blood_group: "",
   notes: "",
   membership_plan_id: "",
+  monthly_fee: "",
 };
 
 export function todayIso(): string {

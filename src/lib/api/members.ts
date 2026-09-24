@@ -19,6 +19,7 @@ export interface MemberResponse {
   membership_start_date: string | null;
   membership_expiry_date: string | null;
   membership_status: string | null;
+  monthly_fee: number | null;
   outstanding_balance: number;
   is_paid: boolean;
   created_at: string;
@@ -37,6 +38,7 @@ export interface CreateMemberRequest {
   notes: string | null;
   admission_date?: string | null;
   membership_plan_id?: string | null;
+  monthly_fee?: number | null;
 }
 
 export interface UpdateMemberRequest {
@@ -51,6 +53,7 @@ export interface UpdateMemberRequest {
   notes: string | null;
   admission_date?: string | null;
   membership_plan_id?: string | null;
+  monthly_fee?: number | null;
 }
 
 export async function createMember(

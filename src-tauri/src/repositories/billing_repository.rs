@@ -65,8 +65,9 @@ pub fn end_membership(
 pub fn insert_bill(conn: &Connection, bill: &MonthlyBill) -> Result<bool, AppError> {
     let changed = conn.execute(
         "INSERT INTO monthly_membership_bills (id, membership_id, member_id, membership_plan_id, \
-         billing_period, period_start, period_end, due_date, expected_amount, paid_amount, status, \
-         created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) \
+         billing_period, period_start, period_end, due_date, expected_amount, paid_amount, \
+         discount_amount, status, created_at, updated_at) \
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) \
          ON CONFLICT(membership_id, billing_period) DO NOTHING",
         params![
             bill.id,
@@ -79,6 +80,7 @@ pub fn insert_bill(conn: &Connection, bill: &MonthlyBill) -> Result<bool, AppErr
             bill.due_date,
             bill.expected_amount,
             bill.paid_amount,
+            bill.discount_amount,
             bill.status,
             bill.created_at,
             bill.updated_at
@@ -123,8 +125,9 @@ pub fn normalize_initial_cycle(
 pub fn list_member_bills(conn: &Connection, member_id: &str) -> Result<Vec<MonthlyBill>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT id, membership_id, member_id, membership_plan_id, billing_period, period_start, \
-         period_end, due_date, expected_amount, paid_amount, status, created_at, updated_at \
-         FROM monthly_membership_bills WHERE member_id=?1 ORDER BY period_start ASC, created_at ASC")?;
+         period_end, due_date, expected_amount, paid_amount, discount_amount, status, created_at, \
+         updated_at FROM monthly_membership_bills WHERE member_id=?1 ORDER BY period_start ASC, \
+         created_at ASC")?;
     let rows = stmt
         .query_map(params![member_id], row_to_bill)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -137,9 +140,9 @@ pub fn list_outstanding_bills(
 ) -> Result<Vec<MonthlyBill>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT id, membership_id, member_id, membership_plan_id, billing_period, period_start, \
-         period_end, due_date, expected_amount, paid_amount, status, created_at, updated_at \
-         FROM monthly_membership_bills WHERE member_id=?1 AND paid_amount < expected_amount \
-         ORDER BY period_start ASC, created_at ASC",
+         period_end, due_date, expected_amount, paid_amount, discount_amount, status, created_at, \
+         updated_at FROM monthly_membership_bills WHERE member_id=?1 AND \
+         expected_amount - paid_amount - discount_amount > 0 ORDER BY period_start ASC, created_at ASC",
     )?;
     let rows = stmt
         .query_map(params![member_id], row_to_bill)?
@@ -157,6 +160,107 @@ pub fn set_bill_paid(
     conn.execute(
         "UPDATE monthly_membership_bills SET paid_amount=?2, status=?3, updated_at=?4 WHERE id=?1",
         params![bill_id, paid, status, now],
+    )?;
+    Ok(())
+}
+
+pub fn set_bill_discount(
+    conn: &Connection,
+    bill_id: &str,
+    discount: i64,
+    status: &str,
+    now: &str,
+) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE monthly_membership_bills SET discount_amount=?2, status=?3, updated_at=?4 WHERE id=?1",
+        params![bill_id, discount, status, now],
+    )?;
+    Ok(())
+}
+
+pub fn set_membership_fee(
+    conn: &Connection,
+    membership_id: &str,
+    fee: i64,
+    now: &str,
+) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE memberships SET agreed_fee=?2, updated_at=?3 WHERE id=?1",
+        params![membership_id, fee, now],
+    )?;
+    Ok(())
+}
+
+/// Re-prices a membership's untouched-bill rows when its agreed fee changes.
+/// Bills with any cash paid, any discount, or a PAID status keep their
+/// historical amounts and are excluded from repricing.
+pub fn update_open_bill_expected(
+    conn: &Connection,
+    membership_id: &str,
+    fee: i64,
+    now: &str,
+) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE monthly_membership_bills SET expected_amount=?2, updated_at=?3 \
+         WHERE membership_id=?1 AND status != 'PAID' AND paid_amount = 0 AND discount_amount = 0",
+        params![membership_id, fee, now],
+    )?;
+    Ok(())
+}
+
+pub fn get_bill(conn: &Connection, bill_id: &str) -> Result<Option<MonthlyBill>, AppError> {
+    conn.query_row(
+        "SELECT id, membership_id, member_id, membership_plan_id, billing_period, period_start, \
+         period_end, due_date, expected_amount, paid_amount, discount_amount, status, created_at, \
+         updated_at FROM monthly_membership_bills WHERE id=?1",
+        params![bill_id],
+        row_to_bill,
+    ).optional().map_err(Into::into)
+}
+
+pub fn create_payment_discount(
+    conn: &Connection,
+    payment_id: &str,
+    bill_id: &str,
+    member_id: &str,
+    amount: i64,
+    now: &str,
+) -> Result<(), AppError> {
+    conn.execute(
+        "INSERT INTO payment_discounts (id, payment_id, monthly_bill_id, member_id, amount, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            payment_id,
+            bill_id,
+            member_id,
+            amount,
+            now
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_payment_discounts(
+    conn: &Connection,
+    payment_id: &str,
+) -> Result<Vec<(String, i64)>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT monthly_bill_id, amount FROM payment_discounts WHERE payment_id=?1",
+    )?;
+    let rows = stmt
+        .query_map(params![payment_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn delete_payment_discounts_for_payment(
+    conn: &Connection,
+    payment_id: &str,
+) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM payment_discounts WHERE payment_id = ?1",
+        params![payment_id],
     )?;
     Ok(())
 }
@@ -220,7 +324,8 @@ pub fn list_payment_bill_allocations(
 
 pub fn total_outstanding(conn: &Connection) -> Result<i64, AppError> {
     Ok(conn.query_row(
-        "SELECT COALESCE(SUM(expected_amount-paid_amount),0) FROM monthly_membership_bills",
+        "SELECT COALESCE(SUM(expected_amount-paid_amount-discount_amount),0) \
+         FROM monthly_membership_bills",
         [],
         |r| r.get(0),
     )?)
@@ -255,8 +360,9 @@ fn row_to_bill(row: &rusqlite::Row<'_>) -> Result<MonthlyBill, rusqlite::Error> 
         due_date: row.get(7)?,
         expected_amount: row.get(8)?,
         paid_amount: row.get(9)?,
-        status: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        discount_amount: row.get(10)?,
+        status: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }

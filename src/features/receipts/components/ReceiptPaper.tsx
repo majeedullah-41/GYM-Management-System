@@ -20,6 +20,7 @@ export interface ReceiptPaperData {
   memberNumber: string;
   planName: string;
   amount: number;
+  discountAmount?: number;
   remainingBalance: number;
   paymentMethod: string;
   membershipStartDate: string;
@@ -130,6 +131,9 @@ export function ReceiptPaper({
             {print.show_received_by && <ReceiptField label="Received By" value="Admin" />}
             {print.show_amount_received && (
               <ReceiptField label="Amount Received" value={formatCurrency(data.amount)} />
+            )}
+            {!!data.discountAmount && data.discountAmount > 0 && (
+              <ReceiptField label="Discount" value={formatCurrency(data.discountAmount)} />
             )}
             {print.show_method && (
               <ReceiptField label="Method" value={data.paymentMethod} />

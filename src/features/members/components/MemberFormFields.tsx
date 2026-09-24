@@ -73,6 +73,21 @@ export function MemberFormFields({
           </div>
         );
       })}
+      {formData.membership_plan_id && visibleFields.has("membership_plan_id") && (
+        <Input
+          label="Monthly Fee *"
+          type="number"
+          min={0}
+          placeholder={formatCurrency(
+            plans.find((p) => p.id === formData.membership_plan_id)?.price ?? 0,
+          )}
+          value={formData.monthly_fee}
+          onChange={(e) => onChange("monthly_fee", e.target.value.replace(/\D/g, ""))}
+          error={errors.monthly_fee}
+          disabled={disabled}
+          className="col-span-2"
+        />
+      )}
     </div>
   );
 }

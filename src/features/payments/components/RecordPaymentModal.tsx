@@ -77,6 +77,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
   const [currentPlanLoading, setCurrentPlanLoading] = useState(false);
   const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [discounts, setDiscounts] = useState<Record<string, string>>({});
   const [formFieldKeys, setFormFieldKeys] = useState<PaymentFieldKey[]>(
     DEFAULT_VISIBLE_PAYMENT_FIELDS,
   );
@@ -117,6 +118,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     setCompletedPaymentId(null);
     setSummary(null);
     setDetailsOpen(false);
+    setDiscounts({});
     setMemberDropdownOpen(false);
     requestKeyRef.current = crypto.randomUUID();
   }, [isOpen, initialMemberId]);
@@ -180,10 +182,14 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     }
     setSummaryLoading(true);
     setDetailsOpen(false);
+    setDiscounts({});
     getPaymentSummary(selectedMember.id, selectedPlanId)
       .then((result) => {
         setSummary(result);
         setAmount(String(result.outstanding));
+        if (result.bills.some((b) => b.remaining_amount > 0)) {
+          setDetailsOpen(true);
+        }
       })
       .catch(() => setSummary(null))
       .finally(() => setSummaryLoading(false));
@@ -201,7 +207,49 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
   }, [members, memberSearch]);
 
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
-  const outstandingBills = summary?.bills.filter((bill) => bill.remaining_amount > 0) ?? [];
+  const outstandingBills = useMemo(
+    () => summary?.bills.filter((bill) => bill.remaining_amount > 0) ?? [],
+    [summary],
+  );
+
+  const totalDiscount = useMemo(
+    () =>
+      outstandingBills.reduce((sum, bill) => {
+        const raw = discounts[bill.id];
+        return sum + (raw ? Math.floor(Number(raw)) || 0 : 0);
+      }, 0),
+    [outstandingBills, discounts],
+  );
+
+  const payableAfterDiscount = useMemo(
+    () =>
+      outstandingBills.reduce((sum, bill) => {
+        const raw = discounts[bill.id];
+        const disc = raw ? Math.floor(Number(raw)) || 0 : 0;
+        return sum + Math.max(0, bill.remaining_amount - disc);
+      }, 0),
+    [outstandingBills, discounts],
+  );
+
+  const handleDiscountChange = (billId: string, value: string) => {
+    const bill = outstandingBills.find((b) => b.id === billId);
+    if (!bill) return;
+    const numeric = Math.floor(Number(value.replace(/[^\d]/g, "")) || 0);
+    const clamped = Math.min(numeric, Math.max(0, bill.remaining_amount));
+    const next = { ...discounts };
+    if (clamped <= 0) {
+      delete next[billId];
+    } else {
+      next[billId] = String(clamped);
+    }
+    setDiscounts(next);
+    const payable = outstandingBills.reduce((sum, b) => {
+      const raw = next[b.id];
+      const disc = raw ? Math.floor(Number(raw)) || 0 : 0;
+      return sum + Math.max(0, b.remaining_amount - disc);
+    }, 0);
+    setAmount(String(payable));
+  };
 
   const selectMember = (member: MemberResponse) => {
     setSelectedMember(member);
@@ -210,6 +258,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     setSelectedPlanId("");
     setSummary(null);
     setAmount("");
+    setDiscounts({});
   };
 
   const handleSubmit = async () => {
@@ -222,7 +271,16 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
       return;
     }
     const amountNumber = Number(amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+    if (!Number.isFinite(amountNumber) || amountNumber < 0) {
+      addToast({ variant: "warning", title: "Enter a valid amount" });
+      return;
+    }
+    const discountEntries = outstandingBills.flatMap((bill) => {
+      const raw = discounts[bill.id];
+      const discountAmount = raw ? Math.floor(Number(raw)) || 0 : 0;
+      return discountAmount > 0 ? [{ monthly_bill_id: bill.id, amount: discountAmount }] : [];
+    });
+    if (amountNumber === 0 && discountEntries.length === 0) {
       addToast({ variant: "warning", title: "Enter a valid amount" });
       return;
     }
@@ -240,6 +298,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
         reference: null,
         notes: notes.trim() || null,
         idempotency_key: requestKeyRef.current,
+        discounts: discountEntries,
       });
       addToast({
         variant: "success",
@@ -265,15 +324,15 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
         isOpen={isOpen}
         onClose={onClose}
         title="Record Payment"
-        maxWidthClassName="max-w-lg"
+        maxWidthClassName="max-w-3xl"
         compact
         footer={
           completedPaymentId ? (
-            <Button size="sm" variant="secondary" onClick={onClose}>Done</Button>
+            <Button variant="secondary" onClick={onClose}>Done</Button>
           ) : (
             <>
-              <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button size="sm" loading={submitting} onClick={handleSubmit}>Record Payment</Button>
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              <Button loading={submitting} onClick={handleSubmit}>Record Payment</Button>
             </>
           )
         }
@@ -284,7 +343,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
             <p className="text-sm text-text-muted">The receipt is ready to view or print.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             {!selectedMember && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-text-primary">Member *</label>
@@ -328,9 +387,9 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
             )}
 
             {selectedMember && (
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-border p-3">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-surface p-3 px-4">
                 <div className="flex min-w-0 items-center gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-base font-bold text-primary">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-base font-bold text-primary">
                     {memberInitials(selectedMember.full_name)}
                   </div>
                   <div className="min-w-0">
@@ -346,6 +405,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
                           setSelectedPlanId("");
                           setSummary(null);
                           setAmount("");
+                          setDiscounts({});
                         }}
                       >
                         Change member
@@ -353,7 +413,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
                     )}
                   </div>
                 </div>
-                <div className="h-14 w-px bg-border" />
+                <div className="h-14 w-px bg-slate-300 dark:bg-slate-700" />
                 {selectedPlan ? (
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -361,7 +421,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
                       <div className="text-base font-semibold text-text-primary">{selectedPlan.name}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-base font-bold text-primary">{formatCurrency(selectedPlan.price)}</div>
+                      <div className="text-base font-bold text-primary">{formatCurrency(summary?.plan_price ?? selectedPlan.price)}</div>
                       <div className="text-xs text-text-muted">{planCadence(selectedPlan)}</div>
                     </div>
                   </div>
@@ -391,8 +451,8 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
             {summaryLoading && <div className="py-2 text-center text-sm text-text-muted">Loading payment details...</div>}
 
             {summary && selectedMember && visibleFields.has("summary") && (
-              <div className="overflow-hidden rounded-xl bg-secondary-bg">
-                <div className="grid grid-cols-[1fr_auto_1.2fr] items-center gap-3 p-3">
+              <div className="overflow-hidden rounded-xl border border-slate-300 dark:border-slate-700 bg-secondary-bg">
+                <div className="grid grid-cols-[1fr_auto_1.2fr] items-center gap-3 p-3 px-4">
                   <div>
                     <div className="text-sm font-medium text-text-muted">Last Paid</div>
                     {lastPayment ? (
@@ -404,21 +464,21 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
                       <div className="mt-2 text-sm text-text-muted">No previous payment</div>
                     )}
                   </div>
-                  <div className="h-14 w-px bg-border" />
+                  <div className="h-14 w-px bg-slate-300 dark:bg-slate-700" />
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <div className="text-sm font-medium text-text-muted">Outstanding Due</div>
-                      <div className={`text-base font-bold ${summary.outstanding > 0 ? "text-red-600" : "text-green-600"}`}>
+                      <div className={`text-lg font-bold ${summary.outstanding > 0 ? "text-red-600" : "text-green-600"}`}>
                         {formatCurrency(summary.outstanding)}
                       </div>
-                      <div className="text-sm text-text-muted">
+                      <div className="text-xs text-text-muted">
                         {outstandingBills.length} unpaid {outstandingBills.length === 1 ? "period" : "periods"}
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => setDetailsOpen((open) => !open)}
-                      className="flex shrink-0 items-center gap-1 rounded-md px-1 py-1 text-xs font-medium text-primary hover:bg-blue-50"
+                      className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-blue-50"
                       aria-expanded={detailsOpen}
                     >
                       {detailsOpen ? "Hide Details" : "View Details"}
@@ -427,23 +487,112 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
                   </div>
                 </div>
                 {detailsOpen && (
-                  <div className="border-t border-border bg-surface px-4 py-2">
+                  <div className="border-t border-slate-300 dark:border-slate-700 bg-surface">
                     {outstandingBills.length ? (
-                      <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
-                        {outstandingBills.map((bill) => (
-                          <div key={bill.id} className="flex items-center justify-between gap-4 text-sm">
-                            <div>
-                              <span className="font-medium text-text-primary">{bill.period_start} to {bill.period_end}</span>
-                              <span className="ml-2 text-xs text-text-muted">
-                                {bill.status === "PARTIALLY_PAID" ? "Partially paid" : bill.status === "CURRENT" ? "Current" : "Due"}
-                              </span>
-                            </div>
-                            <span className="shrink-0 font-semibold text-red-600">{formatCurrency(bill.remaining_amount)}</span>
-                          </div>
-                        ))}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm border-collapse">
+                          <thead className="border-b border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                            <tr>
+                              <th scope="col" className="px-4 py-2.5 text-left whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">Period</th>
+                              <th scope="col" className="px-3 py-2.5 text-center whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">Status</th>
+                              <th scope="col" className="px-4 py-2.5 text-right whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">Due Amount</th>
+                              <th scope="col" className="px-4 py-2.5 text-right whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">Discount (PKR)</th>
+                              <th scope="col" className="px-4 py-2.5 text-right whitespace-nowrap">Net Due</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {outstandingBills.map((bill) => {
+                              const discountValue = discounts[bill.id];
+                              const discountNumber = discountValue
+                                ? Math.floor(Number(discountValue)) || 0
+                                : 0;
+                              const dueAfter = Math.max(0, bill.remaining_amount - discountNumber);
+                              const isWaived = discountNumber === bill.remaining_amount && bill.remaining_amount > 0;
+                              return (
+                                <tr
+                                  key={bill.id}
+                                  className={`transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
+                                    isWaived ? "bg-green-50/40 dark:bg-green-950/15" : ""
+                                  }`}
+                                >
+                                  <td className="px-4 py-2 font-medium text-text-primary whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                    {bill.period_start} to {bill.period_end}
+                                  </td>
+                                  <td className="px-3 py-2 text-center whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                    <span
+                                      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${
+                                        bill.status === "PARTIALLY_PAID"
+                                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                                          : bill.status === "CURRENT"
+                                          ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                                          : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                                      }`}
+                                    >
+                                      {bill.status === "PARTIALLY_PAID"
+                                        ? "Partially paid"
+                                        : bill.status === "CURRENT"
+                                        ? "Current"
+                                        : "Due"}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-semibold text-text-primary whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                    {formatCurrency(bill.remaining_amount)}
+                                  </td>
+                                  <td className="px-4 py-2 text-right whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={0}
+                                        max={bill.remaining_amount}
+                                        value={discountValue ?? ""}
+                                        onChange={(event) =>
+                                          handleDiscountChange(bill.id, event.target.value)
+                                        }
+                                        placeholder="0"
+                                        className={`w-24 rounded-md border px-2.5 py-1 text-right text-sm transition-colors focus:ring-1 ${
+                                          discountNumber > 0
+                                            ? "border-green-500 bg-green-50/50 text-green-700 font-semibold focus:border-green-600 focus:ring-green-600 dark:border-green-600 dark:bg-green-950/30 dark:text-green-300"
+                                            : "border-slate-300 dark:border-slate-600 bg-surface text-text-primary placeholder:text-text-muted focus:border-primary focus:ring-primary"
+                                        }`}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-semibold whitespace-nowrap">
+                                    <span className={dueAfter === 0 ? "text-slate-400 font-normal" : "text-red-600 dark:text-red-400"}>
+                                      {formatCurrency(dueAfter)}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800 text-sm font-semibold">
+                              <td colSpan={2} className="px-4 py-2.5 text-slate-600 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                Total ({outstandingBills.length} {outstandingBills.length === 1 ? "period" : "periods"})
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-text-primary whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                {formatCurrency(summary.outstanding)}
+                              </td>
+                              <td className="px-4 py-2.5 text-right whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                {totalDiscount > 0 ? (
+                                  <span className="text-green-700 dark:text-green-400">
+                                    -{formatCurrency(totalDiscount)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-normal">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-bold text-primary whitespace-nowrap">
+                                {formatCurrency(payableAfterDiscount)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
                       </div>
                     ) : (
-                      <div className="text-sm text-text-muted">No unpaid periods.</div>
+                      <div className="py-2.5 text-center text-xs text-text-muted">No unpaid periods.</div>
                     )}
                   </div>
                 )}

@@ -6,6 +6,7 @@ pub struct Payment {
     pub receipt_number: String,
     pub member_id: String,
     pub amount: i64,
+    pub discount_amount: i64,
     pub payment_method: String,
     pub payment_date: String,
     pub membership_plan_id: String,

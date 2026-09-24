@@ -241,6 +241,7 @@ mod tests {
             member_number: "M-001".to_string(),
             plan_name: "Monthly".to_string(),
             amount: 25000,
+            discount_amount: 0,
             payment_method: "Cash".to_string(),
             payment_date: "2026-08-28".to_string(),
             membership_start_date: "2026-08-28".to_string(),

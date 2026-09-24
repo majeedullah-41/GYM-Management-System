@@ -5,9 +5,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::errors::AppError;
 use crate::models::Payment;
 
-const SELECT_COLS: &str = "id, receipt_number, member_id, amount, payment_method, payment_date, \
-     membership_plan_id, membership_start_date, membership_expiry_date, payment_month, description, reference, \
-     notes, is_voided, voided_at, void_reason, created_at, updated_at";
+const SELECT_COLS: &str = "id, receipt_number, member_id, amount, discount_amount, payment_method, \
+     payment_date, membership_plan_id, membership_start_date, membership_expiry_date, payment_month, \
+     description, reference, notes, is_voided, voided_at, void_reason, created_at, updated_at";
 
 /// Represents a distinct membership period for a member (one cycle of a plan):
 /// the plan, its start/expiry window, the plan's full price, and how much has
@@ -21,15 +21,16 @@ struct MemberPeriod {
 
 pub fn create(conn: &Connection, payment: &Payment) -> Result<(), AppError> {
     conn.execute(
-        "INSERT INTO payments (id, receipt_number, member_id, amount, payment_method, \
+        "INSERT INTO payments (id, receipt_number, member_id, amount, discount_amount, payment_method, \
          payment_date, membership_plan_id, membership_start_date, membership_expiry_date, \
          payment_month, description, reference, notes, is_voided, voided_at, void_reason, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0, NULL, NULL, ?14, ?15)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0, NULL, NULL, ?15, ?16)",
         params![
             payment.id,
             payment.receipt_number,
             payment.member_id,
             payment.amount,
+            payment.discount_amount,
             payment.payment_method,
             payment.payment_date,
             payment.membership_plan_id,
@@ -137,7 +138,7 @@ pub fn list(
     };
 
     let sql = format!(
-        "SELECT p.id, p.receipt_number, p.member_id, p.amount, p.payment_method, \
+        "SELECT p.id, p.receipt_number, p.member_id, p.amount, p.discount_amount, p.payment_method, \
          p.payment_date, p.membership_plan_id, p.membership_start_date, \
          p.membership_expiry_date, p.payment_month, p.description, p.reference, p.notes, p.is_voided, \
          p.voided_at, p.void_reason, p.created_at, p.updated_at \
@@ -447,20 +448,21 @@ fn row_to_payment(row: &rusqlite::Row) -> Result<Payment, rusqlite::Error> {
         receipt_number: row.get(1)?,
         member_id: row.get(2)?,
         amount: row.get(3)?,
-        payment_method: row.get(4)?,
-        payment_date: row.get(5)?,
-        membership_plan_id: row.get(6)?,
-        membership_start_date: row.get(7)?,
-        membership_expiry_date: row.get(8)?,
-        payment_month: row.get(9)?,
-        description: row.get(10)?,
-        reference: row.get(11)?,
-        notes: row.get(12)?,
-        is_voided: row.get::<_, i32>(13)? != 0,
-        voided_at: row.get(14)?,
-        void_reason: row.get(15)?,
-        created_at: row.get(16)?,
-        updated_at: row.get(17)?,
+        discount_amount: row.get(4)?,
+        payment_method: row.get(5)?,
+        payment_date: row.get(6)?,
+        membership_plan_id: row.get(7)?,
+        membership_start_date: row.get(8)?,
+        membership_expiry_date: row.get(9)?,
+        payment_month: row.get(10)?,
+        description: row.get(11)?,
+        reference: row.get(12)?,
+        notes: row.get(13)?,
+        is_voided: row.get::<_, i32>(14)? != 0,
+        voided_at: row.get(15)?,
+        void_reason: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
     })
 }
 
@@ -510,6 +512,7 @@ mod tests {
             receipt_number: format!("RCP-{:06}", num),
             member_id: member_id.to_string(),
             amount,
+            discount_amount: 0,
             payment_method: "Cash".to_string(),
             payment_date: "2025-01-15".to_string(),
             membership_plan_id: plan_id.to_string(),

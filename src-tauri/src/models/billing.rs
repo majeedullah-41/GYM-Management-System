@@ -28,6 +28,7 @@ pub struct MonthlyBill {
     pub due_date: String,
     pub expected_amount: i64,
     pub paid_amount: i64,
+    pub discount_amount: i64,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,

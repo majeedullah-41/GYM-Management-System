@@ -15,6 +15,7 @@ pub struct ReceiptResponse {
     pub member_number: String,
     pub plan_name: String,
     pub amount: i64,
+    pub discount_amount: i64,
     pub payment_method: String,
     pub payment_date: String,
     pub membership_start_date: String,
