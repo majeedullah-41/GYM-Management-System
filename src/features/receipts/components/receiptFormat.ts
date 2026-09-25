@@ -12,21 +12,39 @@ export function receiptFooterText(footer?: string | null): string {
   return value;
 }
 
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
 export function formatReceiptDate(issuedAt: string): string {
   const date = new Date(issuedAt);
   if (Number.isNaN(date.getTime())) return issuedAt;
   const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const month = MONTH_NAMES[date.getMonth()] || String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
   const time = date.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
   });
-  return `${day}/${month}/${year} ${time}`;
+  return `${day} ${month} ${year} ${time}`;
 }
 
 export function formatReceiptPeriodDate(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  return match ? `${match[3]}/${match[2]}/${match[1].slice(2)}` : value;
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(value);
+  if (!match) return value;
+  const mIndex = parseInt(match[2], 10) - 1;
+  const mName = MONTH_NAMES[mIndex] || match[2];
+  return `${match[3]} ${mName} ${match[1]}`;
 }

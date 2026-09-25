@@ -12,7 +12,7 @@ import {
 } from "../../../lib/api/payments";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { getPaymentFormSettings } from "../../../lib/api/settings";
-import { formatCurrency } from "../../../lib/utils/format";
+import { formatCurrency, formatPeriod } from "../../../lib/utils/format";
 import { ReceiptPreview } from "../../receipts/components/ReceiptPreview";
 import { PaymentFormFields } from "../../payments/components/PaymentFormFields";
 import {
@@ -201,6 +201,7 @@ export function RecordPaymentModal({
         isOpen={isOpen}
         onClose={onClose}
         title={`Record Payment — ${memberName}`}
+        maxWidthClassName="max-w-2xl"
         footer={
           completedPaymentId ? (
             <Button
@@ -281,7 +282,7 @@ export function RecordPaymentModal({
                 {outstandingBills.slice(0, 2).map((bill) => (
                   <div key={bill.id} className="flex justify-between text-xs">
                     <span>
-                      {bill.period_start} to {bill.period_end} ·{" "}
+                      {formatPeriod(bill.period_start, bill.period_end)} ·{" "}
                       {bill.status.replace("PARTIALLY_PAID", "PARTIAL")}
                     </span>
                     <span>{formatCurrency(bill.remaining_amount)}</span>

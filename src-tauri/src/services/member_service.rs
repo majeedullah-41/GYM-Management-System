@@ -223,31 +223,103 @@ pub fn update_member(
             &crate::utils::dates::today_iso(),
         )?;
         if let Some(ref plan_id) = member.membership_plan_id {
+            let today = crate::utils::dates::today_iso();
+            let has_history =
+                crate::repositories::billing_repository::has_membership_history(&tx, id)?;
+            let has_payments = member_repository::has_any_payments(&tx, id)?;
+            let start_date = if !has_history && !has_payments {
+                member
+                    .admission_date
+                    .as_deref()
+                    .filter(|d| *d <= today.as_str())
+                    .unwrap_or(today.as_str())
+            } else {
+                today.as_str()
+            };
             crate::services::billing_service::create_membership_for_plan(
                 &tx,
                 id,
                 plan_id,
-                &crate::utils::dates::today_iso(),
+                start_date,
                 request.monthly_fee,
             )?;
         }
-    } else if let Some(fee) = request.monthly_fee {
-        if fee < 0 {
-            return Err(AppError::ValidationError(
-                "Monthly fee cannot be negative".into(),
-            ));
-        }
-        let now = now_iso8601();
-        if let Some(membership) =
-            crate::repositories::billing_repository::get_open_membership(&tx, id)?
-        {
-            if membership.agreed_fee != fee {
-                crate::repositories::billing_repository::set_membership_fee(
-                    &tx, &membership.id, fee, &now,
-                )?;
-                crate::repositories::billing_repository::update_open_bill_expected(
-                    &tx, &membership.id, fee, &now,
-                )?;
+    } else if let Some(ref plan_id) = member.membership_plan_id {
+        let open_m = crate::repositories::billing_repository::get_open_membership(&tx, id)?;
+        match open_m {
+            None => {
+                if !member.is_archived {
+                    let has_history =
+                        crate::repositories::billing_repository::has_membership_history(&tx, id)?;
+                    if !has_history {
+                        let today = crate::utils::dates::today_iso();
+                        let has_payments = member_repository::has_any_payments(&tx, id)?;
+                        let adm_valid = member
+                            .admission_date
+                            .as_deref()
+                            .and_then(|d| crate::utils::dates::parse_date(d).ok())
+                            .and_then(|d| {
+                                crate::utils::dates::parse_date(&today).ok().map(|t| (d, t))
+                            })
+                            .filter(|(d, t)| d <= t)
+                            .map(|(d, _)| d.format("%Y-%m-%d").to_string());
+                        let start_date = if !has_payments && adm_valid.is_some() {
+                            adm_valid.as_deref().unwrap_or(today.as_str())
+                        } else {
+                            today.as_str()
+                        };
+                        crate::services::billing_service::create_membership_for_plan(
+                            &tx,
+                            id,
+                            plan_id,
+                            start_date,
+                            request.monthly_fee,
+                        )?;
+                    }
+                }
+            }
+            Some(mut membership) => {
+                if let Some(fee) = request.monthly_fee {
+                    if fee < 0 {
+                        return Err(AppError::ValidationError(
+                            "Monthly fee cannot be negative".into(),
+                        ));
+                    }
+                    let now = now_iso8601();
+                    if membership.agreed_fee != fee {
+                        crate::repositories::billing_repository::set_membership_fee(
+                            &tx, &membership.id, fee, &now,
+                        )?;
+                        crate::repositories::billing_repository::update_open_bill_expected(
+                            &tx, &membership.id, fee, &now,
+                        )?;
+                        membership.agreed_fee = fee;
+                    }
+                }
+                if let Some(ref adm) = member.admission_date {
+                    let today = crate::utils::dates::today_iso();
+                    if let (Ok(adm_date), Ok(bstart_date), Ok(today_date)) = (
+                        crate::utils::dates::parse_date(adm),
+                        crate::utils::dates::parse_date(&membership.billing_start_date),
+                        crate::utils::dates::parse_date(&today),
+                    ) {
+                        if adm_date < bstart_date && adm_date <= today_date {
+                            let other_memberships: i64 = tx.query_row(
+                                "SELECT COUNT(*) FROM memberships WHERE member_id = ?1 AND id != ?2",
+                                rusqlite::params![id, &membership.id],
+                                |r| r.get(0),
+                            )?;
+                            let has_payments = member_repository::has_any_payments(&tx, id)?;
+                            if other_memberships == 0 && !has_payments {
+                                crate::services::billing_service::adjust_membership_start_date(
+                                    &tx,
+                                    &membership.id,
+                                    &adm_date.format("%Y-%m-%d").to_string(),
+                                )?;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -687,6 +759,120 @@ mod tests {
     }
 
     #[test]
+    fn should_backfill_dues_when_plan_assigned_via_update_member() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-update-assign", "Monthly Plan");
+        let admission = (chrono::Local::now().date_naive() - chrono::Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+        // Member created without a plan
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                admission_date: Some(admission.clone()),
+                membership_plan_id: None,
+                ..valid_request("Bilal")
+            },
+        )
+        .unwrap();
+
+        // Later updated to assign a plan
+        let updated = update_member(
+            &conn,
+            &created.id,
+            UpdateMemberRequest {
+                full_name: "Bilal".to_string(),
+                father_name: None,
+                phone: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                admission_date: Some(admission.clone()),
+                membership_plan_id: Some("plan-update-assign".to_string()),
+                monthly_fee: None,
+            },
+        )
+        .unwrap();
+
+        let membership =
+            crate::repositories::billing_repository::get_open_membership(&conn, &updated.id)
+                .unwrap()
+                .expect("open membership");
+        assert_eq!(membership.enrollment_date, admission);
+        assert_eq!(membership.billing_start_date, admission);
+
+        let bills =
+            crate::repositories::billing_repository::list_member_bills(&conn, &updated.id).unwrap();
+        assert_eq!(bills.len(), 4);
+        assert_eq!(
+            bills.iter().map(|b| b.status.as_str()).collect::<Vec<_>>(),
+            vec!["DUE", "DUE", "DUE", "CURRENT"]
+        );
+        assert_eq!(updated.outstanding_balance, 8000);
+    }
+
+    #[test]
+    fn should_backfill_dues_when_admission_date_changed_earlier_on_existing_membership() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-date-change", "Monthly Plan");
+        let today = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+        let earlier_admission = (chrono::Local::now().date_naive() - chrono::Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        // Member created with today as admission date
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                admission_date: Some(today),
+                membership_plan_id: Some("plan-date-change".to_string()),
+                ..valid_request("Bilal")
+            },
+        )
+        .unwrap();
+        assert_eq!(created.outstanding_balance, 2000);
+
+        // Later updated to change admission date to 90 days ago
+        let updated = update_member(
+            &conn,
+            &created.id,
+            UpdateMemberRequest {
+                full_name: "Bilal".to_string(),
+                father_name: None,
+                phone: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                admission_date: Some(earlier_admission.clone()),
+                membership_plan_id: Some("plan-date-change".to_string()),
+                monthly_fee: None,
+            },
+        )
+        .unwrap();
+
+        let membership =
+            crate::repositories::billing_repository::get_open_membership(&conn, &updated.id)
+                .unwrap()
+                .expect("open membership");
+        assert_eq!(membership.billing_start_date, earlier_admission);
+
+        let bills =
+            crate::repositories::billing_repository::list_member_bills(&conn, &updated.id).unwrap();
+        assert_eq!(bills.len(), 4);
+        assert_eq!(
+            bills.iter().map(|b| b.status.as_str()).collect::<Vec<_>>(),
+            vec!["DUE", "DUE", "DUE", "CURRENT"]
+        );
+        assert_eq!(updated.outstanding_balance, 8000);
+    }
+
+    #[test]
     fn should_use_custom_monthly_fee_for_bills() {
         let conn = test_db();
         insert_active_plan(&conn, "plan-custom-fee", "Monthly Plan");
@@ -776,6 +962,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("fee-update-partial".to_string()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();
@@ -1024,6 +1211,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("delete-history-test".to_string()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();
@@ -1154,5 +1342,107 @@ mod tests {
     fn should_return_none_status_when_no_expiry() {
         let status = compute_membership_status(None);
         assert!(status.is_none());
+    }
+
+    #[test]
+    fn should_not_create_membership_on_update_when_archived() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-archived", "Monthly");
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                membership_plan_id: Some("plan-archived".to_string()),
+                ..valid_request("Archived Member")
+            },
+        )
+        .unwrap();
+
+        archive_member(&conn, &created.id).unwrap();
+
+        let open_m_before =
+            crate::repositories::billing_repository::get_open_membership(&conn, &created.id)
+                .unwrap();
+        assert!(open_m_before.is_none());
+
+        update_member(
+            &conn,
+            &created.id,
+            UpdateMemberRequest {
+                full_name: "Archived Member Updated".into(),
+                phone: Some("03001234567".into()),
+                father_name: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                admission_date: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                membership_plan_id: Some("plan-archived".to_string()),
+                monthly_fee: None,
+            },
+        )
+        .unwrap();
+
+        let open_m_after =
+            crate::repositories::billing_repository::get_open_membership(&conn, &created.id)
+                .unwrap();
+        assert!(open_m_after.is_none());
+    }
+
+    #[test]
+    fn should_not_re_enroll_member_with_history_on_update() {
+        let conn = test_db();
+        insert_active_plan(&conn, "plan-hist", "Monthly");
+        let created = create_member(
+            &conn,
+            CreateMemberRequest {
+                membership_plan_id: Some("plan-hist".to_string()),
+                ..valid_request("History Member")
+            },
+        )
+        .unwrap();
+
+        // End the active membership intentionally
+        crate::services::billing_service::end_active_membership(
+            &conn,
+            &created.id,
+            "cancelled",
+            &crate::utils::dates::today_iso(),
+        )
+        .unwrap();
+
+        let open_m =
+            crate::repositories::billing_repository::get_open_membership(&conn, &created.id)
+                .unwrap();
+        assert!(open_m.is_none());
+        assert!(crate::repositories::billing_repository::has_membership_history(&conn, &created.id).unwrap());
+
+        // Update member without changing the plan
+        update_member(
+            &conn,
+            &created.id,
+            UpdateMemberRequest {
+                full_name: "History Member Renamed".into(),
+                phone: Some("03001234567".into()),
+                father_name: None,
+                cnic: None,
+                address: None,
+                date_of_birth: None,
+                admission_date: None,
+                gender: None,
+                blood_group: None,
+                notes: None,
+                membership_plan_id: Some("plan-hist".to_string()),
+                monthly_fee: None,
+            },
+        )
+        .unwrap();
+
+        // Should still have no open membership
+        let open_m_after =
+            crate::repositories::billing_repository::get_open_membership(&conn, &created.id)
+                .unwrap();
+        assert!(open_m_after.is_none());
     }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   HandCoins,
@@ -10,18 +10,15 @@ import {
   UserRoundPlus,
   Users,
   Wallet,
-  Dumbbell,
 } from "lucide-react";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { useNavigation } from "../../../components/layout/NavigationContext";
-import { useGym } from "../../../context/GymContext";
-import { formatCurrency } from "../../../lib/utils/format";
-import {
-  getDashboardSummary,
-  type DashboardSummary,
-} from "../../../lib/api/dashboard";
+import { type AuthUser } from "../../../lib/api/auth";
+import { formatCurrency, formatDate } from "../../../lib/utils/format";
+import { getDashboardSummary, type DashboardSummary } from "../../../lib/api/dashboard";
+import { usePrivacy, HideToggleButton, maskValue } from "../../../context/PrivacyContext";
 
 type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
 
@@ -31,27 +28,36 @@ function StatCard({
   value,
   helper,
   iconClass,
+  surfaceClass,
+  hidden = false,
 }: {
   icon: IconComponent;
   label: string;
   value: string | number;
   helper: string;
   iconClass: string;
+  surfaceClass: string;
+  hidden?: boolean;
 }) {
   return (
-    <Card>
-      <div className="flex min-w-0 items-start justify-between gap-3">
+    <Card className={surfaceClass}>
+      <div className="flex min-w-0 items-start gap-4">
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
+        >
+          <Icon size={19} />
+        </div>
         <div className="min-w-0">
           <div className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-text-muted">
             {label}
           </div>
-          <div className="mt-3 break-words text-xl font-bold leading-tight text-text-primary">
-            {value}
+          <div
+            className="mt-1.5 break-words text-xl font-bold leading-tight text-text-primary"
+            aria-hidden={hidden}
+          >
+            {hidden ? maskValue() : value}
           </div>
-          <div className="mt-2 text-xs text-text-muted">{helper}</div>
-        </div>
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconClass}`}>
-          <Icon size={18} />
+          <div className="mt-1.5 text-[11px] text-text-muted">{helper}</div>
         </div>
       </div>
     </Card>
@@ -97,15 +103,25 @@ function QuickActions() {
   );
 }
 
-function MonthlyFinancialCard({ summary }: { summary: DashboardSummary }) {
-  const values = [summary.month_revenue, summary.month_expenses, Math.abs(summary.month_net_income)];
+function MonthlyFinancialCard({
+  summary,
+  hidden = false,
+}: {
+  summary: DashboardSummary;
+  hidden?: boolean;
+}) {
+  const values = [
+    summary.month_revenue,
+    summary.month_expenses,
+    Math.abs(summary.month_net_income),
+  ];
   const maximum = Math.max(...values, 1);
   const rows = [
     {
       label: "Revenue",
       value: summary.month_revenue,
       width: (summary.month_revenue / maximum) * 100,
-      color: "bg-blue-500",
+      color: "bg-emerald-600",
     },
     {
       label: "Expenses",
@@ -117,25 +133,31 @@ function MonthlyFinancialCard({ summary }: { summary: DashboardSummary }) {
       label: "Net Income",
       value: summary.month_net_income,
       width: (Math.abs(summary.month_net_income) / maximum) * 100,
-      color: summary.month_net_income >= 0 ? "bg-emerald-500" : "bg-red-500",
+      color: summary.month_net_income >= 0 ? "bg-blue-500" : "bg-red-500",
     },
   ];
 
   return (
     <Card title="Monthly Financial Summary">
-      <p className="mb-7 text-xs text-text-muted">Revenue, expenses, and net income for this month</p>
-      <div className="space-y-7 py-2">
+      <p className="mb-5 text-xs text-text-muted">
+        Revenue, expenses, and net income for this month
+      </p>
+      <div className="space-y-4">
         {rows.map((row) => (
           <div key={row.label}>
             <div className="mb-2 flex items-center justify-between gap-4 text-sm">
               <span className="font-medium text-text-primary">{row.label}</span>
-              <span className="font-semibold text-text-primary">{formatCurrency(row.value)}</span>
+              <span className="font-semibold text-text-primary" aria-hidden={hidden}>
+                {hidden ? maskValue() : formatCurrency(row.value)}
+              </span>
             </div>
             <div className="h-3 overflow-hidden rounded-full bg-secondary-bg">
-              <div
-                className={`h-full min-w-1 rounded-full transition-all ${row.color}`}
-                style={{ width: `${row.width}%` }}
-              />
+              {!hidden && (
+                <div
+                  className={`dashboard-progress h-full min-w-1 rounded-full transition-all ${row.color}`}
+                  style={{ width: `${row.width}%` }}
+                />
+              )}
             </div>
           </div>
         ))}
@@ -151,7 +173,13 @@ const METHOD_BADGE: Record<string, "active" | "info"> = {
   Other: "info",
 };
 
-function RecentPayments({ summary }: { summary: DashboardSummary }) {
+function RecentPayments({
+  summary,
+  hidden = false,
+}: {
+  summary: DashboardSummary;
+  hidden?: boolean;
+}) {
   const { navigateTo } = useNavigation();
 
   return (
@@ -181,8 +209,13 @@ function RecentPayments({ summary }: { summary: DashboardSummary }) {
             </thead>
             <tbody>
               {summary.recent_payments.map((payment) => (
-                <tr key={payment.id} className="border-b border-border last:border-0">
-                  <td className="py-3 font-mono text-xs text-text-muted">{payment.receipt_number}</td>
+                <tr
+                  key={payment.id}
+                  className="border-b border-border transition-colors hover:bg-[#f6faf7] last:border-0"
+                >
+                  <td className="py-3 font-mono text-xs text-text-muted">
+                    {payment.receipt_number}
+                  </td>
                   <td className="py-3 font-medium text-text-primary">
                     {payment.member_name || "Unknown"}
                   </td>
@@ -191,9 +224,12 @@ function RecentPayments({ summary }: { summary: DashboardSummary }) {
                       {payment.payment_method}
                     </Badge>
                   </td>
-                  <td className="py-3 text-text-muted">{payment.payment_date}</td>
-                  <td className="py-3 text-right font-semibold text-text-primary">
-                    {formatCurrency(payment.amount)}
+                  <td className="py-3 text-text-muted">{formatDate(payment.payment_date)}</td>
+                  <td
+                    className="py-3 text-right font-semibold text-text-primary"
+                    aria-hidden={hidden}
+                  >
+                    {hidden ? maskValue() : formatCurrency(payment.amount)}
                   </td>
                 </tr>
               ))}
@@ -226,7 +262,7 @@ function RecentMembers({ summary }: { summary: DashboardSummary }) {
           {summary.recent_members.map((member) => (
             <button
               key={member.id}
-              className="flex w-full items-center justify-between gap-3 py-3 text-left first:pt-0 last:pb-0"
+              className="flex w-full items-center justify-between gap-3 rounded-md px-1 py-3 text-left transition-[transform,background-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:translate-x-px hover:bg-[#f4f8f5] first:pt-0 last:pb-0"
               onClick={() => navigateToMember(member.id)}
             >
               <span className="flex min-w-0 items-center gap-3">
@@ -253,6 +289,7 @@ function RecentMembers({ summary }: { summary: DashboardSummary }) {
   );
 }
 
+
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">
@@ -276,22 +313,15 @@ function DashboardSkeleton() {
   );
 }
 
-export function DashboardPage() {
-  const { gymName, gymLogo, gymTagline } = useGym();
+interface DashboardPageProps {
+  user?: AuthUser;
+}
+
+export function DashboardPage({ user }: DashboardPageProps = {}) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const currentDate = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en-PK", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }).format(new Date()),
-    [],
-  );
+  const { hidden } = usePrivacy();
 
   const load = useCallback(async () => {
     try {
@@ -322,37 +352,24 @@ export function DashboardPage() {
   if (!summary) return null;
 
   return (
-    <div className="space-y-5">
+    <div className="dashboard-page space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3.5">
-          {gymLogo ? (
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-white p-1 shadow-xs">
-              <img
-                src={gymLogo}
-                alt={gymName}
-                className="h-full w-full object-contain"
-              />
-            </div>
-          ) : (
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 shadow-xs">
-              <Dumbbell size={24} />
-            </div>
-          )}
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight text-text-primary">
-                Dashboard
-              </h1>
-              <span className="text-sm font-semibold text-text-muted">&bull;</span>
-              <span className="text-base font-semibold text-primary">{gymName}</span>
-            </div>
-            <p className="mt-0.5 text-xs text-text-muted">
-              Today's business summary &bull; {currentDate}
-              {gymTagline ? ` &bull; ${gymTagline}` : ""}
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
+            {user?.username ? (
+              <>
+                Welcome back, <span className="text-[#286148]">{user.username}</span>
+              </>
+            ) : (
+              "Welcome back"
+            )}
+          </h1>
+          <p className="mt-1 text-xs text-text-muted">
+            Here's what's happening with your gym today.
+          </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <HideToggleButton />
           <Button variant="secondary" onClick={load}>
             <RefreshCw size={15} />
             Refresh
@@ -360,50 +377,60 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           icon={Users}
           label="Total Members"
           value={summary.total_members}
           helper="Registered members"
-          iconClass="bg-blue-50 text-blue-600"
+          iconClass="bg-emerald-100 text-emerald-700"
+          surfaceClass="bg-gradient-to-br from-emerald-50 to-white"
+          hidden={hidden}
         />
         <StatCard
           icon={UserCheck}
           label="Active Members"
           value={summary.active_members}
           helper="Currently active"
-          iconClass="bg-violet-50 text-violet-600"
+          iconClass="bg-blue-100 text-blue-600"
+          surfaceClass="bg-gradient-to-br from-blue-50 to-white"
+          hidden={hidden}
         />
         <StatCard
           icon={TrendingUp}
           label="Monthly Revenue"
           value={formatCurrency(summary.month_revenue)}
           helper="This month"
-          iconClass="bg-indigo-50 text-indigo-600"
+          iconClass="bg-amber-100 text-amber-600"
+          surfaceClass="bg-gradient-to-br from-amber-50 to-white"
+          hidden={hidden}
         />
         <StatCard
           icon={TrendingDown}
           label="Monthly Expenses"
           value={formatCurrency(summary.month_expenses)}
           helper="This month"
-          iconClass="bg-orange-50 text-orange-600"
+          iconClass="bg-red-100 text-red-600"
+          surfaceClass="bg-gradient-to-br from-red-50 to-white"
+          hidden={hidden}
         />
         <StatCard
           icon={Wallet}
           label="Outstanding"
           value={formatCurrency(summary.total_outstanding)}
           helper="Unpaid balance"
-          iconClass="bg-red-50 text-red-600"
+          iconClass="bg-violet-100 text-violet-600"
+          surfaceClass="bg-gradient-to-br from-violet-50 to-white"
+          hidden={hidden}
         />
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <div className="space-y-5">
-          <MonthlyFinancialCard summary={summary} />
-          <RecentPayments summary={summary} />
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(320px,3fr)]">
+        <div className="space-y-4">
+          <MonthlyFinancialCard summary={summary} hidden={hidden} />
+          <RecentPayments summary={summary} hidden={hidden} />
         </div>
-        <div className="space-y-5">
+        <div className="space-y-4">
           <QuickActions />
           <RecentMembers summary={summary} />
         </div>

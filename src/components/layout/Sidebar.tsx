@@ -43,28 +43,28 @@ export function Sidebar({
   const gymTagline = gymContext.gymTagline;
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-border bg-surface">
-      <div className="flex h-14 items-center gap-3 border-b border-border px-4">
+    <aside className="flex h-screen w-[196px] shrink-0 flex-col border-r border-[#315044] bg-[linear-gradient(165deg,#122f27_0%,#0d271f_100%)] text-white shadow-[4px_0_18px_rgba(9,30,23,0.12)]">
+      <div className="flex h-16 items-center gap-3 px-4">
         {gymLogo ? (
           <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-white shadow-xs">
             <img src={gymLogo} alt={gymName} className="h-full w-full object-contain" />
           </div>
         ) : (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-600 shadow-xs">
-            <Dumbbell size={18} />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center text-white">
+            <Dumbbell size={30} strokeWidth={2.4} />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-bold text-text-primary leading-tight">
+          <h1 className="truncate text-sm font-bold leading-tight text-white">
             {gymName}
           </h1>
           {gymTagline && (
-            <p className="truncate text-[11px] text-text-muted">{gymTagline}</p>
+            <p className="truncate text-[10px] text-white/60">{gymTagline}</p>
           )}
         </div>
       </div>
 
-      <nav className="flex-1 space-y-0.5 p-3">
+      <nav className="flex-1 space-y-1 px-2 py-4">
         {NAV_ITEMS.map((item) => {
           const active = currentPage === item.id;
           return (
@@ -72,14 +72,14 @@ export function Sidebar({
               key={item.id}
               data-testid={`nav-${item.id}`}
               onClick={() => onNavigate(item.id)}
-              className={`relative flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              className={`relative flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-xs font-medium transition-[transform,background-color,border-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
                 active
-                  ? "bg-blue-50/90 font-semibold text-primary"
-                  : "text-text-muted hover:bg-secondary-bg hover:text-text-primary"
+                  ? "border-white/10 bg-[#285744] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.025)]"
+                  : "border-transparent text-white/80 hover:translate-x-px hover:border-white/5 hover:bg-white/8 hover:text-white"
               }`}
             >
               {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r bg-primary" />
+                <span className="absolute -left-2 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r bg-[#5ad08a]" />
               )}
               <item.icon size={18} />
               {item.label}
@@ -88,15 +88,16 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="border-t border-border p-3">
-        <div className="mb-2 px-2">
-          <p className="truncate text-sm font-medium text-text-primary">{username}</p>
-          <p className="text-xs text-text-muted">Administrator</p>
+      <div className="mx-4 border-t border-white/10 py-4">
+        <div className="mb-3 flex items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-semibold">{username.charAt(0).toUpperCase()}</span>
+          <div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{username}</p>
+          <p className="text-[10px] text-white/55">Administrator</p></div>
         </div>
         <button
           type="button"
           onClick={() => void onLogout()}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-text-muted hover:bg-secondary-bg hover:text-text-primary"
+          className="flex w-full items-center gap-3 rounded-md px-1 py-2 text-xs text-white/75 hover:text-white"
         >
           <LogOut size={16} />
           Sign out

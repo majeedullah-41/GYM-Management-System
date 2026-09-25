@@ -8,12 +8,12 @@ use crate::models::{Membership, MonthlyBill};
 use crate::repositories::{billing_repository, member_repository, membership_plan_repository};
 use crate::utils::dates::{now_iso8601, today_iso};
 
-fn parse_date(value: &str) -> Result<NaiveDate, AppError> {
+pub fn parse_date(value: &str) -> Result<NaiveDate, AppError> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map_err(|_| AppError::ValidationError(format!("Invalid date '{value}'")))
 }
 
-fn cycle_key(date: NaiveDate) -> String {
+pub fn cycle_key(date: NaiveDate) -> String {
     format!("{:04}{:03}", date.year(), date.ordinal())
 }
 
@@ -59,13 +59,96 @@ pub fn create_membership_for_plan(
     Ok(membership)
 }
 
+pub fn adjust_membership_start_date(
+    conn: &Connection,
+    membership_id: &str,
+    new_start_date: &str,
+) -> Result<(), AppError> {
+    let parsed_date = parse_date(new_start_date)?;
+    let normalized_start = parsed_date.format("%Y-%m-%d").to_string();
+
+    let member_id: String = conn.query_row(
+        "SELECT member_id FROM memberships WHERE id = ?1",
+        rusqlite::params![membership_id],
+        |r| r.get(0),
+    )?;
+
+    let paid_or_allocated: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM monthly_membership_bills b \
+         WHERE b.membership_id = ?1 AND (b.paid_amount > 0 OR b.discount_amount > 0)",
+        rusqlite::params![membership_id],
+        |r| r.get(0),
+    )?;
+    if paid_or_allocated > 0 {
+        return Err(AppError::ValidationError(
+            "Cannot adjust membership start date: payments or discounts already recorded".into(),
+        ));
+    }
+
+    conn.execute(
+        "DELETE FROM monthly_membership_bills WHERE membership_id = ?1",
+        rusqlite::params![membership_id],
+    )?;
+
+    let now = now_iso8601();
+    conn.execute(
+        "UPDATE memberships SET enrollment_date = ?2, billing_start_date = ?2, updated_at = ?3 \
+         WHERE id = ?1",
+        rusqlite::params![membership_id, normalized_start, now],
+    )?;
+
+    ensure_monthly_billing_generated(conn, &member_id)?;
+    Ok(())
+}
+
 /// Creates a conservative ledger membership for pre-ledger data. Already-paid
 /// legacy coverage is honored; recurring billing starts when that coverage expires.
 fn ensure_legacy_membership(
     conn: &Connection,
     member_id: &str,
 ) -> Result<Option<Membership>, AppError> {
-    if let Some(m) = billing_repository::get_open_membership(conn, member_id)? {
+    if let Some(mut m) = billing_repository::get_open_membership(conn, member_id)? {
+        if let Some(member) = member_repository::get_operational_by_id(conn, member_id)? {
+            if let Some(ref adm) = member.admission_date {
+                if let (Ok(adm_date), Ok(bstart_date), Ok(today_date)) = (
+                    parse_date(adm),
+                    parse_date(&m.billing_start_date),
+                    parse_date(&today_iso()),
+                ) {
+                    if adm_date < bstart_date && adm_date <= today_date {
+                        let other_memberships: i64 = conn.query_row(
+                            "SELECT COUNT(*) FROM memberships WHERE member_id = ?1 AND id != ?2",
+                            rusqlite::params![member_id, m.id],
+                            |r| r.get(0),
+                        )?;
+                        let has_payments = member_repository::has_any_payments(conn, member_id)?;
+                        if other_memberships == 0 && !has_payments {
+                            let paid_or_allocated: i64 = conn.query_row(
+                                "SELECT COUNT(*) FROM monthly_membership_bills b \
+                                 WHERE b.membership_id = ?1 AND (b.paid_amount > 0 OR b.discount_amount > 0)",
+                                rusqlite::params![m.id],
+                                |r| r.get(0),
+                            )?;
+                            if paid_or_allocated == 0 {
+                                let normalized_adm = adm_date.format("%Y-%m-%d").to_string();
+                                conn.execute(
+                                    "DELETE FROM monthly_membership_bills WHERE membership_id = ?1",
+                                    rusqlite::params![m.id],
+                                )?;
+                                let now = now_iso8601();
+                                conn.execute(
+                                    "UPDATE memberships SET enrollment_date = ?2, billing_start_date = ?2, updated_at = ?3 \
+                                     WHERE id = ?1",
+                                    rusqlite::params![m.id, normalized_adm, now],
+                                )?;
+                                m.enrollment_date = normalized_adm.clone();
+                                m.billing_start_date = normalized_adm;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return Ok(Some(m));
     }
     if billing_repository::has_membership_history(conn, member_id)? {
@@ -89,11 +172,22 @@ fn ensure_legacy_membership(
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let legacy: Option<(String, String)> = legacy_parts.0.zip(legacy_parts.1);
+    let today_str = today_iso();
+    let admission_iso = member
+        .admission_date
+        .as_deref()
+        .filter(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())
+        .filter(|d| *d <= today_str.as_str())
+        .unwrap_or(today_str.as_str());
+    let admission_date = parse_date(admission_iso).unwrap_or(today);
+
     let enrollment = legacy
         .as_ref()
         .map(|v| v.0.clone())
-        .unwrap_or_else(|| today_iso());
-    let billing_start = legacy.and_then(|v| parse_date(&v.1).ok()).unwrap_or(today);
+        .unwrap_or_else(|| admission_iso.to_string());
+    let billing_start = legacy
+        .and_then(|v| parse_date(&v.1).ok())
+        .unwrap_or(admission_date);
     let now = now_iso8601();
     let membership = Membership {
         id: uuid::Uuid::new_v4().to_string(),
@@ -504,6 +598,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("fifo-test".into()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();
@@ -554,6 +649,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("adv-credit".into()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();
@@ -591,6 +687,7 @@ mod tests {
             notes: None,
             idempotency_key: Some("same-request".into()),
             discounts: None,
+            bill_ids: None,
         };
         let first =
             crate::services::payment_service::create_payment(&conn, make_request()).unwrap();
@@ -621,6 +718,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("rollback-test".into()),
                 discounts: None,
+                bill_ids: None,
             },
         );
         assert!(result.is_err());
@@ -663,6 +761,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("day-pass-payment".into()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();

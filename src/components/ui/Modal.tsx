@@ -53,7 +53,7 @@ export function Modal({
             <X size={18} />
           </button>
         </div>
-        <div className={`flex-1 overflow-y-auto ${compact ? "px-5 py-3" : "px-6 py-4"}`}>{children}</div>
+        <div className={`flex-1 overflow-y-auto overflow-x-hidden ${compact ? "px-5 py-3" : "px-6 py-4"}`}>{children}</div>
         {footer && (
           <div className={`flex shrink-0 items-center justify-end gap-3 border-t border-border ${compact ? "px-5 py-3" : "px-6 py-4"}`}>
             {footer}

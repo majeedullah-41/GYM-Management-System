@@ -22,6 +22,7 @@ pub struct CreatePaymentRequest {
     pub notes: Option<String>,
     pub idempotency_key: Option<String>,
     pub discounts: Option<Vec<PaymentDiscountRequest>>,
+    pub bill_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

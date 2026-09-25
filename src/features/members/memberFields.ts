@@ -107,8 +107,5 @@ export function todayIso(): string {
 }
 
 export function capitalizeName(value: string): string {
-  return value.replace(
-    /(^|\s)(\p{L})/gu,
-    (_full, prefix, letter) => prefix + letter.toUpperCase(),
-  );
+  return value.replace(/(^|\s)(\p{L})/gu, (_full, prefix, letter) => prefix + letter.toUpperCase());
 }

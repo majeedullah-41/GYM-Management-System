@@ -17,6 +17,7 @@ export interface AuthStatus {
 export const getAuthStatus = () => invokeCommand<AuthStatus>("get_auth_status");
 export const login = (request: { username: string; password: string }) => invokeCommand<AuthUser>("login", { request });
 export const logout = () => invokeCommand<void>("logout");
+export const verifyPassword = (password: string) => invokeCommand<void>("verify_password", { password });
 export const getRecoveryQuestion = (username: string) => invokeCommand<{ recovery_available: boolean; security_question: string | null }>("get_recovery_question", { username });
 export const verifyRecoveryAnswer = (request: { username: string; answer: string }) => invokeCommand<{ verified: boolean }>("verify_recovery_answer", { request });
 export const resetPassword = (request: { new_password: string; confirm_password: string }) => invokeCommand<void>("reset_password", { request });

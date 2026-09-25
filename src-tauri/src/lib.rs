@@ -48,6 +48,7 @@ pub fn run() {
             commands::auth::get_auth_status,
             commands::auth::login,
             commands::auth::logout,
+            commands::auth::verify_password,
             commands::auth::get_current_user,
             commands::auth::get_recovery_question,
             commands::auth::verify_recovery_answer,

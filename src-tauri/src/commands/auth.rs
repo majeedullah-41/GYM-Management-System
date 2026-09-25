@@ -43,6 +43,17 @@ pub fn logout(auth: State<'_, AuthState>) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+pub fn verify_password(
+    database: State<'_, Database>,
+    auth: State<'_, AuthState>,
+    password: String,
+) -> Result<(), AppError> {
+    with_db(database.inner(), |conn| {
+        auth_service::verify_password(conn, auth.inner(), &password)
+    })
+}
+
+#[tauri::command]
 pub fn get_current_user(
     database: State<'_, Database>,
     auth: State<'_, AuthState>,

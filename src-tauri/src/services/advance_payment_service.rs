@@ -295,6 +295,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("current-payment".into()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();
@@ -438,6 +439,7 @@ mod tests {
                 notes: None,
                 idempotency_key: Some("partial".into()),
                 discounts: None,
+                bill_ids: None,
             },
         )
         .unwrap();

@@ -227,6 +227,33 @@ pub fn login(
     Ok(safe(user))
 }
 
+pub fn verify_password(
+    conn: &Connection,
+    auth: &AuthState,
+    password: &str,
+) -> Result<(), AppError> {
+    let user = authenticated_user(conn, auth)?;
+    if is_locked(&user.login_locked_until) {
+        return Err(AppError::ValidationError(
+            "Too many attempts. Try again in a few minutes".into(),
+        ));
+    }
+    if !verify_secret(&user.password_hash, password) {
+        let attempts = user.failed_login_attempts + 1;
+        let locked = (attempts >= MAX_ATTEMPTS)
+            .then(|| (Utc::now() + Duration::minutes(COOLDOWN_MINUTES)).to_rfc3339());
+        user_repository::record_login_failure(
+            conn,
+            &user.id,
+            if locked.is_some() { 0 } else { attempts },
+            locked.as_deref(),
+            &now(),
+        )?;
+        return Err(AppError::ValidationError("Incorrect password".into()));
+    }
+    user_repository::clear_login_failures(conn, &user.id, &now())
+}
+
 pub fn recovery_question(
     conn: &Connection,
     username: &str,
@@ -519,6 +546,50 @@ mod tests {
             },
         )
         .is_ok());
+    }
+
+    #[test]
+    fn verify_password_requires_authentication_and_checks_secret() {
+        let conn = database();
+        let auth = AuthState::default();
+        assert!(verify_password(&conn, &auth, "admin")
+            .unwrap_err()
+            .to_string()
+            .contains("Authentication required"));
+        login(
+            &conn,
+            &auth,
+            LoginRequest {
+                username: "admin".into(),
+                password: "admin".into(),
+            },
+        )
+        .unwrap();
+        assert!(verify_password(&conn, &auth, "wrong-password")
+            .unwrap_err()
+            .to_string()
+            .contains("Incorrect password"));
+        verify_password(&conn, &auth, "admin").unwrap();
+    }
+
+    #[test]
+    fn verify_password_failures_hit_the_same_lockout() {
+        let conn = database();
+        let auth = AuthState::default();
+        login(
+            &conn,
+            &auth,
+            LoginRequest {
+                username: "admin".into(),
+                password: "admin".into(),
+            },
+        )
+        .unwrap();
+        for _ in 0..MAX_ATTEMPTS {
+            let _ = verify_password(&conn, &auth, "wrong-password");
+        }
+        let error = verify_password(&conn, &auth, "admin").unwrap_err().to_string();
+        assert!(error.contains("Too many attempts"), "got: {error}");
     }
 
     #[test]

@@ -1,10 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
-import { Save, Download, FolderOpen, ImagePlus, Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
-import { PageHeader } from "../../../components/ui/PageHeader";
+import {
+  Save,
+  Download,
+  FolderOpen,
+  ImagePlus,
+  Plus,
+  Pencil,
+  Trash2,
+  RefreshCw,
+  UserRound,
+  Building2,
+  CreditCard,
+  FileText,
+  Receipt,
+  Printer,
+  Database,
+  ShieldCheck,
+} from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
 import { Modal } from "../../../components/ui/Modal";
 import { Select } from "../../../components/ui/Select";
+import { Card } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
 import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
 import { useToast } from "../../../components/feedback/ToastProvider";
@@ -39,20 +57,38 @@ import { ReceiptPaper } from "../../receipts/components/ReceiptPaper";
 import { LicenseInfoTab } from "../../licensing/components/LicenseInfoTab";
 import { useGym } from "../../../context/GymContext";
 
-type Tab = "user" | "gym" | "plans" | "member-form" | "payment-form" | "receipts" | "data" | "license";
+type Tab =
+  | "user"
+  | "gym"
+  | "plans"
+  | "member-form"
+  | "payment-form"
+  | "receipts"
+  | "data"
+  | "license";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "user", label: "User Information" },
-  { key: "gym", label: "Gym Info" },
-  { key: "plans", label: "Membership Plans" },
-  { key: "member-form", label: "Member Form" },
-  { key: "payment-form", label: "Payment Form" },
-  { key: "receipts", label: "Receipts" },
-  { key: "data", label: "Data & Backup" },
-  { key: "license", label: "License" },
+type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
+
+const TABS: { key: Tab; label: string; icon: IconComponent }[] = [
+  { key: "user", label: "User Information", icon: UserRound },
+  { key: "gym", label: "Gym Info", icon: Building2 },
+  { key: "plans", label: "Membership Plans", icon: CreditCard },
+  { key: "member-form", label: "Member Form", icon: FileText },
+  { key: "payment-form", label: "Payment Form", icon: Receipt },
+  { key: "receipts", label: "Receipts", icon: Printer },
+  { key: "data", label: "Data & Backup", icon: Database },
+  { key: "license", label: "License", icon: ShieldCheck },
 ];
 
-export function SettingsPage({ user, onUserUpdated, onSignedOut }: { user: AuthUser; onUserUpdated: (user: AuthUser) => void; onSignedOut: () => void }) {
+export function SettingsPage({
+  user,
+  onUserUpdated,
+  onSignedOut,
+}: {
+  user: AuthUser;
+  onUserUpdated: (user: AuthUser) => void;
+  onSignedOut: () => void;
+}) {
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>("user");
   const [settings, setSettings] = useState<AllSettings | null>(null);
@@ -81,33 +117,55 @@ export function SettingsPage({ user, onUserUpdated, onSignedOut }: { user: AuthU
   if (!settings) return null;
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Settings"
-        description="Configure your gym information and application preferences."
-      />
+    <div className="settings-page space-y-4">
+      {/* Top Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Settings</h1>
+          <p className="mt-1 text-xs text-text-muted">
+            Configure your gym profile, membership plans, receipt templates, and application preferences.
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <Button variant="secondary" onClick={load}>
+            <RefreshCw size={15} />
+            Refresh
+          </Button>
+        </div>
+      </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
-        <nav className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-2 lg:sticky lg:top-0 lg:grid-cols-1">
-          {TABS.map((tab) => (
-            <button
-              type="button"
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              aria-current={activeTab === tab.key ? "page" : undefined}
-              className={`w-full rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? "bg-primary text-white"
-                  : "text-text-muted hover:bg-secondary-bg hover:text-text-primary"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <div className="grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <nav className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-surface p-1.5 lg:sticky lg:top-4 lg:grid-cols-1">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                type="button"
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                aria-current={isActive ? "page" : undefined}
+                className={`flex items-center gap-2.5 w-full rounded-md px-3 py-2 text-left text-xs font-medium transition-all ${
+                  isActive
+                    ? "bg-[#17613f] text-white shadow-xs"
+                    : "text-text-muted hover:bg-secondary-bg hover:text-text-primary"
+                }`}
+              >
+                <Icon size={15} className={isActive ? "text-white" : "text-text-muted"} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         <section className="min-w-0">
-          {activeTab === "user" && <UserInformationTab user={user} onUserUpdated={onUserUpdated} onSignedOut={onSignedOut} />}
+          {activeTab === "user" && (
+            <UserInformationTab
+              user={user}
+              onUserUpdated={onUserUpdated}
+              onSignedOut={onSignedOut}
+            />
+          )}
           {activeTab === "gym" && <GymInfoTab settings={settings} onSave={setSettings} />}
           {activeTab === "plans" && <PlansTab />}
           {activeTab === "member-form" && <MemberFormSettingsTab />}
@@ -184,14 +242,14 @@ function GymInfoTab({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-5">
-      <h3 className="mb-1 text-base font-semibold text-text-primary">Gym Information</h3>
-      <p className="mb-4 text-sm text-text-muted">
+    <div className="rounded-lg border border-border bg-surface p-5 text-xs">
+      <h3 className="mb-1 text-sm font-semibold text-text-primary">Gym Information</h3>
+      <p className="mb-4 text-xs text-text-muted">
         This information appears on receipts and printed documents.
       </p>
-      <div className="max-w-lg space-y-3">
+      <div className="max-w-lg space-y-3.5">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-text-primary">Gym Logo</label>
+          <label className="mb-1.5 block font-medium text-text-primary">Gym Logo</label>
           <div className="flex items-center gap-3">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-secondary-bg">
               {form.gym_logo ? (
@@ -201,56 +259,78 @@ function GymInfoTab({
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" loading={selectingLogo} onClick={handleSelectLogo}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={selectingLogo}
+                onClick={handleSelectLogo}
+              >
                 <ImagePlus size={14} />
                 Choose Logo
               </Button>
               {form.gym_logo && (
-                <Button type="button" variant="secondary" onClick={() => update({ gym_logo: null })}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => update({ gym_logo: null })}
+                >
                   <Trash2 size={14} />
                   Remove
                 </Button>
               )}
             </div>
           </div>
-          <p className="mt-1.5 text-xs text-text-muted">PNG or JPEG, maximum 2 MB.</p>
+          <p className="mt-1.5 text-[11px] text-text-muted">PNG or JPEG, maximum 2 MB.</p>
         </div>
         <Input
           label="Gym Name *"
           value={form.gym_name}
           onChange={(e) => update({ gym_name: e.target.value })}
+          className="text-xs"
         />
         <Input
           label="Receipt Tagline"
           placeholder="Train Today Be Better"
           value={form.gym_tagline ?? ""}
           onChange={(e) => update({ gym_tagline: e.target.value || null })}
+          className="text-xs"
         />
         <Input
           label="Phone"
           placeholder="03XX-XXXXXXX"
           value={form.gym_phone ?? ""}
           onChange={(e) => update({ gym_phone: e.target.value || null })}
+          className="text-xs"
         />
         <Input
           label="Address"
           value={form.gym_address ?? ""}
           onChange={(e) => update({ gym_address: e.target.value || null })}
+          className="text-xs"
         />
         <Input
           label="Email"
           type="email"
           value={form.gym_email ?? ""}
           onChange={(e) => update({ gym_email: e.target.value || null })}
+          className="text-xs"
         />
         <Input
           label="Website"
           value={form.gym_website ?? ""}
           onChange={(e) => update({ gym_website: e.target.value || null })}
+          className="text-xs"
         />
       </div>
-      <div className="mt-4">
-        <Button onClick={handleSave} loading={saving} disabled={!dirty}>
+      <div className="mt-5">
+        <Button
+          onClick={handleSave}
+          loading={saving}
+          disabled={!dirty}
+          className="bg-[#17613f] hover:bg-[#104b31]"
+        >
           <Save size={14} className="mr-1.5" />
           Save Changes
         </Button>
@@ -383,91 +463,93 @@ function PlansTab() {
   if (loading) return <LoadingState message="Loading plans..." />;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-5">
-      <div className="mb-4 flex items-center justify-between">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold text-text-primary">Membership Plans</h3>
-          <p className="text-sm text-text-muted">Add, edit, and manage your membership plans.</p>
+          <h3 className="text-sm font-semibold text-text-primary">Membership Plans</h3>
+          <p className="text-xs text-text-muted">Add, edit, and configure your gym membership packages.</p>
         </div>
-        <Button size="sm" onClick={openCreate}>
+        <Button size="sm" onClick={openCreate} className="bg-[#17613f] hover:bg-[#104b31]">
           <Plus size={14} /> Add Plan
         </Button>
       </div>
 
       {plans.length === 0 ? (
-        <p className="text-sm text-text-muted">No plans configured yet.</p>
+        <Card className="p-8 text-center text-xs text-text-muted">
+          No plans configured yet.
+        </Card>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary-bg">
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-text-muted">
-                  Plan
-                </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-text-muted">
-                  Duration
-                </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-text-muted">
-                  Price
-                </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-text-muted">
-                  Members
-                </th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-text-muted">
-                  Status
-                </th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-text-muted">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {plans.map((p) => (
-                <tr key={p.id} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-2.5 font-medium text-text-primary">{p.name}</td>
-                  <td className="px-4 py-2.5 text-text-muted">{p.duration_days} days</td>
-                  <td className="px-4 py-2.5 text-text-primary">
-                    {p.price === 0 ? "Free" : `Rs. ${p.price.toLocaleString()}`}
-                  </td>
-                  <td className="px-4 py-2.5 text-text-muted">{p.member_count}</td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                        p.is_active ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-                      }`}
-                    >
-                      {p.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button variant="secondary" size="sm" onClick={() => openEdit(p)}>
-                        <Pencil size={12} /> Edit
-                      </Button>
-                      {p.is_active ? (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={p.member_count > 0}
-                          title={
-                            p.member_count > 0 ? "Plan is in use by members" : "Deactivate plan"
-                          }
-                          onClick={() => handleToggleActive(p)}
-                        >
-                          <Trash2 size={12} /> Deactivate
-                        </Button>
-                      ) : (
-                        <Button variant="secondary" size="sm" onClick={() => handleToggleActive(p)}>
-                          <RefreshCw size={12} /> Activate
-                        </Button>
-                      )}
-                    </div>
-                  </td>
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-[#fafbfa] text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                  <th className="px-4 py-3 text-left">Plan</th>
+                  <th className="px-4 py-3 text-left">Duration</th>
+                  <th className="px-4 py-3 text-left">Price</th>
+                  <th className="px-4 py-3 text-left">Members</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {plans.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="border-b border-border transition-colors hover:bg-[#f6faf7] last:border-b-0"
+                  >
+                    <td className="px-4 py-3 font-medium text-text-primary">{p.name}</td>
+                    <td className="px-4 py-3 text-text-muted">{p.duration_days} days</td>
+                    <td className="px-4 py-3 font-semibold text-text-primary">
+                      {p.price === 0 ? "Free" : `Rs. ${p.price.toLocaleString()}`}
+                    </td>
+                    <td className="px-4 py-3 text-text-muted">{p.member_count}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={p.is_active ? "active" : "danger"}>
+                        {p.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openEdit(p)}
+                          className="h-7 px-2.5 text-xs"
+                        >
+                          <Pencil size={12} /> Edit
+                        </Button>
+                        {p.is_active ? (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={p.member_count > 0}
+                            title={
+                              p.member_count > 0 ? "Plan is in use by members" : "Deactivate plan"
+                            }
+                            onClick={() => handleToggleActive(p)}
+                            className="h-7 px-2.5 text-xs"
+                          >
+                            <Trash2 size={12} /> Deactivate
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleToggleActive(p)}
+                            className="h-7 px-2.5 text-xs"
+                          >
+                            <RefreshCw size={12} /> Activate
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       <Modal
@@ -476,55 +558,69 @@ function PlansTab() {
         title={editing ? "Edit Plan" : "Add Plan"}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
+            <Button
+              variant="secondary"
+              onClick={() => setModalOpen(false)}
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button onClick={handleSubmit} loading={submitting}>
+            <Button
+              onClick={handleSubmit}
+              loading={submitting}
+              className="bg-[#17613f] hover:bg-[#104b31]"
+            >
               {editing ? "Save Changes" : "Create Plan"}
             </Button>
           </>
         }
       >
-        <div className="space-y-4">
+        <div className="space-y-4 text-xs">
           {formError && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>
+            <p className="rounded-md bg-red-50 p-2.5 text-red-600 border border-red-200">
+              {formError}
+            </p>
           )}
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">Plan Name *</label>
+            <label className="font-medium text-text-primary">Plan Name *</label>
             <Input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="e.g. Monthly"
+              className="text-xs"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">Price (PKR) *</label>
+              <label className="font-medium text-text-primary">Price (PKR) *</label>
               <Input
                 type="number"
                 min={0}
                 value={form.price}
                 onChange={(e) => setForm({ ...form, price: e.target.value })}
                 placeholder="e.g. 3000"
+                className="text-xs"
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">Duration (days) *</label>
+              <label className="font-medium text-text-primary">Duration (days) *</label>
               <Input
                 type="number"
                 min={1}
                 value={form.duration_days}
                 onChange={(e) => setForm({ ...form, duration_days: e.target.value })}
                 placeholder="e.g. 30"
+                className="text-xs"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">Description</label>
+            <label className="font-medium text-text-primary">Description</label>
             <Input
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Optional description"
+              className="text-xs"
             />
           </div>
         </div>
@@ -605,15 +701,15 @@ function PrintSettingsSection({
   const widthMm = form.paper_width === "58" ? 58 : 80;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-5">
-      <h3 className="text-base font-semibold text-text-primary mb-1">Receipt Print Settings</h3>
-      <p className="mb-4 text-sm text-text-muted">
+    <div className="rounded-lg border border-border bg-surface p-5 text-xs">
+      <h3 className="text-sm font-semibold text-text-primary mb-1">Receipt Print Settings</h3>
+      <p className="mb-4 text-xs text-text-muted">
         Choose the layout, destination and information included when printing a receipt.
       </p>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Select
               label="Destination"
               value={form.destination}
@@ -625,6 +721,7 @@ function PrintSettingsSection({
                 { value: "pdf", label: "Save as PDF" },
                 { value: "thermal", label: "Thermal Printer (ESC/POS)" },
               ]}
+              className="text-xs"
             />
             <Select
               label="Paper Width"
@@ -636,6 +733,7 @@ function PrintSettingsSection({
                 { value: "80", label: "80 mm (thermal)" },
                 { value: "58", label: "58 mm (thermal)" },
               ]}
+              className="text-xs"
             />
             <Input
               label="Font Size"
@@ -644,20 +742,22 @@ function PrintSettingsSection({
               max={16}
               value={form.font_size}
               onChange={(e) => update({ font_size: Number(e.target.value) || 11 })}
+              className="text-xs"
             />
           </div>
 
           {form.destination === "thermal" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="Thermal Printer Name"
-                placeholder="Leave empty for the Windows default printer"
+                placeholder="Leave empty for Windows default"
                 value={form.thermal_printer_name ?? ""}
                 onChange={(e) =>
                   update({
                     thermal_printer_name: e.target.value.trim() ? e.target.value : null,
                   })
                 }
+                className="text-xs"
               />
               <Input
                 label="Characters per Line"
@@ -673,36 +773,37 @@ function PrintSettingsSection({
                       : null,
                   })
                 }
+                className="text-xs"
               />
             </div>
           )}
 
           <div>
-            <label className="mb-3 block text-sm font-medium text-text-primary">
+            <label className="mb-2.5 block font-medium text-text-primary">
               Receipt Information
             </label>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
               {RECEIPT_FIELDS.map((field) => (
-                <label key={field.key} className="flex cursor-pointer items-center gap-3">
+                <label key={field.key} className="flex cursor-pointer items-center gap-2.5">
                   <input
                     type="checkbox"
                     checked={form[field.key] as boolean}
                     onChange={(event) => update({ [field.key]: event.target.checked })}
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                    className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary"
                   />
-                  <span className="text-sm text-text-primary">{field.label}</span>
+                  <span className="text-xs text-text-primary">{field.label}</span>
                 </label>
               ))}
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-primary">
+            <label className="font-medium text-text-primary">
               Footer Text <span className="text-text-muted">(optional)</span>
             </label>
             <textarea
               name="receipt_footer"
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               rows={2}
               placeholder="Stay Fit | Stay Healthy"
               value={settings.receipt.receipt_footer ?? ""}
@@ -716,13 +817,18 @@ function PrintSettingsSection({
         </div>
 
         <div>
-          <label className="text-sm font-medium text-text-primary mb-3 block">Live Preview</label>
+          <label className="font-medium text-text-primary mb-2.5 block">Live Preview</label>
           <PrintPreview print={form} settings={settings} widthMm={widthMm} />
         </div>
       </div>
 
-      <div className="mt-4">
-        <Button onClick={handleSave} loading={saving} disabled={!dirty}>
+      <div className="mt-5">
+        <Button
+          onClick={handleSave}
+          loading={saving}
+          disabled={!dirty}
+          className="bg-[#17613f] hover:bg-[#104b31]"
+        >
           <Save size={14} className="mr-1.5" />
           Save Changes
         </Button>
@@ -741,8 +847,8 @@ function PrintPreview({
   widthMm: number;
 }) {
   return (
-    <div className="flex justify-center overflow-hidden rounded-lg border border-border bg-secondary-bg/50 py-6">
-      <div style={{ zoom: 0.72 }} className="overflow-hidden rounded-md border border-border shadow-sm">
+    <div className="flex justify-center overflow-hidden rounded-lg border border-border bg-secondary-bg/50 py-5">
+      <div style={{ zoom: 0.72 }} className="overflow-hidden rounded-md border border-border shadow-xs">
         <ReceiptPaper
           widthMm={widthMm}
           data={{
@@ -847,16 +953,16 @@ function DataTab({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 text-xs">
       <div className="rounded-lg border border-border bg-surface p-5">
-        <h3 className="mb-1 text-base font-semibold text-text-primary">Data Backup</h3>
-        <p className="mb-4 text-sm text-text-muted">
+        <h3 className="mb-1 text-sm font-semibold text-text-primary">Data Backup</h3>
+        <p className="mb-4 text-xs text-text-muted">
           Backups are saved in your selected folder as separate SQLite database files.
         </p>
 
-        <div className="max-w-2xl space-y-4">
+        <div className="max-w-2xl space-y-3.5">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-text-primary">
+            <label className="mb-1.5 block font-medium text-text-primary">
               Backup folder
             </label>
             <div className="flex gap-2">
@@ -864,48 +970,60 @@ function DataTab({
                 readOnly
                 value={form.directory ?? ""}
                 placeholder="Select where backup files should be saved"
-                className="min-w-0 flex-1"
+                className="min-w-0 flex-1 text-xs"
               />
-              <Button type="button" variant="secondary" onClick={chooseFolder}>
-                <FolderOpen size={15} />
+              <Button type="button" variant="secondary" size="sm" onClick={chooseFolder}>
+                <FolderOpen size={14} />
                 Browse
               </Button>
             </div>
           </div>
 
-          <label className="flex cursor-pointer items-center gap-3 text-sm text-text-primary">
+          <label className="flex cursor-pointer items-center gap-2.5 text-text-primary">
             <input
               type="checkbox"
               checked={form.daily_enabled}
               onChange={(event) => setForm({ ...form, daily_enabled: event.target.checked })}
-              className="h-4 w-4 accent-primary"
+              className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary"
             />
             Create one automatic backup every day
           </label>
-          <label className="flex cursor-pointer items-center gap-3 text-sm text-text-primary">
+          <label className="flex cursor-pointer items-center gap-2.5 text-text-primary">
             <input
               type="checkbox"
               checked={form.close_enabled}
               onChange={(event) => setForm({ ...form, close_enabled: event.target.checked })}
-              className="h-4 w-4 accent-primary"
+              className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary"
             />
             Create a backup whenever Gym POS closes
           </label>
 
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" loading={saving} onClick={() => persist(form)}>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              loading={saving}
+              onClick={() => persist(form)}
+            >
               <Save size={14} />
               Save Backup Settings
             </Button>
-            <Button type="button" onClick={handleBackup} loading={backing}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleBackup}
+              loading={backing}
+              className="bg-[#17613f] hover:bg-[#104b31]"
+            >
               <Download size={14} />
               Back Up Now
             </Button>
           </div>
 
-          <p className="text-xs text-text-muted">
+          <p className="text-[11px] text-text-muted">
             Last backup:{" "}
-            <span className="text-text-primary">
+            <span className="text-text-primary font-medium">
               {form.last_backup_at
                 ? new Date(form.last_backup_at).toLocaleString()
                 : "No backup created yet"}
@@ -915,23 +1033,23 @@ function DataTab({
       </div>
 
       <div className="rounded-lg border border-border bg-surface p-5">
-        <h3 className="text-base font-semibold text-text-primary mb-4">About</h3>
-        <div className="space-y-2 text-sm text-text-muted">
-          <div className="flex justify-between">
+        <h3 className="text-sm font-semibold text-text-primary mb-3">About Gym POS</h3>
+        <div className="max-w-md space-y-2 text-xs text-text-muted">
+          <div className="flex justify-between py-1 border-b border-border/50">
             <span>Application</span>
-            <span className="text-text-primary font-medium">Gym POS</span>
+            <span className="text-text-primary font-medium">Gym POS Management System</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between py-1 border-b border-border/50">
             <span>Version</span>
             <span className="text-text-primary font-medium">1.0.0</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between py-1 border-b border-border/50">
             <span>Database</span>
-            <span className="text-text-primary font-medium">SQLite</span>
+            <span className="text-text-primary font-medium">SQLite Embedded</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between py-1">
             <span>Platform</span>
-            <span className="text-text-primary font-medium">Tauri 2 (Windows)</span>
+            <span className="text-text-primary font-medium">Tauri 2 (Windows Native)</span>
           </div>
         </div>
       </div>

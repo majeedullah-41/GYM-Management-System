@@ -74,19 +74,38 @@ export function MemberFormFields({
         );
       })}
       {formData.membership_plan_id && visibleFields.has("membership_plan_id") && (
-        <Input
-          label="Monthly Fee *"
-          type="number"
-          min={0}
-          placeholder={formatCurrency(
-            plans.find((p) => p.id === formData.membership_plan_id)?.price ?? 0,
-          )}
-          value={formData.monthly_fee}
-          onChange={(e) => onChange("monthly_fee", e.target.value.replace(/\D/g, ""))}
-          error={errors.monthly_fee}
-          disabled={disabled}
-          className="col-span-2"
-        />
+        <div className="space-y-3">
+          {(() => {
+            const plan = plans.find((p) => p.id === formData.membership_plan_id);
+            if (!plan) return null;
+            return (
+              <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-950">
+                <div>
+                  <span className="font-semibold">{plan.name}</span>
+                  <p className="mt-0.5 text-[11px] text-emerald-800">
+                    Duration: {plan.duration_days} days · Standard Price:{" "}
+                    {formatCurrency(plan.price)}
+                  </p>
+                </div>
+                <span className="text-sm font-bold text-emerald-900">
+                  {formatCurrency(plan.price)}
+                </span>
+              </div>
+            );
+          })()}
+          <Input
+            label="Monthly Fee *"
+            type="number"
+            min={0}
+            placeholder={formatCurrency(
+              plans.find((p) => p.id === formData.membership_plan_id)?.price ?? 0,
+            )}
+            value={formData.monthly_fee}
+            onChange={(e) => onChange("monthly_fee", e.target.value.replace(/\D/g, ""))}
+            error={errors.monthly_fee}
+            disabled={disabled}
+          />
+        </div>
       )}
     </div>
   );

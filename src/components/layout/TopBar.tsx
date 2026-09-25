@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { CalendarDays, ChevronDown } from "lucide-react";
 import { useGym } from "../../context/GymContext";
 import type { Page } from "../../types";
 import type { AuthUser } from "../../lib/api/auth";
@@ -33,7 +34,7 @@ export function TopBar({ currentPage, user }: TopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-6">
       <div className="flex items-center gap-3">
-        <h2 className="text-base font-semibold text-text-primary tracking-tight">
+        <h2 className="text-base font-bold text-text-primary tracking-tight">
           {gymName}
         </h2>
         {currentPage !== "dashboard" && (
@@ -46,12 +47,15 @@ export function TopBar({ currentPage, user }: TopBarProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-4 text-xs text-text-muted">
+      <div className="flex items-center gap-3 text-xs text-text-muted">
+        <CalendarDays size={17} className="text-secondary-text" />
         <span>{formattedDate}</span>
-        <span className="hidden h-3 w-px bg-border sm:inline-block" />
-        <span className="hidden font-medium text-text-primary sm:inline-block">
-          {user.username}
+        <span className="hidden h-5 w-px bg-border sm:inline-block" />
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#375d4d] text-[11px] font-semibold text-white">
+          {user.username.charAt(0).toUpperCase()}
         </span>
+        <span className="hidden font-semibold text-text-primary sm:inline-block">{user.username}</span>
+        <ChevronDown size={14} className="text-secondary-text" />
       </div>
     </header>
   );

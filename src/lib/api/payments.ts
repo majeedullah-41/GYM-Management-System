@@ -79,6 +79,7 @@ export interface CreatePaymentRequest {
   notes?: string | null;
   idempotency_key?: string | null;
   discounts?: PaymentDiscountRequest[] | null;
+  bill_ids?: string[] | null;
 }
 
 export interface UpdatePaymentRequest {

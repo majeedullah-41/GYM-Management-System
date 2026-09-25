@@ -167,7 +167,7 @@ export function MemberFormSettingsTab() {
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button onClick={handleSave} loading={saving}>
+        <Button onClick={handleSave} loading={saving} className="bg-[#17613f] hover:bg-[#104b31]">
           <Save size={14} className="mr-1.5" />
           Save Changes
         </Button>

@@ -56,8 +56,9 @@ export function PaymentFormFields({
         >
           {showAmount && (
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
+              <label htmlFor="payment_amount" className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
               <input
+                id="payment_amount"
                 type="number"
                 name="payment_amount"
                 min={1}
@@ -81,8 +82,9 @@ export function PaymentFormFields({
           )}
           {showDate && (
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-text-primary">Payment Date *</label>
+              <label htmlFor="payment_date" className="text-sm font-medium text-text-primary">Payment Date *</label>
               <input
+                id="payment_date"
                 type="date"
                 name="payment_date"
                 value={paymentDate}
