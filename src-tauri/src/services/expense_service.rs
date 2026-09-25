@@ -2,8 +2,7 @@ use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::dto::expense::{
-    CreateExpenseRequest, ExpenseResponse, UpdateExpenseRequest, EXPENSE_CATEGORIES,
-    EXPENSE_PAYMENT_METHODS,
+    CreateExpenseRequest, ExpenseResponse, UpdateExpenseRequest, EXPENSE_PAYMENT_METHODS,
 };
 use crate::errors::AppError;
 use crate::models::Expense;
@@ -165,12 +164,10 @@ fn validate(category: &str, amount: i64, date: &str) -> Result<(), AppError> {
         ));
     }
 
-    if !EXPENSE_CATEGORIES.contains(&category) {
-        return Err(AppError::ValidationError(format!(
-            "Invalid category '{}'. Must be one of: {}",
-            category,
-            EXPENSE_CATEGORIES.join(", ")
-        )));
+    if category.trim().is_empty() {
+        return Err(AppError::ValidationError(
+            "Expense category cannot be empty".into(),
+        ));
     }
 
     if NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
@@ -186,6 +183,7 @@ fn validate(category: &str, amount: i64, date: &str) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::database::migrations;
+    use crate::dto::expense::EXPENSE_CATEGORIES;
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -229,9 +227,18 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_invalid_category() {
+    fn should_accept_custom_category() {
         let conn = test_db();
-        let result = create_expense(&conn, valid_request("InvalidCategory", 1000));
+        let result = create_expense(&conn, valid_request("Generator Fuel", 1000));
+        assert!(result.is_ok());
+        let res = result.unwrap();
+        assert_eq!(res.category, "Generator Fuel");
+    }
+
+    #[test]
+    fn should_reject_empty_category() {
+        let conn = test_db();
+        let result = create_expense(&conn, valid_request("   ", 1000));
         assert!(result.is_err());
     }
 

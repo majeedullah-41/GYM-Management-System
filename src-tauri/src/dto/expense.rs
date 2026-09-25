@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::Expense;
 
+#[allow(dead_code)]
 pub const EXPENSE_CATEGORIES: &[&str] = &[
     "Rent",
     "Electricity",

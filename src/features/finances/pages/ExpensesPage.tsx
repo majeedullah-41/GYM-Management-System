@@ -34,15 +34,28 @@ import {
   type ExpenseResponse,
 } from "../../../lib/api/expenses";
 
-const CATEGORY_OPTIONS = [
-  { value: "", label: "All Categories" },
-  ...EXPENSE_CATEGORIES.map((c) => ({ value: c, label: c })),
-];
+const CUSTOM_CATEGORIES_KEY = "gym_custom_expense_categories";
 
-const FORM_CATEGORIES = EXPENSE_CATEGORIES.map((c) => ({
-  value: c,
-  label: c,
-}));
+function loadStoredCustomCategories(): string[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredCustomCategories(cats: string[]) {
+  try {
+    localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(cats));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 interface FormData {
   category: string;
@@ -204,15 +217,50 @@ export function ExpensesPage() {
     setPage(1);
   }, [search, categoryFilter, datePreset]);
 
+  const [customCategories, setCustomCategories] = useState<string[]>(loadStoredCustomCategories);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState("");
+
+  const allCategories = useMemo(() => {
+    const set = new Set<string>(EXPENSE_CATEGORIES);
+    for (const c of customCategories) {
+      if (c && c.trim()) set.add(c.trim());
+    }
+    for (const e of expenses) {
+      if (e.category && e.category.trim()) set.add(e.category.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [customCategories, expenses]);
+
+  const categoryFilterOptions = useMemo(
+    () => [
+      { value: "", label: "All Categories" },
+      ...allCategories.map((c) => ({ value: c, label: c })),
+    ],
+    [allCategories],
+  );
+
+  const formCategoryOptions = useMemo(
+    () => [
+      ...allCategories.map((c) => ({ value: c, label: c })),
+      { value: "__custom__", label: "+ Add new category..." },
+    ],
+    [allCategories],
+  );
+
   const openCreate = () => {
     setEditingExpense(null);
     setFormData(EMPTY_FORM);
+    setIsCustomCategory(false);
+    setCustomCategoryInput("");
     setFormErrors({});
     setFormOpen(true);
   };
 
   const openEdit = (expense: ExpenseResponse) => {
     setEditingExpense(expense);
+    setIsCustomCategory(false);
+    setCustomCategoryInput("");
     setFormData({
       category: expense.category,
       amount: String(expense.amount),
@@ -225,7 +273,8 @@ export function ExpensesPage() {
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    if (!formData.category) errors.category = "Category is required";
+    const cat = isCustomCategory ? customCategoryInput.trim() : formData.category.trim();
+    if (!cat) errors.category = "Category is required";
     const amount = parseInt(formData.amount, 10);
     if (!amount || amount <= 0) errors.amount = "Amount must be greater than zero";
     if (!formData.expense_date) errors.expense_date = "Date is required";
@@ -235,10 +284,11 @@ export function ExpensesPage() {
 
   const handleSubmit = async () => {
     if (!validateForm()) return;
+    const cat = isCustomCategory ? customCategoryInput.trim() : formData.category.trim();
     try {
       setSubmitting(true);
       const payload = {
-        category: formData.category,
+        category: cat,
         amount: parseInt(formData.amount, 10),
         expense_date: formData.expense_date,
         description: editingExpense?.description ?? null,
@@ -254,6 +304,13 @@ export function ExpensesPage() {
         await createExpense(payload);
         addToast({ variant: "success", title: "Expense recorded" });
       }
+
+      if (!allCategories.includes(cat)) {
+        const next = [...customCategories, cat];
+        setCustomCategories(next);
+        saveStoredCustomCategories(next);
+      }
+
       setFormOpen(false);
       await load();
     } catch (err) {
@@ -432,7 +489,7 @@ export function ExpensesPage() {
             </div>
 
             <Select
-              options={CATEGORY_OPTIONS}
+              options={categoryFilterOptions}
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               className="w-44 text-xs"
@@ -601,13 +658,72 @@ export function ExpensesPage() {
         }
       >
         <div className="space-y-4 text-xs">
-          <Select
-            label="Category *"
-            options={[{ value: "", label: "Select category..." }, ...FORM_CATEGORIES]}
-            value={formData.category}
-            onChange={(e) => setFormData((p) => ({ ...p, category: e.target.value }))}
-            error={formErrors.category}
-          />
+          {isCustomCategory ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-medium text-text-primary">
+                  New Category Name *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomCategory(false);
+                    setCustomCategoryInput("");
+                    setFormData((p) => ({ ...p, category: "" }));
+                  }}
+                  className="text-[11px] font-semibold text-[#17613f] hover:underline cursor-pointer"
+                >
+                  ← Select from list
+                </button>
+              </div>
+              <input
+                type="text"
+                name="custom_category"
+                autoFocus
+                placeholder="e.g. Generator Fuel, Water Dispenser, Repairs..."
+                value={customCategoryInput}
+                onChange={(e) => {
+                  setCustomCategoryInput(e.target.value);
+                  setFormData((p) => ({ ...p, category: e.target.value }));
+                }}
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              {formErrors.category && (
+                <p className="text-xs text-red-500">{formErrors.category}</p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-medium text-text-primary">Category *</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomCategory(true);
+                    setCustomCategoryInput("");
+                    setFormData((p) => ({ ...p, category: "" }));
+                  }}
+                  className="text-[11px] font-semibold text-[#17613f] hover:underline cursor-pointer"
+                >
+                  + Add new category
+                </button>
+              </div>
+              <Select
+                options={[{ value: "", label: "Select category..." }, ...formCategoryOptions]}
+                value={formData.category}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setIsCustomCategory(true);
+                    setCustomCategoryInput("");
+                    setFormData((p) => ({ ...p, category: "" }));
+                  } else {
+                    setFormData((p) => ({ ...p, category: e.target.value }));
+                  }
+                }}
+                error={formErrors.category}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="font-medium text-text-primary">Amount (PKR) *</label>
