@@ -57,7 +57,7 @@ vi.mock("../lib/api/settings", async () => {
 describe("App", () => {
   it("should_render_sidebar_with_gym_pos_title", async () => {
     render(<App />);
-    expect((await screen.findAllByText("Dev Gym")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Gym POS")).length).toBeGreaterThan(0);
   });
 
   it("should_render_all_navigation_items", async () => {
