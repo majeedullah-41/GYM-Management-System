@@ -10,6 +10,7 @@ interface PaymentFormFieldsProps {
   amount: string;
   onAmountChange: (value: string) => void;
   amountMax?: number;
+  readOnlyAmount?: boolean;
   method: string;
   onMethodChange: (value: string) => void;
   paymentDate: string;
@@ -26,6 +27,7 @@ export function PaymentFormFields({
   amount,
   onAmountChange,
   amountMax,
+  readOnlyAmount = false,
   method,
   onMethodChange,
   paymentDate,
@@ -41,6 +43,7 @@ export function PaymentFormFields({
   const showDate = visibleFields.has("payment_date");
   const showMonth = visibleFields.has("payment_month") && onPaymentMonthChange !== undefined;
   const showNotes = visibleFields.has("notes");
+  const amountLocked = readOnlyAmount || disabled;
 
   return (
     <div className="space-y-3">
@@ -65,9 +68,10 @@ export function PaymentFormFields({
                 max={amountMax}
                 placeholder="e.g. 2000"
                 value={amount}
-                disabled={disabled}
+                disabled={amountLocked}
+                readOnly={readOnlyAmount}
                 onChange={(e) => onAmountChange(e.target.value)}
-                className={inputClass}
+                className={`${inputClass} ${readOnlyAmount && !disabled ? "bg-secondary-bg font-semibold text-text-primary" : ""}`}
               />
             </div>
           )}
@@ -103,20 +107,23 @@ export function PaymentFormFields({
             <div className={showAmount && showMethod ? "grid grid-cols-2 gap-3" : undefined}>
               {showAmount && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
+                  <label htmlFor="payment_amount" className="text-sm font-medium text-text-primary">Amount (PKR) *</label>
                   <input
+                    id="payment_amount"
                     type="number"
                     name="payment_amount"
                     min={1}
                     max={amountMax}
                     placeholder="e.g. 2000"
                     value={amount}
-                    disabled={disabled}
+                    disabled={amountLocked}
+                    readOnly={readOnlyAmount}
                     onChange={(e) => onAmountChange(e.target.value)}
-                    className={inputClass}
+                    className={`${inputClass} ${readOnlyAmount && !disabled ? "bg-secondary-bg font-semibold text-text-primary" : ""}`}
                   />
                 </div>
               )}
+
               {showMethod && (
                 <Select
                   label="Payment Method *"

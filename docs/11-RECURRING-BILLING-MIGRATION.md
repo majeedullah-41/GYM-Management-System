@@ -35,6 +35,8 @@ membership beginning on the reactivation date, so archived periods cannot be bac
 Changing plans closes the former membership and opens the selected plan on the change date.
 
 The existing application has no proration rule, so each period is charged at the full agreed
-plan fee. Overpayments are rejected because no advance-credit account exists.
+plan fee. Overpayments are rejected because no advance-credit account exists; members pay for
+upcoming periods only through the advance flow (see `docs/modules/13-ADVANCE-MEMBERSHIP-PAYMENTS.md`),
+which is allowed once the current ledger is fully settled.
 All assigned membership plans participate in the recurring ledger, including short-duration
 test plans. The plan remains available and active after its current bill is paid.

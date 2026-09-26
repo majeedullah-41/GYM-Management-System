@@ -2,7 +2,7 @@
 
 **Module:** Advance Payments  
 **Priority:** P1  
-**Status:** Planned  
+**Status:** Implemented  
 **Depends On:** Members, Payments, Membership Plans, Receipts  
 **Technology:** Tauri + Rust + SQLite
 
@@ -58,25 +58,25 @@ Do not duplicate those systems inside this module.
 
 # 3. Entry Point
 
-Advance payment should be available from the member's payment area.
+Advance payment lives inside the member's payment area, on the same screen used
+for normal payments.
 
 Example:
 
-Member Details
-    ↓
-Receive Payment
-    ↓
-[ Pay in Advance ]
-
-or:
-
-Payments
+Record Payment
     ↓
 Select Member
     ↓
-[ Pay in Advance ]
+All current dues clear
+    ↓
+[ Pay Upcoming Periods ]
 
-Both entry points MUST use the same backend service.
+The "Pay Upcoming Periods" card is only offered when the member has no
+outstanding dues. When arrears exist the card is replaced by the notice
+"Upcoming periods unlock after all current dues are cleared." and the
+backend rejects the request as well.
+
+Both the preview and the create path MUST use the same backend service.
 
 ---
 
@@ -235,6 +235,10 @@ Conceptually:
 advance_total =
 period_fee × number_of_periods
 
+The member MUST have no outstanding dues before upcoming periods can be
+prepaid, so the total never includes arrears. Arrears are always settled
+through the normal period selection on the same screen.
+
 The backend MUST calculate the authoritative amount.
 
 Frontend calculation is only a preview.
@@ -310,6 +314,8 @@ AdvancePaymentRequest {
     member_id,
     period_count,
     payment_method,
+    payment_date?,
+    payment_month?,
     note?
 }
 
@@ -332,6 +338,8 @@ Required workflow:
 Receive Advance Payment Request
         ↓
 Load Member
+        ↓
+Reject if any dues are outstanding
         ↓
 Find Latest Paid Period
         ↓
@@ -745,7 +753,29 @@ Paid Through:
 
 ---
 
-# 28. Automated Test — Three Months
+# 28. Automated Test — Outstanding Dues
+
+Given:
+
+Current period only partially paid:
+
+Rs. 1,000 unpaid
+
+Advance attempt:
+
+2 periods
+
+Expected:
+
+Preview rejected.
+
+Create rejected with the outstanding amount in the message.
+
+No payment, receipt, or future period created.
+
+---
+
+# 29. Automated Test — Three Months
 
 Given:
 
@@ -764,7 +794,7 @@ Correct total calculated.
 
 ---
 
-# 29. Automated Test — Existing Advance
+# 30. Automated Test — Existing Advance
 
 Given:
 
@@ -783,7 +813,7 @@ No overlap.
 
 ---
 
-# 30. Automated Test — Twelve Months
+# 31. Automated Test — Twelve Months
 
 Advance:
 
@@ -799,7 +829,7 @@ period_fee × 12
 
 ---
 
-# 31. Automated Test — Calendar Dates
+# 32. Automated Test — Calendar Dates
 
 Test advance periods across:
 
@@ -816,7 +846,7 @@ Correct calendar-aware dates.
 
 ---
 
-# 32. Automated Test — Price Change
+# 33. Automated Test — Price Change
 
 Create advance payment at:
 
@@ -834,7 +864,7 @@ Reprinted receipt remains unchanged.
 
 ---
 
-# 33. Automated Test — Duplicate Submission
+# 34. Automated Test — Duplicate Submission
 
 Submit the same advance payment twice rapidly.
 
@@ -846,7 +876,7 @@ No accidental duplicate payment.
 
 ---
 
-# 34. Automated Test — Transaction Failure
+# 35. Automated Test — Transaction Failure
 
 Simulate:
 
@@ -868,7 +898,7 @@ No receipt remains.
 
 ---
 
-# 35. Automated Test — Printing Failure
+# 36. Automated Test — Printing Failure
 
 Advance payment commits successfully.
 
@@ -886,7 +916,7 @@ User can reprint.
 
 ---
 
-# 36. Frontend Tests
+# 37. Frontend Tests
 
 Verify:
 
@@ -907,7 +937,7 @@ Verify:
 
 ---
 
-# 37. AI AGENT MUST
+# 38. AI AGENT MUST
 
 [ ] Implement only advance-payment functionality
 [ ] Reuse existing member system
@@ -927,7 +957,7 @@ Verify:
 
 ---
 
-# 38. AI AGENT MUST NOT
+# 39. AI AGENT MUST NOT
 
 [ ] Rebuild the Members module
 [ ] Rebuild Membership Plans
@@ -947,12 +977,14 @@ Verify:
 
 ---
 
-# 39. Definition of Done
+# 40. Definition of Done
 
 Advance Payment is complete when:
 
-[ ] User can open Advance Payment for a member
+[ ] User can reach upcoming payment from the Record Payment screen
 [ ] Current paid-through date is shown
+[ ] Upcoming periods are offered only when all current dues are clear
+[ ] Outstanding dues block the advance in the backend
 [ ] 1-month advance works
 [ ] 3-month advance works
 [ ] 6-month advance works
@@ -977,11 +1009,15 @@ Advance Payment is complete when:
 
 ---
 
-# 40. Golden Flow
+# 41. Golden Flow
 
 Member Details
       ↓
-Advance Payment
+Record Payment
+      ↓
+Member has no dues
+      ↓
+Pay Upcoming Periods
       ↓
 Paid Through: 30 Sep 2026
       ↓

@@ -1299,12 +1299,33 @@ mod tests {
         )
         .unwrap();
 
+        // Upcoming periods may only be prepaid once the current one is settled.
+        crate::services::payment_service::create_payment(
+            &conn,
+            CreatePaymentRequest {
+                member_id: created.id.clone(),
+                membership_plan_id: "plan-credit".to_string(),
+                amount: 2000,
+                payment_method: "Cash".to_string(),
+                payment_date: crate::utils::dates::today_iso(),
+                payment_month: None, description: None,
+                reference: None,
+                notes: None,
+                idempotency_key: Some("credit-current".to_string()),
+                discounts: None,
+                bill_ids: None,
+            },
+        )
+        .unwrap();
+
         crate::services::advance_payment_service::create(
             &conn,
             crate::dto::advance_payment::CreateAdvancePaymentRequest {
                 member_id: created.id.clone(),
                 period_count: 3,
                 payment_method: "Cash".to_string(),
+                payment_date: None,
+                payment_month: None,
                 note: None,
                 idempotency_key: Some("credit-adv".to_string()),
             },
@@ -1313,7 +1334,7 @@ mod tests {
 
         let listed = list_members(&conn, "", None, false).unwrap();
         assert_eq!(listed.len(), 1);
-        // Dues are settled and three future periods are prepaid: -3 x 2000.
+        // Dues are cleared and three future periods are prepaid: -3 x 2000.
         assert_eq!(listed[0].outstanding_balance, -6000);
         assert!(listed[0].is_paid);
     }

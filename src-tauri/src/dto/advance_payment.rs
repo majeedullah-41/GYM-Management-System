@@ -31,6 +31,10 @@ pub struct CreateAdvancePaymentRequest {
     pub period_count: u32,
     pub payment_method: String,
     #[serde(default)]
+    pub payment_date: Option<String>,
+    #[serde(default)]
+    pub payment_month: Option<String>,
+    #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
     pub idempotency_key: Option<String>,

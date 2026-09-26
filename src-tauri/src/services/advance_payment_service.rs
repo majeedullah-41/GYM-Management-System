@@ -35,9 +35,34 @@ fn load_member(conn: &Connection, member_id: &str) -> Result<crate::models::Memb
     Ok(member)
 }
 
+/// Upcoming periods may only be prepaid once the member is fully settled: no
+/// past or current shortfall may remain, otherwise arrears could be skipped by
+/// moving money forward instead of clearing the backlog.
+fn ensure_dues_cleared(conn: &Connection, member_id: &str) -> Result<(), AppError> {
+    let dues = billing_service::outstanding_amount(conn, member_id)?;
+    if dues > 0 {
+        return Err(AppError::ValidationError(format!(
+            "Member has Rs. {dues} outstanding. Clear all dues before paying for upcoming periods."
+        )));
+    }
+    Ok(())
+}
+
+fn resolve_payment_date(value: Option<&str>) -> Result<String, AppError> {
+    let raw = value.map(str::trim).unwrap_or_default();
+    if raw.is_empty() {
+        return Ok(crate::utils::dates::today_iso());
+    }
+    NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .map_err(|_| {
+            AppError::ValidationError("Invalid payment date format. Use YYYY-MM-DD".into())
+        })
+}
+
 /// Generates the authoritative advance payment preview: the next-coverage
-/// window for `period_count` plan cycles, the outstanding dues that will be
-/// settled first, and the total amount. The frontend only displays these
+/// window for `period_count` plan cycles, the outstanding dues that must be
+/// cleared first, and the total amount. The frontend only displays these
 /// values; the creation path recomputes them in Rust.
 pub fn preview(
     conn: &Connection,
@@ -65,6 +90,7 @@ pub fn preview(
             "Cannot calculate an advance payment for an inactive plan".into(),
         ));
     }
+    ensure_dues_cleared(conn, member_id)?;
 
     let from_date = billing_service::next_billing_start(conn, member_id)?;
     let from = NaiveDate::parse_from_str(&from_date, "%Y-%m-%d").map_err(|_| {
@@ -83,7 +109,6 @@ pub fn preview(
     let future_total = fee
         .checked_mul(i64::from(period_count))
         .ok_or_else(|| AppError::ValidationError("Advance total too large".into()))?;
-    let outstanding_dues = billing_service::outstanding_amount(conn, member_id)?;
 
     Ok(AdvancePaymentPreview {
         member_id: member.id.clone(),
@@ -97,16 +122,18 @@ pub fn preview(
         coverage_start,
         coverage_end,
         coverage_periods: periods,
-        outstanding_dues,
+        // Upcoming periods are only offered once the ledger is fully settled,
+        // so an advance total is always future periods alone.
+        outstanding_dues: 0,
         future_total,
-        total: outstanding_dues + future_total,
+        total: future_total,
     })
 }
 
-/// Creates one payment that first settles all outstanding dues and then
-/// pre-pays `period_count` upcoming plan cycles, all inside one transaction
-/// (one payment, one receipt). The amount is computed authoritatively here in
-/// Rust. Duplicate requests are deduplicated by idempotency key.
+/// Creates one payment that pre-pays `period_count` upcoming plan cycles inside
+/// one transaction (one payment, one receipt). The member must have no
+/// outstanding dues. The amount is computed authoritatively here in Rust.
+/// Duplicate requests are deduplicated by idempotency key.
 pub fn create(
     conn: &Connection,
     request: CreateAdvancePaymentRequest,
@@ -152,8 +179,8 @@ pub fn create(
             "Cannot record an advance payment for an inactive plan".into(),
         ));
     }
+    ensure_dues_cleared(&tx, &request.member_id)?;
 
-    let pre_advance_due = billing_service::outstanding_amount(&tx, &request.member_id)?;
     let fee = membership.agreed_fee;
     let future_total = fee
         .checked_mul(i64::from(request.period_count))
@@ -164,13 +191,13 @@ pub fn create(
         billing_service::generate_future_bills(&tx, &request.member_id, &from_date, request.period_count)?;
 
     // FIFO targets now include the freshly created future bills, so the
-    // allocation settles oldest dues first and fills upcoming periods after.
+    // allocation fills upcoming periods oldest-first.
     let targets = billing_repository::list_outstanding_bills(&tx, &request.member_id)?;
     let ledger_due: i64 = targets
         .iter()
         .map(|b| (b.expected_amount - b.paid_amount - b.discount_amount).max(0))
         .sum();
-    let amount = pre_advance_due + future_total;
+    let amount = future_total;
     if amount != ledger_due {
         return Err(AppError::InternalError(
             "Advance payment total does not match the outstanding ledger".into(),
@@ -195,11 +222,16 @@ pub fn create(
         amount,
         discount_amount: 0,
         payment_method: request.payment_method.clone(),
-        payment_date: crate::utils::dates::today_iso(),
+        payment_date: resolve_payment_date(request.payment_date.as_deref())?,
         membership_plan_id: membership.membership_plan_id.clone(),
         membership_start_date: start_date.clone(),
         membership_expiry_date: expiry_date.clone(),
-        payment_month: None,
+        payment_month: request
+            .payment_month
+            .as_deref()
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(str::to_string),
         description: None,
         reference: None,
         notes: request.note,
@@ -307,6 +339,8 @@ mod tests {
             member_id: member_id.to_string(),
             period_count: count,
             payment_method: "Cash".into(),
+            payment_date: None,
+            payment_month: None,
             note: None,
             idempotency_key: Some(format!("advance-{}-{}", member_id, count)),
         }
@@ -421,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn advance_settles_existing_dues_first_then_fills_future_periods() {
+    fn rejects_advance_while_dues_are_outstanding() {
         let conn = test_db();
         let member_id = insert_member(&conn, "Ahmad");
         let plan_id = insert_plan(&conn, "Monthly", 2000, 30);
@@ -444,31 +478,77 @@ mod tests {
         )
         .unwrap();
 
+        let preview_error = preview(&conn, &member_id, 2).unwrap_err();
+        assert!(
+            preview_error
+                .to_string()
+                .contains("Rs. 1000 outstanding"),
+            "unexpected preview error: {preview_error}"
+        );
+        let create_error = create(&conn, advance_request(&member_id, 2)).unwrap_err();
+        assert!(
+            create_error
+                .to_string()
+                .contains("Clear all dues before paying for upcoming periods"),
+            "unexpected create error: {create_error}"
+        );
+
+        // Nothing was written: no future periods, no extra payment, no receipt.
+        let bills = billing_repository::list_member_bills(&conn, &member_id).unwrap();
+        assert_eq!(bills.len(), 1);
+        assert_eq!(bills[0].paid_amount, 1000);
+        assert_eq!(
+            payment_repository::list_by_member(&conn, &member_id)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn advance_is_allowed_once_dues_are_cleared() {
+        let conn = test_db();
+        let (member_id, _) = setup_current_member(&conn);
+
         let v = preview(&conn, &member_id, 2).unwrap();
-        assert_eq!(v.outstanding_dues, 1000);
+        assert_eq!(v.outstanding_dues, 0);
         assert_eq!(v.future_total, 4000);
-        assert_eq!(v.total, 5000);
+        assert_eq!(v.total, 4000);
 
         let p = create(&conn, advance_request(&member_id, 2)).unwrap();
-        assert_eq!(p.amount, 5000);
-        // 3 allocations: current-period shortfall, then two future periods.
-        assert_eq!(p.allocations.len(), 3);
-        let bills = billing_repository::list_member_bills(&conn, &member_id).unwrap();
-        assert_eq!(bills.len(), 3);
-        assert_eq!(
-            (
-                bills[0].paid_amount,
-                bills[1].paid_amount,
-                bills[2].paid_amount
-            ),
-            (2000, 2000, 2000)
-        );
-        // The original shortfall was settled by the advance too.
+        assert_eq!(p.amount, 4000);
+        assert_eq!(p.allocations.len(), 2);
         assert_eq!(
             billing_service::get_billing_summary(&conn, &member_id)
                 .unwrap()
                 .total_outstanding,
             0
+        );
+    }
+
+    #[test]
+    fn advance_uses_requested_payment_date_and_month() {
+        let conn = test_db();
+        let (member_id, _) = setup_current_member(&conn);
+        let mut req = advance_request(&member_id, 1);
+        req.payment_date = Some("2026-09-06".into());
+        req.payment_month = Some("  October 2026 ".into());
+
+        let p = create(&conn, req).unwrap();
+        assert_eq!(p.payment_date, "2026-09-06");
+        assert_eq!(p.payment_month.as_deref(), Some("October 2026"));
+
+        let mut bad = advance_request(&member_id, 1);
+        bad.idempotency_key = Some("advance-bad-date".into());
+        bad.payment_date = Some("06-09-2026".into());
+        assert!(create(&conn, bad).is_err());
+
+        let mut blank = advance_request(&member_id, 1);
+        blank.idempotency_key = Some("advance-blank-date".into());
+        blank.payment_date = Some("   ".into());
+        assert_eq!(
+            create(&conn, blank).unwrap().payment_date,
+            crate::utils::dates::today_iso()
         );
     }
 

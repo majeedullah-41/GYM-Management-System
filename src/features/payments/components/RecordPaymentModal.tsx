@@ -6,8 +6,11 @@ import { Select } from "../../../components/ui/Select";
 import { useToast } from "../../../components/feedback/ToastProvider";
 import {
   createPayment,
+  createAdvancePayment,
   getPaymentSummary,
   listMemberPayments,
+  previewAdvancePayment,
+  type AdvancePaymentPreview,
   type PaymentResponse,
   type PaymentSummary,
 } from "../../../lib/api/payments";
@@ -46,6 +49,8 @@ function planCadence(plan: PlanResponse) {
   return `per ${plan.duration_days} days`;
 }
 
+const QUICK_PERIOD_OPTIONS = [1, 3, 6, 12];
+
 export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPaymentRecorded }: Props) {
   const { addToast } = useToast();
   const [members, setMembers] = useState<MemberResponse[]>([]);
@@ -74,6 +79,11 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
   const [formFieldKeys, setFormFieldKeys] = useState<PaymentFieldKey[]>(
     DEFAULT_VISIBLE_PAYMENT_FIELDS,
   );
+  const [advanceCountInput, setAdvanceCountInput] = useState("");
+  const [advancePreview, setAdvancePreview] = useState<AdvancePaymentPreview | null>(null);
+  const [advanceLoading, setAdvanceLoading] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const [completedIsAdvance, setCompletedIsAdvance] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,6 +128,10 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     setDiscounts({});
     setSelectedBillIds(new Set());
     setMemberDropdownOpen(false);
+    setAdvanceCountInput("");
+    setAdvancePreview(null);
+    setAdvanceError(null);
+    setCompletedIsAdvance(false);
     requestKeyRef.current = crypto.randomUUID();
   }, [isOpen, initialMemberId]);
 
@@ -181,6 +195,9 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     setSummaryLoading(true);
     setDetailsOpen(false);
     setDiscounts({});
+    setAdvanceCountInput("");
+    setAdvancePreview(null);
+    setAdvanceError(null);
     getPaymentSummary(selectedMember.id, selectedPlanId)
       .then((result) => {
         setSummary(result);
@@ -209,6 +226,59 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
       .catch(() => setSummary(null))
       .finally(() => setSummaryLoading(false));
   }, [selectedMember, selectedPlanId, isOpen]);
+
+  // Upcoming periods can only be prepaid once the ledger is fully settled, so
+  // this preview runs for settled members only. The backend is authoritative
+  // for coverage dates and the total.
+  const upcomingEligible = useMemo(
+    () => !!summary && summary.bills.length > 0 && summary.bills.every((b) => b.remaining_amount <= 0),
+    [summary],
+  );
+
+  // A chosen count is only payable once the backend has confirmed the preview
+  // for that exact count, so the amount can never be submitted from a stale
+  // or failed preview.
+  const advanceCount = useMemo(() => {
+    const parsed = parseInt(advanceCountInput, 10);
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed : null;
+  }, [advanceCountInput]);
+  const advancePreviewReady = !!advancePreview && advancePreview.period_count === advanceCount;
+  const advanceActive = advanceCount !== null && advancePreviewReady;
+  const advancePending = advanceCount !== null && !advancePreviewReady;
+
+  useEffect(() => {
+    if (!isOpen || !selectedMember || !upcomingEligible || advanceCount === null) {
+      setAdvancePreview(null);
+      setAdvanceError(null);
+      setAdvanceLoading(false);
+      return;
+    }
+    const count = advanceCount;
+    let cancelled = false;
+    setAdvanceLoading(true);
+    setAdvanceError(null);
+    const timer = setTimeout(() => {
+      previewAdvancePayment(selectedMember.id, count)
+        .then((result) => {
+          if (cancelled) return;
+          setAdvancePreview(result);
+          setAdvanceError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setAdvancePreview(null);
+          setAdvanceError(err instanceof Error ? err.message : "Could not load upcoming periods");
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setAdvanceLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isOpen, selectedMember, upcomingEligible, advanceCount]);
 
   const filteredMembers = useMemo(() => {
     const query = memberSearch.trim().toLowerCase();
@@ -328,6 +398,45 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     setAmount("");
     setDiscounts({});
     setSelectedBillIds(new Set());
+    setAdvanceCountInput("");
+    setAdvancePreview(null);
+    setAdvanceError(null);
+  };
+
+  const handleAdvanceSubmit = async () => {
+    if (!selectedMember || !advancePreview) return;
+    try {
+      setSubmitting(true);
+      const payment = await createAdvancePayment({
+        member_id: selectedMember.id,
+        period_count: advancePreview.period_count,
+        payment_method: method,
+        payment_date: paymentDate,
+        payment_month: paymentMonth.trim() || null,
+        note: notes.trim() || null,
+        idempotency_key: requestKeyRef.current,
+      });
+      addToast({
+        variant: "success",
+        title: "Upcoming payment recorded",
+        message: `${formatCurrency(payment.amount)} covers ${formatPeriod(
+          advancePreview.coverage_start,
+          advancePreview.coverage_end,
+        )}.`,
+      });
+      onPaymentRecorded();
+      setCompletedIsAdvance(true);
+      setCompletedPaymentId(payment.id);
+      requestKeyRef.current = crypto.randomUUID();
+    } catch (error) {
+      addToast({
+        variant: "error",
+        title: "Upcoming payment failed",
+        message: error instanceof Error ? error.message : "Could not record upcoming payment",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -337,6 +446,18 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
     }
     if (!selectedPlanId) {
       addToast({ variant: "warning", title: "Select a plan" });
+      return;
+    }
+    if (advancePending) {
+      addToast({
+        variant: "warning",
+        title: advanceError ? "Upcoming periods unavailable" : "Confirming upcoming periods",
+        message: advanceError ?? "Please wait for the amount to load.",
+      });
+      return;
+    }
+    if (advanceActive) {
+      await handleAdvanceSubmit();
       return;
     }
     if (selectedBillIds.size === 0) {
@@ -383,6 +504,7 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
       });
       onPaymentRecorded();
       setCompletedPaymentId(payment.id);
+      requestKeyRef.current = crypto.randomUUID();
     } catch (error) {
       addToast({
         variant: "error",
@@ -412,8 +534,12 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
               <Button variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
-              <Button loading={submitting} onClick={handleSubmit}>
-                Record Payment
+              <Button loading={submitting} disabled={advancePending} onClick={handleSubmit}>
+                {advanceActive && advancePreview
+                  ? `Pay Upcoming ${formatCurrency(advancePreview.future_total)}`
+                  : advancePending
+                    ? "Pay Upcoming"
+                    : "Record Payment"}
               </Button>
             </>
           )
@@ -422,8 +548,15 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
         {completedPaymentId ? (
           <div className="py-8 text-center">
             <div className="mb-2 text-lg font-semibold text-green-600">
-              Payment Recorded Successfully
+              {completedIsAdvance ? "Upcoming Payment Recorded Successfully" : "Payment Recorded Successfully"}
             </div>
+            {completedIsAdvance && advancePreview && (
+              <p className="mb-1 text-sm text-text-primary">
+                {formatPeriod(advancePreview.coverage_start, advancePreview.coverage_end)} •{" "}
+                {advancePreview.period_count}{" "}
+                {advancePreview.period_count === 1 ? "period" : "periods"} covered
+              </p>
+            )}
             <p className="text-sm text-text-muted">The receipt is ready to view or print.</p>
           </div>
         ) : (
@@ -822,7 +955,9 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
                       </div>
                     ) : (
                       <div className="py-2.5 text-center text-xs text-text-muted">
-                        No unpaid periods.
+                        {upcomingEligible
+                          ? "No unpaid periods. This member is clear through the current period."
+                          : "No unpaid periods."}
                       </div>
                     )}
                   </div>
@@ -830,10 +965,117 @@ export function RecordPaymentModal({ isOpen, onClose, initialMemberId, onPayment
               </div>
             )}
 
+            {summary && selectedMember && upcomingEligible && (
+              <div className="space-y-2.5 rounded-xl border border-slate-300 bg-secondary-bg p-3 px-4 dark:border-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-text-primary">Pay Upcoming Periods</span>
+                  <span className="text-xs text-text-muted">
+                    Paid Through:{" "}
+                    <span className="font-medium text-text-primary">
+                      {advancePreview?.paid_through
+                        ? formatDate(advancePreview.paid_through)
+                        : summary.membership_expiry_date
+                          ? formatDate(summary.membership_expiry_date)
+                          : "—"}
+                    </span>
+                  </span>
+                </div>
+
+                <p className="text-xs text-text-muted">
+                  All current dues are clear. Choose how many upcoming{" "}
+                  {selectedPlan && planCadence(selectedPlan).replace("per ", "")} periods to pay in
+                  advance.
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {QUICK_PERIOD_OPTIONS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setAdvanceCountInput(String(option))}
+                      className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        advanceCount === option
+                          ? "border-primary bg-primary text-white"
+                          : "border-border bg-surface text-text-primary hover:bg-border"
+                      }`}
+                    >
+                      {option} {option === 1 ? "Period" : "Periods"}
+                    </button>
+                  ))}
+                  <label htmlFor="advance_period_count" className="sr-only">
+                    Upcoming periods
+                  </label>
+                  <input
+                    id="advance_period_count"
+                    name="advance_period_count"
+                    type="number"
+                    min={1}
+                    placeholder="Custom"
+                    value={advanceCountInput}
+                    onChange={(event) => setAdvanceCountInput(event.target.value)}
+                    className="w-24 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  {advanceCount !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setAdvanceCountInput("")}
+                      className="text-xs font-medium text-text-muted hover:text-text-primary"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {advanceError && (
+                  <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
+                    {advanceError}
+                  </div>
+                )}
+
+                {advanceLoading && (
+                  <div className="text-xs text-text-muted">Loading upcoming periods...</div>
+                )}
+
+                {advancePreview && advanceCount !== null && !advanceLoading && (
+                  <div className="space-y-1 rounded-lg bg-surface p-2.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">New Coverage:</span>
+                      <span className="font-medium text-text-primary">
+                        {formatPeriod(advancePreview.coverage_start, advancePreview.coverage_end)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Fee:</span>
+                      <span className="text-text-primary">
+                        {advancePreview.period_count} × {formatCurrency(advancePreview.fee)} ={" "}
+                        {formatCurrency(advancePreview.future_total)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
+                      <span className="text-text-muted">Total:</span>
+                      <span className="text-primary">{formatCurrency(advancePreview.future_total)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {summary && selectedMember && !upcomingEligible && outstandingBills.length > 0 && (
+              <p className="text-xs text-text-muted">
+                Upcoming periods unlock after all current dues are cleared.
+              </p>
+            )}
+
             <PaymentFormFields
               visibleFields={visibleFields}
-              amount={amount}
+              amount={
+                advanceCount !== null && advancePreview
+                  ? String(advancePreview.future_total)
+                  : amount
+              }
               onAmountChange={setAmount}
+              amountMax={advanceCount !== null && advancePreview ? advancePreview.future_total : undefined}
+              readOnlyAmount={advanceCount !== null}
               method={method}
               onMethodChange={setMethod}
               paymentDate={paymentDate}

@@ -115,6 +115,8 @@ export interface CreateAdvancePaymentRequest {
   member_id: string;
   period_count: number;
   payment_method: string;
+  payment_date?: string | null;
+  payment_month?: string | null;
   note?: string | null;
   idempotency_key?: string | null;
 }

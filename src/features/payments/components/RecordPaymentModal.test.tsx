@@ -3,12 +3,18 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../../components/feedback/ToastProvider";
 import { RecordPaymentModal } from "./RecordPaymentModal";
-import type { PaymentSummary, PaymentResponse } from "../../../lib/api/payments";
+import type {
+  AdvancePaymentPreview,
+  PaymentSummary,
+  PaymentResponse,
+} from "../../../lib/api/payments";
 import type { MemberResponse } from "../../../lib/api/members";
 import type { PlanResponse } from "../../../lib/api/membership-plans";
 
 const mocks = vi.hoisted(() => ({
   createPayment: vi.fn(),
+  createAdvancePayment: vi.fn(),
+  previewAdvancePayment: vi.fn(),
   getPaymentSummary: vi.fn(),
   listMemberPayments: vi.fn(),
   listMembers: vi.fn(),
@@ -18,6 +24,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../../lib/api/payments", () => ({
   createPayment: mocks.createPayment,
+  createAdvancePayment: mocks.createAdvancePayment,
+  previewAdvancePayment: mocks.previewAdvancePayment,
   getPaymentSummary: mocks.getPaymentSummary,
   listMemberPayments: mocks.listMemberPayments,
   PAYMENT_METHODS: ["Cash", "Bank Transfer", "Card", "Other"],
@@ -150,6 +158,71 @@ const mockSummaryWithPastDuesAndCurrent: PaymentSummary = {
   ],
 };
 
+const mockSummaryFullyPaid: PaymentSummary = {
+  plan_price: 1000,
+  back_due: 0,
+  new_period_due: 0,
+  previously_paid: 1000,
+  outstanding: 0,
+  is_first_payment: false,
+  membership_start_date: "2026-08-25",
+  membership_expiry_date: null,
+  previous_dues: 0,
+  current_month_fee: 0,
+  bills: [
+    {
+      id: "bill-paid-1",
+      membership_id: "ms-1",
+      membership_plan_id: "plan-1",
+      billing_period: "2026-08",
+      period_start: "2026-08-25",
+      period_end: "2026-09-23",
+      due_date: "2026-09-23",
+      expected_amount: 1000,
+      paid_amount: 1000,
+      discount_amount: 0,
+      remaining_amount: 0,
+      status: "PAID",
+    },
+    {
+      id: "bill-paid-2",
+      membership_id: "ms-1",
+      membership_plan_id: "plan-1",
+      billing_period: "2026-09",
+      period_start: "2026-09-24",
+      period_end: "2026-10-23",
+      due_date: "2026-10-23",
+      expected_amount: 1000,
+      paid_amount: 1000,
+      discount_amount: 0,
+      remaining_amount: 0,
+      status: "PAID",
+    },
+  ],
+};
+
+function makePreview(
+  overrides: Partial<AdvancePaymentPreview> = {},
+): AdvancePaymentPreview {
+  return {
+    member_id: "member-1",
+    member_name: "Ahmad Khan",
+    member_number: "GYM-000001",
+    membership_plan_id: "plan-1",
+    plan_name: "Monthly Plan",
+    fee: 1000,
+    period_count: 1,
+    paid_through: "2026-10-23",
+    coverage_start: "2026-10-24",
+    coverage_end: "2026-11-22",
+    coverage_periods: [],
+    outstanding_dues: 0,
+    future_total: 1000,
+    total: 1000,
+    ...overrides,
+  };
+}
+
 describe("RecordPaymentModal period selection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -160,6 +233,15 @@ describe("RecordPaymentModal period selection", () => {
       visible_fields: ["amount", "method", "date", "summary", "notes"],
     });
     mocks.getPaymentSummary.mockResolvedValue(mockSummaryWithPastDuesAndCurrent);
+    mocks.previewAdvancePayment.mockImplementation((_memberId: string, count: number) =>
+      Promise.resolve(
+        makePreview({
+          period_count: count,
+          future_total: 1000 * count,
+          total: 1000 * count,
+        }),
+      ),
+    );
   });
 
   afterEach(() => {
@@ -323,5 +405,112 @@ describe("RecordPaymentModal period selection", () => {
         bill_ids: ["bill-current", "bill-past-1"],
       }),
     );
+  });
+
+  it("keeps the upcoming period locked while dues are outstanding", async () => {
+    render(
+      <ToastProvider>
+        <RecordPaymentModal
+          isOpen={true}
+          onClose={() => {}}
+          initialMemberId="member-1"
+          onPaymentRecorded={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await screen.findByText("Rs. 4,000");
+
+    expect(screen.queryByText("Pay Upcoming Periods")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Upcoming periods unlock after all current dues are cleared."),
+    ).toBeInTheDocument();
+    expect(mocks.previewAdvancePayment).not.toHaveBeenCalled();
+  });
+
+  it("offers upcoming periods to a fully paid member and records the advance payment", async () => {
+    const user = userEvent.setup();
+    mocks.getPaymentSummary.mockResolvedValue(mockSummaryFullyPaid);
+    mocks.createAdvancePayment.mockResolvedValue({
+      id: "pay-advance",
+      receipt_number: "RCP-000009",
+      amount: 3000,
+    } as PaymentResponse);
+
+    render(
+      <ToastProvider>
+        <RecordPaymentModal
+          isOpen={true}
+          onClose={() => {}}
+          initialMemberId="member-1"
+          onPaymentRecorded={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByText("Pay Upcoming Periods")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record Payment" })).toBeEnabled();
+    expect(mocks.previewAdvancePayment).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "1 Period" }));
+
+    expect(await screen.findByText("1 × Rs. 1,000 = Rs. 1,000")).toBeInTheDocument();
+    expect(mocks.previewAdvancePayment).toHaveBeenCalledWith("member-1", 1);
+
+    await user.click(screen.getByRole("button", { name: "3 Periods" }));
+    expect(await screen.findByText("3 × Rs. 1,000 = Rs. 3,000")).toBeInTheDocument();
+    expect(mocks.previewAdvancePayment).toHaveBeenLastCalledWith("member-1", 3);
+
+    // The backend total owns the amount field while an advance is armed
+    const amountInput = screen.getByLabelText(/amount/i) as HTMLInputElement;
+    expect(amountInput.value).toBe("3000");
+    expect(amountInput).toHaveAttribute("readonly");
+
+    const payButton = await screen.findByRole("button", { name: /Pay Upcoming Rs\. 3,000/ });
+    await user.click(payButton);
+
+    expect(mocks.createAdvancePayment).toHaveBeenCalledTimes(1);
+    expect(mocks.createAdvancePayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        member_id: "member-1",
+        period_count: 3,
+        payment_method: "Cash",
+        payment_date: today,
+      }),
+    );
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Upcoming Payment Recorded Successfully"),
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces an upcoming-period preview failure without blocking the form", async () => {
+    const user = userEvent.setup();
+    mocks.getPaymentSummary.mockResolvedValue(mockSummaryFullyPaid);
+    mocks.previewAdvancePayment.mockRejectedValue(
+      new Error("Member has Rs. 1000 outstanding. Clear all dues before paying for upcoming periods."),
+    );
+
+    render(
+      <ToastProvider>
+        <RecordPaymentModal
+          isOpen={true}
+          onClose={() => {}}
+          initialMemberId="member-1"
+          onPaymentRecorded={() => {}}
+        />
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "3 Periods" }));
+
+    expect(
+      await screen.findByText(
+        "Member has Rs. 1000 outstanding. Clear all dues before paying for upcoming periods.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pay Upcoming" })).toBeDisabled();
+    expect(mocks.createAdvancePayment).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 });
