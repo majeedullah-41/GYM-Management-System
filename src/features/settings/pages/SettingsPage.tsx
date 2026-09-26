@@ -1032,27 +1032,6 @@ function DataTab({
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-surface p-5">
-        <h3 className="text-sm font-semibold text-text-primary mb-3">About Gym POS</h3>
-        <div className="max-w-md space-y-2 text-xs text-text-muted">
-          <div className="flex justify-between py-1 border-b border-border/50">
-            <span>Application</span>
-            <span className="text-text-primary font-medium">Gym POS Management System</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-border/50">
-            <span>Version</span>
-            <span className="text-text-primary font-medium">1.0.0</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-border/50">
-            <span>Database</span>
-            <span className="text-text-primary font-medium">SQLite Embedded</span>
-          </div>
-          <div className="flex justify-between py-1">
-            <span>Platform</span>
-            <span className="text-text-primary font-medium">Tauri 2 (Windows Native)</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
