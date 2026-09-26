@@ -921,21 +921,24 @@ function DataTab({
   const chooseFolder = async () => {
     const directory = await selectBackupFolder();
     if (!directory) return null;
-    const next = { ...form, directory };
-    if (!(await persist(next, false))) return null;
+    setForm((current) => ({ ...current, directory }));
     return directory;
   };
 
   const handleBackup = async () => {
     try {
       setBacking(true);
-      const directory = form.directory ?? (await chooseFolder());
+      const alreadyConfigured = form.directory;
+      const directory = alreadyConfigured ?? (await chooseFolder());
       if (!directory) return;
       const path = await backupDatabase(directory);
       const last_backup_at = new Date().toISOString();
       const next = { ...form, directory, last_backup_at };
       setForm(next);
       onSave({ ...settings, backup: next });
+      if (!alreadyConfigured) {
+        await persist(next, false);
+      }
       addToast({
         variant: "success",
         title: "Backup successful",
@@ -997,6 +1000,29 @@ function DataTab({
             />
             Create a backup whenever Gym POS closes
           </label>
+
+          <div className="max-w-xs">
+            <Select
+              label="Backups to keep"
+              value={String(form.keep_count ?? 0)}
+              onChange={(event) => setForm({ ...form, keep_count: Number(event.target.value) })}
+              options={[
+                { value: "1", label: "Last 1 backup" },
+                { value: "2", label: "Last 2 backups" },
+                { value: "3", label: "Last 3 backups" },
+                { value: "5", label: "Last 5 backups" },
+                { value: "7", label: "Last 7 backups" },
+                { value: "10", label: "Last 10 backups" },
+                { value: "15", label: "Last 15 backups" },
+                { value: "0", label: "Keep all backups" },
+              ]}
+              className="text-xs"
+            />
+            <p className="mt-1.5 text-[11px] text-text-muted">
+              Older backups in this folder are deleted once you save these settings, and again after
+              each new backup is created. Other files in the folder are never touched.
+            </p>
+          </div>
 
           <div className="flex flex-wrap gap-2 pt-1">
             <Button

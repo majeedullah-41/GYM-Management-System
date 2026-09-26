@@ -100,6 +100,7 @@ pub async fn save_backup_settings(
     backup: BackupSettings,
 ) -> Result<(), AppError> {
     auth_service::require_authenticated()?;
+    let keep_count = backup.keep_count;
     if let Some(directory) = backup.directory.as_deref() {
         let path = std::path::Path::new(directory);
         std::fs::create_dir_all(path).map_err(|error| {
@@ -114,7 +115,15 @@ pub async fn save_backup_settings(
 
     let conn = state.inner().clone_conn();
     run_db(conn, move |c| {
-        settings_repository::save_backup_settings(c, &backup)
+        settings_repository::save_backup_settings(c, &backup)?;
+        if let Some(directory) = backup.directory.as_deref() {
+            if let Err(error) =
+                backup_service::prune_old_backups(std::path::Path::new(directory), keep_count, None)
+            {
+                log::warn!("Could not remove old backups: {error}");
+            }
+        }
+        Ok(())
     })
     .await
 }

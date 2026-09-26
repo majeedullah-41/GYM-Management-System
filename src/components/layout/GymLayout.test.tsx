@@ -51,6 +51,7 @@ vi.mock("../../lib/api/settings", () => ({
       daily_enabled: true,
       close_enabled: true,
       last_backup_at: null,
+      keep_count: 3,
     },
   }),
 }));

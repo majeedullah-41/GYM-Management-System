@@ -50,6 +50,7 @@ export interface BackupSettings {
   daily_enabled: boolean;
   close_enabled: boolean;
   last_backup_at: string | null;
+  keep_count: number;
 }
 
 export interface AllSettings {

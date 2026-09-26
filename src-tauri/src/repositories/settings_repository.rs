@@ -51,12 +51,15 @@ pub struct PrintSettings {
     pub show_footer: bool,
 }
 
+pub const DEFAULT_BACKUP_KEEP_COUNT: u32 = 3;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupSettings {
     pub directory: Option<String>,
     pub daily_enabled: bool,
     pub close_enabled: bool,
     pub last_backup_at: Option<String>,
+    pub keep_count: u32,
 }
 
 impl Default for BackupSettings {
@@ -66,6 +69,7 @@ impl Default for BackupSettings {
             daily_enabled: true,
             close_enabled: true,
             last_backup_at: None,
+            keep_count: DEFAULT_BACKUP_KEEP_COUNT,
         }
     }
 }
@@ -316,6 +320,7 @@ pub fn get_backup_settings(conn: &Connection) -> BackupSettings {
         daily_enabled: get_bool_default(conn, "backup_daily_enabled", true),
         close_enabled: get_bool_default(conn, "backup_close_enabled", true),
         last_backup_at: get_setting(conn, "backup_last_at").ok(),
+        keep_count: get_u32_default(conn, "backup_keep_count", DEFAULT_BACKUP_KEEP_COUNT),
     }
 }
 
@@ -332,6 +337,12 @@ pub fn save_backup_settings(conn: &Connection, backup: &BackupSettings) -> Resul
         conn,
         "backup_close_enabled",
         if backup.close_enabled { "1" } else { "0" },
+        &now,
+    )?;
+    set_setting(
+        conn,
+        "backup_keep_count",
+        &backup.keep_count.to_string(),
         &now,
     )?;
     Ok(())
@@ -356,6 +367,13 @@ pub fn last_daily_backup_date(conn: &Connection) -> Option<String> {
 fn get_bool_default(conn: &Connection, key: &str, default: bool) -> bool {
     match get_setting(conn, key) {
         Ok(v) => v == "1",
+        Err(_) => default,
+    }
+}
+
+fn get_u32_default(conn: &Connection, key: &str, default: u32) -> u32 {
+    match get_setting(conn, key) {
+        Ok(v) => v.trim().parse::<u32>().unwrap_or(default),
         Err(_) => default,
     }
 }
