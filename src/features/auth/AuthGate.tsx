@@ -22,6 +22,19 @@ export function AuthGate({
 }) {
   const [status, setStatus] = useState<"loading" | "login" | "ready">("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [gymName, setGymName] = useState("GOLD GYM");
+  const [gymTagline, setGymTagline] = useState<string | null>(null);
+  const [gymLogo, setGymLogo] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAllSettings()
+      .then((settings) => {
+        if (settings?.gym?.gym_name) setGymName(settings.gym.gym_name);
+        if (settings?.gym?.gym_tagline !== undefined) setGymTagline(settings.gym.gym_tagline);
+        if (settings?.gym?.gym_logo !== undefined) setGymLogo(settings.gym.gym_logo);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     getAuthStatus()
@@ -34,7 +47,7 @@ export function AuthGate({
 
   if (status === "loading") {
     return (
-      <AuthFrame>
+      <AuthFrame gymName={gymName} gymTagline={gymTagline} gymLogo={gymLogo}>
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#17613f] border-t-transparent" />
           <p className="mt-4 text-xs font-medium text-slate-500">Checking your account...</p>
@@ -46,6 +59,9 @@ export function AuthGate({
   if (status === "login") {
     return (
       <LoginForm
+        gymName={gymName}
+        gymTagline={gymTagline}
+        gymLogo={gymLogo}
         onComplete={(next) => {
           setUser(next);
           setStatus("ready");
@@ -58,15 +74,39 @@ export function AuthGate({
   return <>{children(user, () => { setUser(null); setStatus("login"); }, setUser)}</>;
 }
 
-function AuthFrame({ children }: { children: ReactNode }) {
-  const [gymName, setGymName] = useState("GOLD GYM");
-  const [gymTagline, setGymTagline] = useState("Train Today Be Better");
+function AuthFrame({
+  children,
+  gymName = "GOLD GYM",
+  gymTagline,
+  gymLogo,
+}: {
+  children: ReactNode;
+  gymName?: string;
+  gymTagline?: string | null;
+  gymLogo?: string | null;
+}) {
+  const [currentGymName, setCurrentGymName] = useState(gymName);
+  const [currentGymTagline, setCurrentGymTagline] = useState<string | null>(gymTagline ?? null);
+  const [currentGymLogo, setCurrentGymLogo] = useState<string | null>(gymLogo ?? null);
+
+  useEffect(() => {
+    if (gymName) setCurrentGymName(gymName);
+  }, [gymName]);
+
+  useEffect(() => {
+    if (gymTagline !== undefined) setCurrentGymTagline(gymTagline);
+  }, [gymTagline]);
+
+  useEffect(() => {
+    if (gymLogo !== undefined) setCurrentGymLogo(gymLogo);
+  }, [gymLogo]);
 
   useEffect(() => {
     getAllSettings()
       .then((settings) => {
-        if (settings?.gym?.gym_name) setGymName(settings.gym.gym_name);
-        if (settings?.gym?.gym_tagline) setGymTagline(settings.gym.gym_tagline);
+        if (settings?.gym?.gym_name) setCurrentGymName(settings.gym.gym_name);
+        if (settings?.gym?.gym_tagline !== undefined) setCurrentGymTagline(settings.gym.gym_tagline);
+        if (settings?.gym?.gym_logo !== undefined) setCurrentGymLogo(settings.gym.gym_logo);
       })
       .catch(() => {});
   }, []);
@@ -96,28 +136,38 @@ function AuthFrame({ children }: { children: ReactNode }) {
           <div className="pointer-events-none absolute -right-16 top-1/3 h-56 w-56 rounded-full border-[24px] border-white/25" />
           <div className="pointer-events-none absolute -left-10 bottom-16 h-60 w-60 rounded-full border-[28px] border-white/20" />
 
-          {/* Dumbbell Icon & Brand Header */}
+          {/* Dumbbell Icon / Brand Logo & Brand Header */}
           <div className="relative z-10 mt-6 flex flex-col items-center text-center">
             <div className="mb-4 flex items-center justify-center">
-              <svg
-                viewBox="0 0 72 72"
-                className="h-16 w-16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <rect x="14" y="22" width="7" height="28" rx="3.5" fill="#17613f" />
-                <rect x="23" y="16" width="7" height="40" rx="3.5" fill="#17613f" />
-                <rect x="30" y="32" width="12" height="8" rx="2" fill="#17613f" />
-                <rect x="42" y="16" width="7" height="40" rx="3.5" fill="#17613f" />
-                <rect x="51" y="22" width="7" height="28" rx="3.5" fill="#17613f" />
-              </svg>
+              {currentGymLogo ? (
+                <img
+                  src={currentGymLogo}
+                  alt={currentGymName}
+                  className="h-16 w-16 object-contain rounded-xl"
+                />
+              ) : (
+                <svg
+                  viewBox="0 0 72 72"
+                  className="h-16 w-16"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <rect x="14" y="22" width="7" height="28" rx="3.5" fill="#17613f" />
+                  <rect x="23" y="16" width="7" height="40" rx="3.5" fill="#17613f" />
+                  <rect x="30" y="32" width="12" height="8" rx="2" fill="#17613f" />
+                  <rect x="42" y="16" width="7" height="40" rx="3.5" fill="#17613f" />
+                  <rect x="51" y="22" width="7" height="28" rx="3.5" fill="#17613f" />
+                </svg>
+              )}
             </div>
             <h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">
-              {gymName}
+              {currentGymName}
             </h1>
-            <p className="mt-1 text-xs font-semibold tracking-wide text-slate-500">
-              {gymTagline}
-            </p>
+            {currentGymTagline?.trim() && (
+              <p className="mt-1 text-xs font-semibold tracking-wide text-slate-500">
+                {currentGymTagline.trim()}
+              </p>
+            )}
           </div>
 
           {/* Dumbbell Photography Bottom Visual */}
@@ -142,7 +192,17 @@ function AuthFrame({ children }: { children: ReactNode }) {
   );
 }
 
-function LoginForm({ onComplete }: { onComplete: (user: AuthUser) => void }) {
+function LoginForm({
+  onComplete,
+  gymName: propGymName = "GOLD GYM",
+  gymTagline,
+  gymLogo,
+}: {
+  onComplete: (user: AuthUser) => void;
+  gymName?: string;
+  gymTagline?: string | null;
+  gymLogo?: string | null;
+}) {
   const [step, setStep] = useState<"login" | "unavailable" | "answer" | "reset">("login");
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
@@ -153,7 +213,11 @@ function LoginForm({ onComplete }: { onComplete: (user: AuthUser) => void }) {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [gymName, setGymName] = useState("GOLD GYM");
+  const [gymName, setGymName] = useState(propGymName);
+
+  useEffect(() => {
+    if (propGymName) setGymName(propGymName);
+  }, [propGymName]);
 
   useEffect(() => {
     getAllSettings()
@@ -177,7 +241,7 @@ function LoginForm({ onComplete }: { onComplete: (user: AuthUser) => void }) {
 
   if (step === "unavailable") {
     return (
-      <AuthFrame>
+      <AuthFrame gymName={gymName} gymTagline={gymTagline} gymLogo={gymLogo}>
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Password Recovery</h2>
           <p className="mt-1 text-xs text-slate-500">Security question status</p>
@@ -200,7 +264,7 @@ function LoginForm({ onComplete }: { onComplete: (user: AuthUser) => void }) {
 
   if (step === "answer") {
     return (
-      <AuthFrame>
+      <AuthFrame gymName={gymName} gymTagline={gymTagline} gymLogo={gymLogo}>
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Account Recovery</h2>
           <p className="mt-1 text-xs text-slate-500">{question}</p>
@@ -262,7 +326,7 @@ function LoginForm({ onComplete }: { onComplete: (user: AuthUser) => void }) {
 
   if (step === "reset") {
     return (
-      <AuthFrame>
+      <AuthFrame gymName={gymName} gymTagline={gymTagline} gymLogo={gymLogo}>
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Set a New Password</h2>
           <p className="mt-1 text-xs text-slate-500">Create a secure password with at least 8 characters</p>
@@ -341,7 +405,7 @@ function LoginForm({ onComplete }: { onComplete: (user: AuthUser) => void }) {
   }
 
   return (
-    <AuthFrame>
+    <AuthFrame gymName={gymName} gymTagline={gymTagline} gymLogo={gymLogo}>
       <div>
         <h2
           aria-label="Login"

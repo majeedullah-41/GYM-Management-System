@@ -64,7 +64,6 @@ button {
 .reports-page > *,
 .settings-page > * {
   animation: page-rise 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: transform, opacity, filter;
 }
 
 .dashboard-page > :nth-child(2),

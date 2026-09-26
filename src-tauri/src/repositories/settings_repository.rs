@@ -245,10 +245,11 @@ pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
     if settings.gym_name.is_empty() {
         settings.gym_name = "Gym POS".to_string();
     }
-    if settings
-        .gym_tagline
-        .as_deref()
-        .is_none_or(|value| value.trim().is_empty())
+    if get_setting(conn, "gym_name").is_err()
+        && settings
+            .gym_tagline
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
     {
         settings.gym_tagline = Some("Train Today Be Better".to_string());
     }

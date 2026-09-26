@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAuthStatus: vi.fn(),
   getRecoveryQuestion: vi.fn(),
   login: vi.fn(),
+  getAllSettings: vi.fn(),
 }));
 
 vi.mock("../../lib/api/auth", () => ({
@@ -15,6 +16,10 @@ vi.mock("../../lib/api/auth", () => ({
   login: mocks.login,
   resetPassword: vi.fn(),
   verifyRecoveryAnswer: vi.fn(),
+}));
+
+vi.mock("../../lib/api/settings", () => ({
+  getAllSettings: mocks.getAllSettings,
 }));
 
 const admin = {
@@ -32,6 +37,9 @@ describe("AuthGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getAuthStatus.mockResolvedValue({ authenticated: false, user: null });
+    mocks.getAllSettings.mockResolvedValue({
+      gym: { gym_name: "GOLD GYM", gym_tagline: "Train Today Be Better", gym_logo: null },
+    });
   });
 
   it("shows login first with admin prefilled and no account creation fields", async () => {
@@ -42,6 +50,20 @@ describe("AuthGate", () => {
     expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Security question")).not.toBeInTheDocument();
     expect(screen.queryByText("Create Account")).not.toBeInTheDocument();
+  });
+
+  it("displays configured gym slogan and name from settings", async () => {
+    mocks.getAllSettings.mockResolvedValue({
+      gym: {
+        gym_name: "TITAN FITNESS",
+        gym_tagline: "Unleash Your Strength",
+        gym_logo: null,
+      },
+    });
+    render(<AuthGate>{() => <div>Dashboard</div>}</AuthGate>);
+    expect(await screen.findByText("TITAN FITNESS")).toBeInTheDocument();
+    expect(await screen.findByText("Unleash Your Strength")).toBeInTheDocument();
+    expect(screen.getByText("Sign in to continue to TITAN FITNESS")).toBeInTheDocument();
   });
 
   it("logs in with the default credentials", async () => {

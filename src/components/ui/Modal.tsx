@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 interface ModalProps {
@@ -9,6 +10,7 @@ interface ModalProps {
   footer?: ReactNode;
   maxWidthClassName?: string;
   compact?: boolean;
+  backdropClassName?: string;
 }
 
 export function Modal({
@@ -19,6 +21,7 @@ export function Modal({
   footer,
   maxWidthClassName = "max-w-lg",
   compact = false,
+  backdropClassName = "bg-black/25 backdrop-blur-sm",
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -35,15 +38,15 @@ export function Modal({
 
   if (!isOpen) return null;
 
-  return (
+  const modalContent = (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className={`fixed inset-0 z-50 flex items-center justify-center transition-all ${backdropClassName}`}
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className={`flex ${compact ? "max-h-[96vh]" : "max-h-[90vh]"} w-full ${maxWidthClassName} flex-col rounded-lg bg-surface shadow-lg`}>
+      <div className={`flex ${compact ? "max-h-[96vh]" : "max-h-[90vh]"} w-full ${maxWidthClassName} flex-col rounded-lg bg-surface shadow-2xl`}>
         <div className={`flex items-center justify-between border-b border-border ${compact ? "px-5 py-3" : "px-6 py-4"}`}>
           <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
           <button
@@ -62,4 +65,8 @@ export function Modal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined"
+    ? createPortal(modalContent, document.body)
+    : modalContent;
 }

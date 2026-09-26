@@ -2,7 +2,6 @@ import { useState, useCallback } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { NavigationContext } from "./NavigationContext";
-import { ToastProvider } from "../feedback/ToastProvider";
 import { GymProvider } from "../../context/GymContext";
 import { PrivacyProvider } from "../../context/PrivacyContext";
 import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
@@ -77,50 +76,48 @@ export function AppShell({
         }}
       >
         <PrivacyProvider>
-          <ToastProvider>
-            <div className="flex h-screen overflow-hidden bg-background">
-              <Sidebar
-                currentPage={currentPage}
-                username={user.username}
-                onLogout={async () => {
-                  await logout();
-                  onSignedOut();
-                }}
-                onNavigate={(page) => {
-                  setSelectedMemberId(null);
-                  setPaymentMemberId(null);
-                  setCurrentPage(page);
-                }}
-              />
-              <div className="flex flex-1 flex-col overflow-hidden">
-                <TopBar currentPage={currentPage} user={user} />
-                <main className="flex-1 overflow-auto p-5 lg:px-6 lg:py-5">
-                  {(() => {
-                    const Component = PAGE_COMPONENTS[currentPage];
-                    if (currentPage === "dashboard") {
-                      return <DashboardPage user={user} />;
-                    }
-                    if (currentPage === "members") {
-                      return <MembersPage initialExpandedId={selectedMemberId} />;
-                    }
-                    if (currentPage === "payments") {
-                      return <PaymentsPage initialMemberId={paymentMemberId} />;
-                    }
-                    if (currentPage === "settings") {
-                      return (
-                        <SettingsPage
-                          user={user}
-                          onUserUpdated={onUserUpdated}
-                          onSignedOut={onSignedOut}
-                        />
-                      );
-                    }
-                    return <Component />;
-                  })()}
-                </main>
-              </div>
+          <div className="flex h-screen overflow-hidden bg-background">
+            <Sidebar
+              currentPage={currentPage}
+              username={user.username}
+              onLogout={async () => {
+                await logout();
+                onSignedOut();
+              }}
+              onNavigate={(page) => {
+                setSelectedMemberId(null);
+                setPaymentMemberId(null);
+                setCurrentPage(page);
+              }}
+            />
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <TopBar currentPage={currentPage} user={user} />
+              <main className="flex-1 overflow-auto p-5 lg:px-6 lg:py-5">
+                {(() => {
+                  const Component = PAGE_COMPONENTS[currentPage];
+                  if (currentPage === "dashboard") {
+                    return <DashboardPage user={user} />;
+                  }
+                  if (currentPage === "members") {
+                    return <MembersPage initialExpandedId={selectedMemberId} />;
+                  }
+                  if (currentPage === "payments") {
+                    return <PaymentsPage initialMemberId={paymentMemberId} />;
+                  }
+                  if (currentPage === "settings") {
+                    return (
+                      <SettingsPage
+                        user={user}
+                        onUserUpdated={onUserUpdated}
+                        onSignedOut={onSignedOut}
+                      />
+                    );
+                  }
+                  return <Component />;
+                })()}
+              </main>
             </div>
-          </ToastProvider>
+          </div>
         </PrivacyProvider>
       </NavigationContext.Provider>
     </GymProvider>

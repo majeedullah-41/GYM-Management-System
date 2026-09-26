@@ -119,3 +119,20 @@ export async function selectGymLogo(): Promise<string | null> {
 export async function backupDatabase(directory: string): Promise<string> {
   return invokeCommand<string>("backup_database", { directory });
 }
+
+export async function selectBackupFile(): Promise<string | null> {
+  return invokeCommand<string | null>("select_backup_file");
+}
+
+export interface RestoreBackupResult {
+  source: string;
+  /** Copy of the data that was replaced, kept so the restore can be undone. */
+  safetyBackup: string;
+}
+
+export async function restoreBackup(
+  source: string,
+  adminPassword: string,
+): Promise<RestoreBackupResult> {
+  return invokeCommand<RestoreBackupResult>("restore_backup", { source, adminPassword });
+}

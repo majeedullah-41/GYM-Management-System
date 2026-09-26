@@ -1,5 +1,6 @@
 use base64::Engine;
-use tauri::State;
+use serde::Serialize;
+use tauri::{AppHandle, Manager, State};
 
 use crate::database::Database;
 use crate::errors::AppError;
@@ -7,15 +8,15 @@ use crate::repositories::settings_repository::{
     self, AllSettings, BackupSettings, GymSettings, MemberFormSettings, PaymentFormSettings,
     PrintSettings, ReceiptSettings,
 };
-use crate::services::auth_service;
+use crate::services::auth_service::{self, AuthState};
 use crate::services::backup_service::{self, BackupKind};
 
-use super::db::run_db;
+use super::db::{run_db, run_db_unauthenticated};
 
 #[tauri::command]
 pub async fn get_all_settings(state: State<'_, Database>) -> Result<AllSettings, AppError> {
     let conn = state.inner().clone_conn();
-    run_db(conn, |c| settings_repository::get_all_settings(c)).await
+    run_db_unauthenticated(conn, |c| settings_repository::get_all_settings(c)).await
 }
 
 #[tauri::command]
@@ -118,7 +119,7 @@ pub async fn save_backup_settings(
         settings_repository::save_backup_settings(c, &backup)?;
         if let Some(directory) = backup.directory.as_deref() {
             if let Err(error) =
-                backup_service::prune_old_backups(std::path::Path::new(directory), keep_count, None)
+                backup_service::prune_old_backups(std::path::Path::new(directory), keep_count, &[])
             {
                 log::warn!("Could not remove old backups: {error}");
             }
@@ -136,6 +137,17 @@ pub async fn select_backup_folder() -> Result<Option<String>, AppError> {
         .pick_folder()
         .await
         .map(|folder| folder.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn select_backup_file() -> Result<Option<String>, AppError> {
+    auth_service::require_authenticated()?;
+    Ok(rfd::AsyncFileDialog::new()
+        .set_title("Select a backup to restore")
+        .add_filter("Gym POS backup", &["db", "sqlite", "bak"])
+        .pick_file()
+        .await
+        .map(|file| file.path().to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -190,4 +202,84 @@ pub async fn backup_database(
         Ok(path.to_string_lossy().to_string())
     })
     .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreBackupResult {
+    source: String,
+    safety_backup: Option<String>,
+}
+
+/// Replaces all live data with the contents of a backup file.
+///
+/// The admin password is verified in the same locked scope as the restore, so the
+/// destructive step cannot run without it. A copy of the current data is written
+/// to the backup folder first, so a restore is always reversible. The current
+/// session is dropped afterwards because the restored data carries its own
+/// account and login details.
+#[tauri::command]
+pub async fn restore_backup(
+    app: AppHandle,
+    state: State<'_, Database>,
+    auth: State<'_, AuthState>,
+    source: String,
+    admin_password: String,
+) -> Result<RestoreBackupResult, AppError> {
+    auth_service::require_authenticated()?;
+    crate::licensing::require_valid_license()?;
+
+    let source = std::path::PathBuf::from(source);
+    let live_path = state.inner().path().to_path_buf();
+    if same_file(&source, &live_path) {
+        return Err(AppError::ValidationError(
+            "That is the live database, not a backup. Choose a backup file.".into(),
+        ));
+    }
+
+    // The configured folder is where the user already looks for backups; the app
+    // data directory is the fallback when no folder has been chosen yet.
+    let safety_directory = {
+        let conn = state.inner().clone_conn();
+        let configured = tauri::async_runtime::spawn_blocking(move || {
+            let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
+            settings_repository::get_backup_settings(&guard).directory
+        })
+        .await
+        .map_err(|e| AppError::InternalError(format!("Database task failed: {e}")))?;
+        match configured {
+            Some(directory) if !directory.trim().is_empty() => std::path::PathBuf::from(directory),
+            _ => app
+                .path()
+                .app_data_dir()
+                .map_err(|error| AppError::InternalError(format!("{error}")))?,
+        }
+    };
+
+    let conn = state.inner().clone_conn();
+    let session = auth.inner().clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = conn.lock().unwrap_or_else(|e| e.into_inner());
+        auth_service::verify_password(&guard, &session, &admin_password)?;
+        backup_service::restore_backup(&mut guard, &source, &safety_directory)
+    })
+    .await
+    .map_err(|e| AppError::InternalError(format!("Database task failed: {e}")))??;
+
+    // The restored data has its own accounts, so the in-memory session can point
+    // at a user that no longer exists.
+    auth.logout()?;
+
+    Ok(RestoreBackupResult {
+        source: outcome.source.to_string_lossy().to_string(),
+        safety_backup: Some(outcome.safety_backup.to_string_lossy().to_string()),
+    })
+}
+
+/// Compares two paths after resolving them, so a backup restored through a
+/// different spelling of the same location is still rejected.
+fn same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
+    let resolve =
+        |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    resolve(left) == resolve(right)
 }

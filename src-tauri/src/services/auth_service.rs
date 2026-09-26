@@ -1,6 +1,6 @@
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex,
+    Arc, Mutex,
 };
 
 use argon2::{
@@ -47,8 +47,8 @@ struct AuthMemory {
     recovery: Option<RecoveryGrant>,
 }
 
-#[derive(Default)]
-pub struct AuthState(Mutex<AuthMemory>);
+#[derive(Clone, Default)]
+pub struct AuthState(Arc<Mutex<AuthMemory>>);
 
 impl AuthState {
     pub fn require_user_id(&self) -> Result<String, AppError> {

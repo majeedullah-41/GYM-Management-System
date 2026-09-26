@@ -53,6 +53,7 @@ import type { AuthUser } from "../../../lib/api/auth";
 import { UserInformationTab } from "../components/UserInformationTab";
 import { MemberFormSettingsTab } from "../components/MemberFormSettingsTab";
 import { PaymentFormSettingsTab } from "../components/PaymentFormSettingsTab";
+import { RestoreBackupSection } from "../components/RestoreBackupSection";
 import { ReceiptPaper } from "../../receipts/components/ReceiptPaper";
 import { LicenseInfoTab } from "../../licensing/components/LicenseInfoTab";
 import { useGym } from "../../../context/GymContext";
@@ -178,6 +179,7 @@ export function SettingsPage({
               backing={backing}
               setBacking={setBacking}
               addToast={addToast}
+              onRestored={onSignedOut}
             />
           )}
           {activeTab === "license" && <LicenseInfoTab />}
@@ -245,7 +247,7 @@ function GymInfoTab({
     <div className="rounded-lg border border-border bg-surface p-5 text-xs">
       <h3 className="mb-1 text-sm font-semibold text-text-primary">Gym Information</h3>
       <p className="mb-4 text-xs text-text-muted">
-        This information appears on receipts and printed documents.
+        This information appears on the login screen, sidebar, and printed receipts.
       </p>
       <div className="max-w-lg space-y-3.5">
         <div>
@@ -291,7 +293,7 @@ function GymInfoTab({
           className="text-xs"
         />
         <Input
-          label="Receipt Tagline"
+          label="Gym Slogan / Tagline"
           placeholder="Train Today Be Better"
           value={form.gym_tagline ?? ""}
           onChange={(e) => update({ gym_tagline: e.target.value || null })}
@@ -884,6 +886,7 @@ function DataTab({
   backing,
   setBacking,
   addToast,
+  onRestored,
 }: {
   settings: AllSettings;
   onSave: (settings: AllSettings) => void;
@@ -894,6 +897,7 @@ function DataTab({
     title: string;
     message?: string;
   }) => void;
+  onRestored: () => void;
 }) {
   const [form, setForm] = useState<BackupSettings>(settings.backup);
   const [saving, setSaving] = useState(false);
@@ -1058,6 +1062,7 @@ function DataTab({
         </div>
       </div>
 
+      <RestoreBackupSection onRestored={onRestored} />
     </div>
   );
 }

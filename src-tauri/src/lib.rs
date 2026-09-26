@@ -34,7 +34,7 @@ pub fn run() {
 
             let conn = database::init_db(&db_path).expect("Failed to initialize database");
 
-            let database = Database::new(conn);
+            let database = Database::new(conn, db_path);
             services::backup_service::start_daily_backup_worker(database.clone_conn());
             let license_service = licensing::init(&app_dir);
             app.manage(license_service);
@@ -112,8 +112,10 @@ pub fn run() {
             commands::settings::save_print_settings,
             commands::settings::save_backup_settings,
             commands::settings::select_backup_folder,
+            commands::settings::select_backup_file,
             commands::settings::select_gym_logo,
             commands::settings::backup_database,
+            commands::settings::restore_backup,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

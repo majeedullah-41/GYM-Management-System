@@ -12,6 +12,7 @@ interface ToastItem {
   title: string;
   message?: string;
   variant: "success" | "error" | "warning" | "info";
+  durationMs?: number;
 }
 
 interface ToastContextValue {
@@ -74,7 +75,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (toast: Omit<ToastItem, "id">) => {
       const id = crypto.randomUUID();
       setToasts((prev) => [...prev, { ...toast, id }]);
-      setTimeout(() => removeToast(id), 4000);
+      setTimeout(() => removeToast(id), toast.durationMs ?? 4000);
     },
     [removeToast],
   );

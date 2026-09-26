@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
@@ -11,17 +11,25 @@ use super::migrations;
 #[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
+    path: PathBuf,
 }
 
 impl Database {
-    pub fn new(conn: Connection) -> Self {
+    pub fn new(conn: Connection, path: PathBuf) -> Self {
         Self {
             conn: Arc::new(Mutex::new(conn)),
+            path,
         }
     }
 
     pub fn clone_conn(&self) -> Arc<Mutex<Connection>> {
         self.conn.clone()
+    }
+
+    /// Location of the live database file, so destructive commands can refuse to
+    /// treat it as a restore source.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
 

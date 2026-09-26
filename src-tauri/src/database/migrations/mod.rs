@@ -99,6 +99,12 @@ Migration {
     ]
 }
 
+/// Ids of every migration this build knows about. A restored backup carrying an
+/// id outside this list came from a newer build and is refused.
+pub fn known_ids() -> Vec<&'static str> {
+    get_migrations().into_iter().map(|migration| migration.id).collect()
+}
+
 pub fn run_migrations(conn: &mut Connection) -> Result<(), AppError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
