@@ -4,6 +4,7 @@ import type { Page } from "../../types";
 interface NavigationContextValue {
   navigateTo: (page: Page) => void;
   navigateToMember: (memberId: string) => void;
+  navigateBack: () => void;
   openAddMember: () => void;
   openRecordPayment: () => void;
   openPaymentForMember: (memberId: string) => void;
@@ -12,6 +13,7 @@ interface NavigationContextValue {
 export const NavigationContext = createContext<NavigationContextValue>({
   navigateTo: () => {},
   navigateToMember: () => {},
+  navigateBack: () => {},
   openAddMember: () => {},
   openRecordPayment: () => {},
   openPaymentForMember: () => {},

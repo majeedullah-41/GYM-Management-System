@@ -1,10 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthGate } from "./AuthGate";
 
 const mocks = vi.hoisted(() => ({
   getAuthStatus: vi.fn(),
+  getLoginUsername: vi.fn(),
   getRecoveryQuestion: vi.fn(),
   login: vi.fn(),
   getAllSettings: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/api/auth", () => ({
   getAuthStatus: mocks.getAuthStatus,
+  getLoginUsername: mocks.getLoginUsername,
   getRecoveryQuestion: mocks.getRecoveryQuestion,
   login: mocks.login,
   resetPassword: vi.fn(),
@@ -37,19 +39,53 @@ describe("AuthGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getAuthStatus.mockResolvedValue({ authenticated: false, user: null });
+    mocks.getLoginUsername.mockResolvedValue("admin");
     mocks.getAllSettings.mockResolvedValue({
       gym: { gym_name: "GOLD GYM", gym_tagline: "Train Today Be Better", gym_logo: null },
     });
   });
 
-  it("shows login first with admin prefilled and no account creation fields", async () => {
+  it("shows login first with the stored username prefilled and no account creation fields", async () => {
     render(<AuthGate>{() => <div>Dashboard</div>}</AuthGate>);
     expect(await screen.findByRole("heading", { name: "Login" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Username")).toHaveValue("admin");
+    await waitFor(() => expect(screen.getByLabelText("Username")).toHaveValue("admin"));
     expect(screen.getByLabelText("Show Password")).toBeInTheDocument();
     expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Security question")).not.toBeInTheDocument();
     expect(screen.queryByText("Create Account")).not.toBeInTheDocument();
+  });
+
+  it("prefills the username the user changed it to", async () => {
+    mocks.getLoginUsername.mockResolvedValue("manager");
+    render(<AuthGate>{() => <div>Dashboard</div>}</AuthGate>);
+    await waitFor(() => expect(screen.getByLabelText("Username")).toHaveValue("manager"));
+    expect(screen.getByLabelText("Username")).not.toHaveValue("admin");
+  });
+
+  it("logs in with the stored username", async () => {
+    mocks.getLoginUsername.mockResolvedValue("manager");
+    mocks.login.mockResolvedValue({ ...admin, username: "manager" });
+    render(<AuthGate>{() => <div>Dashboard</div>}</AuthGate>);
+    await waitFor(() => expect(screen.getByLabelText("Username")).toHaveValue("manager"));
+    await userEvent.type(screen.getByLabelText("Password"), "secret123");
+    await userEvent.click(screen.getByRole("button", { name: "Login" }));
+    expect(await screen.findByText("Dashboard")).toBeInTheDocument();
+    expect(mocks.login).toHaveBeenCalledWith({ username: "manager", password: "secret123" });
+  });
+
+  it("keeps a username typed before the stored username resolves", async () => {
+    let resolveUsername: (value: string) => void = () => {};
+    mocks.getLoginUsername.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveUsername = resolve;
+      }),
+    );
+    render(<AuthGate>{() => <div>Dashboard</div>}</AuthGate>);
+    expect(await screen.findByRole("heading", { name: "Login" })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Username"), "manager");
+    resolveUsername("admin");
+    await waitFor(() => expect(mocks.getLoginUsername).toHaveBeenCalled());
+    expect(screen.getByLabelText("Username")).toHaveValue("manager");
   });
 
   it("displays configured gym slogan and name from settings", async () => {

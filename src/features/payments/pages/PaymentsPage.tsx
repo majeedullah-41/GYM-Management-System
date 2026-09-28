@@ -33,6 +33,7 @@ import {
 import { listMembers, type MemberResponse } from "../../../lib/api/members";
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { RecordPaymentModal } from "../components/RecordPaymentModal";
+import { useNavigation } from "../../../components/layout/NavigationContext";
 import { usePrivacy, HideToggleButton, maskValue } from "../../../context/PrivacyContext";
 
 const DATE_PRESETS = [
@@ -179,6 +180,7 @@ interface PaymentsPageProps {
 export function PaymentsPage({ initialMemberId }: PaymentsPageProps) {
   const { addToast } = useToast();
   const { hidden } = usePrivacy();
+  const { navigateBack } = useNavigation();
   const [payments, setPayments] = useState<PaymentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -727,6 +729,7 @@ export function PaymentsPage({ initialMemberId }: PaymentsPageProps) {
         onClose={() => {
           setRecordOpen(false);
           setRecordInitialMemberId(null);
+          navigateBack();
         }}
         initialMemberId={recordInitialMemberId}
         onPaymentRecorded={() => load()}

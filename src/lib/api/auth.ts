@@ -15,6 +15,7 @@ export interface AuthStatus {
 }
 
 export const getAuthStatus = () => invokeCommand<AuthStatus>("get_auth_status");
+export const getLoginUsername = () => invokeCommand<string | null>("get_login_username");
 export const login = (request: { username: string; password: string }) => invokeCommand<AuthUser>("login", { request });
 export const logout = () => invokeCommand<void>("logout");
 export const verifyPassword = (password: string) => invokeCommand<void>("verify_password", { password });

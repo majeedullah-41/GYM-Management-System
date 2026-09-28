@@ -32,22 +32,20 @@ export function TopBar({ currentPage, user }: TopBarProps) {
   }, []);
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-6">
-      <div className="flex items-center gap-3">
-        <h2 className="text-base font-bold text-text-primary tracking-tight">
-          {gymName}
-        </h2>
-        {currentPage !== "dashboard" && (
-          <>
-            <span className="text-text-muted">/</span>
-            <span className="text-sm font-medium text-text-muted">
-              {PAGE_TITLES[currentPage]}
-            </span>
-          </>
-        )}
+    <header className="relative flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-6">
+      <div className="z-10 flex items-center gap-2">
+        <span className="text-sm font-medium text-text-muted">
+          {PAGE_TITLES[currentPage]}
+        </span>
       </div>
 
-      <div className="flex items-center gap-3 text-xs text-text-muted">
+      <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center px-4">
+        <h1 className="pointer-events-auto max-w-[55%] truncate text-center text-2xl font-extrabold tracking-tight text-text-primary sm:text-3xl lg:text-4xl">
+          {gymName}
+        </h1>
+      </div>
+
+      <div className="z-10 flex items-center gap-3 text-xs text-text-muted">
         <CalendarDays size={17} className="text-secondary-text" />
         <span>{formattedDate}</span>
         <span className="hidden h-5 w-px bg-border sm:inline-block" />

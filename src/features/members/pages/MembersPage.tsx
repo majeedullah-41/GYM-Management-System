@@ -362,8 +362,13 @@ export function MembersPage({
     const total = activeMembers.length;
     const active = activeMembers.filter((m) => m.is_paid).length;
     const unpaid = activeMembers.filter((m) => !m.is_paid || m.outstanding_balance > 0).length;
-    const paid = activeMembers.filter((m) => m.is_paid && m.outstanding_balance === 0).length;
-    const outstanding = activeMembers.reduce((sum, m) => sum + (m.outstanding_balance || 0), 0);
+    const paid = activeMembers.filter((m) => m.is_paid && m.outstanding_balance <= 0).length;
+    // Only dues are receivables: a member who prepaid upcoming periods holds a
+    // credit that must not offset what other members owe.
+    const outstanding = activeMembers.reduce(
+      (sum, m) => sum + (m.outstanding_balance > 0 ? m.outstanding_balance : 0),
+      0,
+    );
     const archived = kpiMembers.filter((m) => m.is_archived).length;
     return { total, active, unpaid, paid, outstanding, archived };
   }, [kpiMembers]);
@@ -966,6 +971,13 @@ export function MembersPage({
                         <td className="px-4 py-3 text-right">
                           {m.outstanding_balance > 0 ? (
                             <span className="inline-block rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200/60">
+                              {hidden ? maskValue() : formatCurrency(m.outstanding_balance)}
+                            </span>
+                          ) : m.outstanding_balance < 0 ? (
+                            <span
+                              title="Paid in advance for upcoming periods"
+                              className="inline-block rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700 border border-sky-200/60"
+                            >
                               {hidden ? maskValue() : formatCurrency(m.outstanding_balance)}
                             </span>
                           ) : (

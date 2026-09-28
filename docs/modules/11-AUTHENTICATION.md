@@ -66,6 +66,8 @@ Login is always the first authentication screen:
 
 It must not contain Confirm Password, Security Question, Security Answer, Create Account, or Create Administrator Account fields.
 
+The username field is prefilled with the account's current username so a renamed account never sees the seed value `admin` again. The prefill comes from the stored account, falls back to empty when unavailable, and must never hardcode `admin` in the frontend.
+
 Default credentials are only intended for initial access. A subtle, non-blocking notice may recommend changing them from `Settings → User Information`, but it must not restrict use of the application.
 
 ## 4. Username and password rules
@@ -302,9 +304,10 @@ At minimum verify:
 ## 16. Definition of done
 
 - Fresh databases automatically receive the hashed default administrator.
-- Login is the first screen and has `admin` prefilled.
+- Login is the first screen and prefills the stored username.
 - No account-creation or mandatory recovery screen appears.
 - The user can immediately log in with `admin / admin`.
+- A username changed in Settings is the value prefilled on the next login screen.
 - User Information supports username and password changes.
 - Security-question setup is optional and supports set/change states.
 - Forgot Password safely reports unavailable recovery when not configured.

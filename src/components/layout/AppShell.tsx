@@ -24,6 +24,12 @@ const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   "member-detail": MembersPage,
 };
 
+// Page a cross-page flow started from, so it can be resumed once the flow ends.
+interface ReturnTarget {
+  page: Page;
+  memberId: string | null;
+}
+
 export function AppShell({
   user,
   onSignedOut,
@@ -36,33 +42,47 @@ export function AppShell({
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [paymentMemberId, setPaymentMemberId] = useState<string | null>(null);
+  const [returnTarget, setReturnTarget] = useState<ReturnTarget | null>(null);
 
   const navigateTo = useCallback((page: Page) => {
     setSelectedMemberId(null);
+    setReturnTarget(null);
     setCurrentPage(page);
   }, []);
 
   const navigateToMember = useCallback((memberId: string) => {
     setSelectedMemberId(memberId);
+    setReturnTarget(null);
     setCurrentPage("members");
   }, []);
 
+  const navigateBack = useCallback(() => {
+    if (!returnTarget) return;
+    setSelectedMemberId(returnTarget.memberId);
+    setPaymentMemberId(null);
+    setReturnTarget(null);
+    setCurrentPage(returnTarget.page);
+  }, [returnTarget]);
+
   const openAddMember = useCallback(() => {
     setSelectedMemberId(null);
+    setReturnTarget(null);
     setCurrentPage("members");
   }, []);
 
   const openRecordPayment = useCallback(() => {
     setSelectedMemberId(null);
     setPaymentMemberId(null);
+    setReturnTarget({ page: currentPage, memberId: null });
     setCurrentPage("payments");
-  }, []);
+  }, [currentPage]);
 
   const openPaymentForMember = useCallback((memberId: string) => {
     setSelectedMemberId(null);
     setPaymentMemberId(memberId);
+    setReturnTarget({ page: currentPage, memberId });
     setCurrentPage("payments");
-  }, []);
+  }, [currentPage]);
 
   return (
     <GymProvider>
@@ -70,6 +90,7 @@ export function AppShell({
         value={{
           navigateTo,
           navigateToMember,
+          navigateBack,
           openAddMember,
           openRecordPayment,
           openPaymentForMember,
@@ -87,6 +108,7 @@ export function AppShell({
               onNavigate={(page) => {
                 setSelectedMemberId(null);
                 setPaymentMemberId(null);
+                setReturnTarget(null);
                 setCurrentPage(page);
               }}
             />

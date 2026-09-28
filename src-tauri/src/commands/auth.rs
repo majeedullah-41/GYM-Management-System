@@ -27,6 +27,11 @@ pub fn get_auth_status(
 }
 
 #[tauri::command]
+pub fn get_login_username(database: State<'_, Database>) -> Result<Option<String>, AppError> {
+    with_db(database.inner(), |conn| auth_service::login_username(conn))
+}
+
+#[tauri::command]
 pub fn login(
     database: State<'_, Database>,
     auth: State<'_, AuthState>,

@@ -1,8 +1,9 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { User, Lock, KeyRound } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import {
   getAuthStatus,
+  getLoginUsername,
   getRecoveryQuestion,
   login,
   resetPassword,
@@ -204,7 +205,7 @@ function LoginForm({
   gymLogo?: string | null;
 }) {
   const [step, setStep] = useState<"login" | "unavailable" | "answer" | "reset">("login");
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [question, setQuestion] = useState("");
@@ -214,6 +215,19 @@ function LoginForm({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [gymName, setGymName] = useState(propGymName);
+  const usernameEdited = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    getLoginUsername()
+      .then((stored) => {
+        if (active && !usernameEdited.current && stored?.trim()) setUsername(stored.trim());
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (propGymName) setGymName(propGymName);
@@ -441,8 +455,11 @@ function LoginForm({
                 autoFocus
                 autoComplete="username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
+                onChange={(e) => {
+                  usernameEdited.current = true;
+                  setUsername(e.target.value);
+                }}
+                placeholder="Enter your username"
                 className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 transition-colors focus:border-[#17613f] focus:outline-none focus:ring-1 focus:ring-[#17613f]"
               />
             </div>

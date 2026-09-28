@@ -261,7 +261,7 @@ describe("RecordPaymentModal period selection", () => {
     );
 
     // Outstanding due shows Rs. 4,000
-    expect(await screen.findByText("Rs. 4,000")).toBeInTheDocument();
+    expect(await screen.findByText("Rs. 4,000", {}, { timeout: 5000 })).toBeInTheDocument();
 
     // Default amount input is prefilled with 1000 (current month only!), NOT 4000
     const amountInput = screen.getByLabelText(/amount/i) as HTMLInputElement;

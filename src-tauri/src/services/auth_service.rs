@@ -169,6 +169,10 @@ pub fn status(conn: &Connection, auth: &AuthState) -> Result<AuthStatusResponse,
     })
 }
 
+pub fn login_username(conn: &Connection) -> Result<Option<String>, AppError> {
+    Ok(user_repository::get_only(conn)?.map(|user| user.username))
+}
+
 pub fn ensure_default_admin(conn: &Connection) -> Result<(), AppError> {
     if user_repository::count(conn)? > 0 {
         return Ok(());
@@ -415,6 +419,15 @@ mod tests {
         assert!(stored.security_question.is_none());
         assert!(stored.security_answer_hash.is_none());
         assert!(stored.uses_default_credentials);
+    }
+
+    #[test]
+    fn login_username_tracks_the_current_username() {
+        let conn = database();
+        assert_eq!(login_username(&conn).unwrap().as_deref(), Some("admin"));
+        let user = user_repository::get_only(&conn).unwrap().unwrap();
+        user_repository::update_username(&conn, &user.id, "manager", &now()).unwrap();
+        assert_eq!(login_username(&conn).unwrap().as_deref(), Some("manager"));
     }
 
     #[test]

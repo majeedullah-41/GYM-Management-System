@@ -99,6 +99,12 @@ export function MemberDetailRow({ member, onEdit, onPay }: MemberDetailRowProps)
   const lastPayment = payments.find((payment) => !payment.is_voided);
   const totalPaid = payments.reduce((sum, p) => sum + (p.is_voided ? 0 : p.amount), 0);
   const avatarColor = getAvatarColor(member.full_name);
+  // A prepaid balance arrives as a negative; the credit card shows how much is
+  // held on account, not a negative amount.
+  const balanceAmount =
+    member.outstanding_balance < 0
+      ? Math.abs(member.outstanding_balance)
+      : member.outstanding_balance;
 
   return (
     <div className="space-y-4 bg-[#f8faf8] p-5 border-y border-border/80">
@@ -261,29 +267,47 @@ export function MemberDetailRow({ member, onEdit, onPay }: MemberDetailRowProps)
               className={`rounded-lg p-3 border ${
                 member.outstanding_balance > 0
                   ? "bg-amber-50/70 border-amber-200"
-                  : "bg-emerald-50/70 border-emerald-200"
+                  : member.outstanding_balance < 0
+                    ? "bg-sky-50/70 border-sky-200"
+                    : "bg-emerald-50/70 border-emerald-200"
               }`}
             >
               <span
                 className={`text-[11px] font-semibold uppercase tracking-wider ${
-                  member.outstanding_balance > 0 ? "text-amber-800" : "text-emerald-800"
+                  member.outstanding_balance > 0
+                    ? "text-amber-800"
+                    : member.outstanding_balance < 0
+                      ? "text-sky-800"
+                      : "text-emerald-800"
                 }`}
               >
-                Outstanding Balance
+                {member.outstanding_balance < 0 ? "Advance Credit" : "Outstanding Balance"}
               </span>
               <p
                 className={`mt-1 text-sm font-bold ${
-                  member.outstanding_balance > 0 ? "text-amber-900" : "text-emerald-900"
+                  member.outstanding_balance > 0
+                    ? "text-amber-900"
+                    : member.outstanding_balance < 0
+                      ? "text-sky-900"
+                      : "text-emerald-900"
                 }`}
               >
-                {hidden ? maskValue() : formatCurrency(member.outstanding_balance)}
+                {hidden ? maskValue() : formatCurrency(balanceAmount)}
               </p>
               <p
                 className={`text-[11px] mt-0.5 ${
-                  member.outstanding_balance > 0 ? "text-amber-700" : "text-emerald-700"
+                  member.outstanding_balance > 0
+                    ? "text-amber-700"
+                    : member.outstanding_balance < 0
+                      ? "text-sky-700"
+                      : "text-emerald-700"
                 }`}
               >
-                {member.outstanding_balance > 0 ? "Payment pending" : "All cleared"}
+                {member.outstanding_balance > 0
+                  ? "Payment pending"
+                  : member.outstanding_balance < 0
+                    ? "Paid ahead for upcoming periods"
+                    : "All cleared"}
               </p>
             </div>
 

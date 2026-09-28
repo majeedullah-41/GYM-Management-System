@@ -84,3 +84,4 @@ When a user wants to record a member's fee payment:
 - Admission fee is **one-time only**, tied to enrollment — not recurring.
 - Payment section must **always show last payment + current dues** before/during new fee submission — this is not optional, it's required context for the user recording the payment.
 - Plans and their monthly fees are **configurable**, not hardcoded in the enrollment logic.
+- A page that sends the user to another page for a task must **return them to the page they came from** once the task ends (e.g. Members → Pay → Payments → payment recorded → back on Members with that member's row expanded). Cancelling the task returns to the same page. Navigating elsewhere from the sidebar abandons the pending return.
