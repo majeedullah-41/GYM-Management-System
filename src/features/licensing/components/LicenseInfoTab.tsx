@@ -14,17 +14,14 @@ import {
 export function LicenseInfoTab() {
   const { addToast } = useToast();
   const [status, setStatus] = useState<LicenseStatus | null>(null);
-  const [license, setLicense] = useState<
-    | {
-        license_id: string;
-        customer_name: string;
-        gym_name: string;
-        license_type: string;
-        issued_at: string;
-        expires_at: string | null;
-      }
-    | null
-  >(null);
+  const [license, setLicense] = useState<{
+    license_id: string;
+    customer_name: string;
+    gym_name: string;
+    license_type: string;
+    issued_at: string;
+    expires_at: string | null;
+  } | null>(null);
   const [hardwareId, setHardwareId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -80,7 +77,7 @@ export function LicenseInfoTab() {
     if (busy || busyRef.current) return;
 
     const nameLower = file.name.toLowerCase();
-    if (!nameLower.endsWith(".gymlic") && !nameLower.endsWith(".txt")) {
+    if (!nameLower.endsWith(".gymlic")) {
       addToast({
         variant: "error",
         title: "Invalid file format",
@@ -192,10 +189,7 @@ export function LicenseInfoTab() {
     }
   };
 
-  const statusColor =
-    status === "valid"
-      ? "bg-green-50 text-green-700"
-      : "bg-red-50 text-red-600";
+  const statusColor = status === "valid" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600";
 
   return (
     <div className="space-y-4">
@@ -207,7 +201,9 @@ export function LicenseInfoTab() {
               Gym POS is protected by a hardware-bound license.
             </p>
           </div>
-          <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusColor}`}>
+          <span
+            className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusColor}`}
+          >
             {status ? LICENSE_STATUS_LABEL[status] : "Checking..."}
           </span>
         </div>
@@ -223,7 +219,9 @@ export function LicenseInfoTab() {
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Customer</span>
-                <span className="font-medium text-text-primary">{license?.customer_name ?? "—"}</span>
+                <span className="font-medium text-text-primary">
+                  {license?.customer_name ?? "—"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Gym</span>
@@ -231,7 +229,9 @@ export function LicenseInfoTab() {
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Type</span>
-                <span className="font-medium capitalize text-text-primary">{license?.license_type ?? "—"}</span>
+                <span className="font-medium capitalize text-text-primary">
+                  {license?.license_type ?? "—"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Issued</span>
@@ -239,7 +239,9 @@ export function LicenseInfoTab() {
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Expires</span>
-                <span className="font-medium text-text-primary">{license?.expires_at ?? "Permanent"}</span>
+                <span className="font-medium text-text-primary">
+                  {license?.expires_at ?? "Permanent"}
+                </span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-text-muted">Hardware ID</span>
@@ -267,14 +269,18 @@ export function LicenseInfoTab() {
         <div className="mb-4">
           <h3 className="text-base font-semibold text-text-primary">Upload License File</h3>
           <p className="text-sm text-text-muted">
-            Upload your <code className="rounded bg-secondary-bg px-1.5 py-0.5 text-xs font-semibold text-text-primary">.gymlic</code> license file to activate or update Gym POS.
+            Upload your{" "}
+            <code className="rounded bg-secondary-bg px-1.5 py-0.5 text-xs font-semibold text-text-primary">
+              .gymlic
+            </code>{" "}
+            license file to activate or update Gym POS.
           </p>
         </div>
 
         <input
           ref={fileInputRef}
           type="file"
-          accept=".gymlic,.txt"
+          accept=".gymlic"
           className="hidden"
           onChange={handleFileInputChange}
         />

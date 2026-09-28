@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../lib/api/license", async () => {
-  const actual = await vi.importActual<typeof import("../../../lib/api/license")>("../../../lib/api/license");
+  const actual = await vi.importActual<typeof import("../../../lib/api/license")>(
+    "../../../lib/api/license",
+  );
   return {
     ...actual,
     importLicense: mocks.importLicense,
@@ -32,41 +34,7 @@ describe("ActivationPage", () => {
   it("shows the hardware id for the customer to send to the provider", () => {
     render(<ActivationPage status="missing" hardwareId={HWID} onActivated={onActivated} />);
     expect(screen.getByTestId("hardware-id")).toHaveTextContent(HWID);
-    expect(screen.getAllByRole("button", { name: "Copy" }).length).toBeGreaterThan(0);
-  });
-
-  const pasteLicense = (text: string) =>
-    fireEvent.change(screen.getByTestId("license-paste"), { target: { value: text } });
-
-  it("activates pasted license contents and notifies the gate", async () => {
-    mocks.importLicense.mockResolvedValue({
-      status: "valid",
-      license: { license_id: "LIC-X", customer_name: "X", gym_name: "G", license_type: "permanent", issued_at: "2026-09-07", expires_at: null },
-      hardware_id: HWID,
-    });
-    render(<ActivationPage status="missing" hardwareId={HWID} onActivated={onActivated} />);
-    pasteLicense(LICENSE_TEXT);
-    await userEvent.click(screen.getByRole("button", { name: "Activate" }));
-    await vi.waitFor(() => {
-      expect(mocks.importLicense).toHaveBeenCalledWith(LICENSE_TEXT);
-    });
-    expect(onActivated).toHaveBeenCalled();
-  });
-
-  it("shows a problem message and keeps the gate closed for a mismatched license", async () => {
-    mocks.importLicense.mockResolvedValue({
-      status: "hardware_mismatch",
-      license: null,
-      hardware_id: HWID,
-    });
-    const onActivated = vi.fn().mockResolvedValue(undefined);
-    render(<ActivationPage status="hardware_mismatch" hardwareId={HWID} onActivated={onActivated} />);
-    pasteLicense(LICENSE_TEXT);
-    await userEvent.click(screen.getByRole("button", { name: "Activate" }));
-    expect(await screen.findByTestId("activation-message")).toHaveTextContent(
-      /different computer/i
-    );
-    expect(onActivated).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button", { name: /Copy/i }).length).toBeGreaterThan(0);
   });
 
   it("imports a license chosen from the file dialog", async () => {
@@ -83,5 +51,70 @@ describe("ActivationPage", () => {
       expect(mocks.importLicense).toHaveBeenCalledWith(LICENSE_TEXT);
     });
     expect(onActivated).toHaveBeenCalled();
+  });
+
+  it("shows a problem message and keeps the gate closed for a mismatched license", async () => {
+    mocks.selectLicenseFile.mockResolvedValue(LICENSE_TEXT);
+    mocks.importLicense.mockResolvedValue({
+      status: "hardware_mismatch",
+      license: null,
+      hardware_id: HWID,
+    });
+    const onActivated = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ActivationPage status="hardware_mismatch" hardwareId={HWID} onActivated={onActivated} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Choose license file/i }));
+    expect(await screen.findByTestId("activation-message")).toHaveTextContent(
+      /different computer/i,
+    );
+    expect(onActivated).not.toHaveBeenCalled();
+  });
+
+  it("processes a dropped .gymlic file and notifies the gate", async () => {
+    mocks.importLicense.mockResolvedValue({
+      status: "valid",
+      license: {
+        license_id: "LIC-X",
+        customer_name: "X",
+        gym_name: "G",
+        license_type: "permanent",
+        issued_at: "2026-09-07",
+        expires_at: null,
+      },
+      hardware_id: HWID,
+    });
+    render(<ActivationPage status="missing" hardwareId={HWID} onActivated={onActivated} />);
+    const file = new File([LICENSE_TEXT], "club.gymlic", { type: "application/octet-stream" });
+    const dropzone = screen.getByText(/Drop your license file here/i).closest("div");
+    expect(dropzone).not.toBeNull();
+
+    fireEvent.drop(dropzone!, {
+      dataTransfer: {
+        files: [file],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.importLicense).toHaveBeenCalledWith(LICENSE_TEXT);
+    });
+    expect(onActivated).toHaveBeenCalled();
+  });
+
+  it("rejects non-.gymlic files dropped into the zone", async () => {
+    render(<ActivationPage status="missing" hardwareId={HWID} onActivated={onActivated} />);
+    const file = new File(["some text"], "license.txt", { type: "text/plain" });
+    const dropzone = screen.getByText(/Drop your license file here/i).closest("div");
+
+    fireEvent.drop(dropzone!, {
+      dataTransfer: {
+        files: [file],
+      },
+    });
+
+    expect(await screen.findByTestId("activation-message")).toHaveTextContent(
+      /Invalid file format/i,
+    );
+    expect(mocks.importLicense).not.toHaveBeenCalled();
   });
 });
