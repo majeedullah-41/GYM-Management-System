@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { CalendarDays, ChevronDown } from "lucide-react";
 import { useGym } from "../../context/GymContext";
+import { LicenseExpiryNotice } from "../../features/licensing/components/LicenseExpiryNotice";
 import type { Page } from "../../types";
 import type { AuthUser } from "../../lib/api/auth";
 
@@ -32,29 +33,33 @@ export function TopBar({ currentPage, user }: TopBarProps) {
   }, []);
 
   return (
-    <header className="relative flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-6">
-      <div className="z-10 flex items-center gap-2">
-        <span className="text-sm font-medium text-text-muted">
-          {PAGE_TITLES[currentPage]}
-        </span>
-      </div>
+    <div className="shrink-0 border-b border-border bg-surface">
+      <header className="relative flex h-16 items-center justify-between px-6">
+        <div className="z-10 flex items-center gap-2">
+          <span className="text-sm font-medium text-text-muted">
+            {PAGE_TITLES[currentPage]}
+          </span>
+        </div>
 
-      <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center px-4">
-        <h1 className="pointer-events-auto max-w-[55%] truncate text-center text-2xl font-extrabold tracking-tight text-text-primary sm:text-3xl lg:text-4xl">
-          {gymName}
-        </h1>
-      </div>
+        <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center px-4">
+          <h1 className="pointer-events-auto max-w-[55%] truncate text-center text-2xl font-extrabold tracking-tight text-text-primary sm:text-3xl lg:text-4xl">
+            {gymName}
+          </h1>
+        </div>
 
-      <div className="z-10 flex items-center gap-3 text-xs text-text-muted">
-        <CalendarDays size={17} className="text-secondary-text" />
-        <span>{formattedDate}</span>
-        <span className="hidden h-5 w-px bg-border sm:inline-block" />
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#375d4d] text-[11px] font-semibold text-white">
-          {user.username.charAt(0).toUpperCase()}
-        </span>
-        <span className="hidden font-semibold text-text-primary sm:inline-block">{user.username}</span>
-        <ChevronDown size={14} className="text-secondary-text" />
-      </div>
-    </header>
+        <div className="z-10 flex items-center gap-3 text-xs text-text-muted">
+          <CalendarDays size={17} className="text-secondary-text" />
+          <span>{formattedDate}</span>
+          <span className="hidden h-5 w-px bg-border sm:inline-block" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#375d4d] text-[11px] font-semibold text-white">
+            {user.username.charAt(0).toUpperCase()}
+          </span>
+          <span className="hidden font-semibold text-text-primary sm:inline-block">{user.username}</span>
+          <ChevronDown size={14} className="text-secondary-text" />
+        </div>
+      </header>
+
+      <LicenseExpiryNotice />
+    </div>
   );
 }

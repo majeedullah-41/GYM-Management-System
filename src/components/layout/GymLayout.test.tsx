@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { GymProvider } from "../../context/GymContext";
+import { LicenseProvider } from "../../context/LicenseContext";
 import type { AuthUser } from "../../lib/api/auth";
 
 vi.mock("../../lib/api/settings", () => ({
@@ -56,20 +57,27 @@ vi.mock("../../lib/api/settings", () => ({
   }),
 }));
 
-vi.mock("../../lib/api/license", () => ({
-  getLicenseStatus: vi.fn().mockResolvedValue({
-    status: "valid",
-    license: {
-      license_id: "LIC-123",
-      customer_name: "Owner",
-      gym_name: "Power Fitness Club",
-      license_type: "permanent",
-      issued_at: "2026-09-01",
-      expires_at: null,
-    },
-    hardware_id: "hwid123",
-  }),
-}));
+vi.mock("../../lib/api/license", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/api/license")>(
+    "../../lib/api/license",
+  );
+  return {
+    ...actual,
+    getLicenseStatus: vi.fn().mockResolvedValue({
+      status: "valid",
+      license: {
+        license_id: "LIC-123",
+        customer_name: "Owner",
+        gym_name: "Power Fitness Club",
+        license_type: "permanent",
+        issued_at: "2026-09-01",
+        expires_at: null,
+      },
+      hardware_id: "hwid123",
+      days_until_expiry: null,
+    }),
+  };
+});
 
 const mockUser: AuthUser = {
   id: "user-1",
@@ -79,6 +87,8 @@ const mockUser: AuthUser = {
   created_at: "2026-01-01T00:00:00Z",
   password_changed_at: "2026-01-01T00:00:00Z",
 };
+
+afterEach(cleanup);
 
 describe("Gym layout branding", () => {
   it("renders gym logo and name in sidebar header", async () => {
@@ -108,5 +118,47 @@ describe("Gym layout branding", () => {
     );
 
     expect(await screen.findByText("Power Fitness Club")).toBeInTheDocument();
+  });
+});
+
+describe("Topbar license expiry notification", () => {
+  const expiring = {
+    status: "valid" as const,
+    license: {
+      license_id: "LIC-123",
+      customer_name: "Owner",
+      gym_name: "Power Fitness Club",
+      license_type: "expiring",
+      issued_at: "2026-09-01",
+      expires_at: "2026-10-01",
+    },
+    hardware_id: "hwid123",
+    days_until_expiry: 3,
+  };
+
+  it("warns in the header when the license is about to expire", async () => {
+    render(
+      <GymProvider>
+        <LicenseProvider response={expiring}>
+          <TopBar currentPage="dashboard" user={mockUser} />
+        </LicenseProvider>
+      </GymProvider>,
+    );
+
+    const gymName = await screen.findByText("Power Fitness Club");
+    const notice = screen.getByTestId("license-expiry-notice");
+    expect(notice).toHaveTextContent("expires in 3 days");
+    expect(notice.parentElement).toContainElement(gymName);
+  });
+
+  it("keeps the header clean for a permanent license", async () => {
+    render(
+      <GymProvider>
+        <TopBar currentPage="dashboard" user={mockUser} />
+      </GymProvider>,
+    );
+
+    expect(await screen.findByText("Power Fitness Club")).toBeInTheDocument();
+    expect(screen.queryByTestId("license-expiry-notice")).not.toBeInTheDocument();
   });
 });

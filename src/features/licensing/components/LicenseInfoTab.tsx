@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { FolderOpen, RefreshCw, UploadCloud } from "lucide-react";
+import { AlertTriangle, FolderOpen, Phone, RefreshCw, UploadCloud } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { useToast } from "../../../components/feedback/ToastProvider";
+import { VENDOR_NAME, VENDOR_PHONE } from "../../../lib/vendor";
 import {
+  describeDaysRemaining,
   getLicenseStatus,
+  isExpiringSoon,
   replaceLicense,
   selectLicenseFile,
   validateLicense,
   LICENSE_STATUS_LABEL,
   type LicenseStatus,
+  type LicenseStatusResponse,
 } from "../../../lib/api/license";
 
 export function LicenseInfoTab() {
@@ -22,6 +26,7 @@ export function LicenseInfoTab() {
     issued_at: string;
     expires_at: string | null;
   } | null>(null);
+  const [daysUntilExpiry, setDaysUntilExpiry] = useState<number | null>(null);
   const [hardwareId, setHardwareId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -29,11 +34,16 @@ export function LicenseInfoTab() {
   const busyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const applyStatus = (result: LicenseStatusResponse) => {
+    setStatus(result.status);
+    setLicense(result.license);
+    setDaysUntilExpiry(result.days_until_expiry ?? null);
+  };
+
   const load = async () => {
     try {
       const result = await getLicenseStatus();
-      setStatus(result.status);
-      setLicense(result.license);
+      applyStatus(result);
       setHardwareId(result.hardware_id);
     } catch (err) {
       addToast({
@@ -53,8 +63,7 @@ export function LicenseInfoTab() {
   const applyContents = async (contents: string) => {
     try {
       const result = await replaceLicense(contents);
-      setStatus(result.status);
-      setLicense(result.license);
+      applyStatus(result);
       if (result.status === "valid") {
         addToast({ variant: "success", title: "License updated" });
       } else {
@@ -177,8 +186,7 @@ export function LicenseInfoTab() {
   const revalidate = async () => {
     try {
       const result = await validateLicense();
-      setStatus(result.status);
-      setLicense(result.license);
+      applyStatus(result);
       addToast({ variant: "info", title: LICENSE_STATUS_LABEL[result.status] });
     } catch (err) {
       addToast({
@@ -189,7 +197,12 @@ export function LicenseInfoTab() {
     }
   };
 
-  const statusColor = status === "valid" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600";
+  const expiringSoon = isExpiringSoon(status, daysUntilExpiry);
+  const expiringSoonText =
+    typeof daysUntilExpiry === "number" ? describeDaysRemaining(daysUntilExpiry) : null;
+
+  const statusColor =
+    status === "valid" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600";
 
   return (
     <div className="space-y-4">
@@ -243,12 +256,38 @@ export function LicenseInfoTab() {
                   {license?.expires_at ?? "Permanent"}
                 </span>
               </div>
+              {expiringSoon && expiringSoonText && (
+                <div
+                  data-testid="license-expiry-warning"
+                  className="mt-1 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                >
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+                  <span>
+                    This license {expiringSoonText}. Upload a renewed{" "}
+                    <code className="font-semibold">.gymlic</code> file above to keep using Gym
+                    POS.
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between gap-4">
                 <span className="text-text-muted">Hardware ID</span>
                 <code className="break-all text-right text-xs leading-5 text-text-primary">
                   {hardwareId ?? "—"}
                 </code>
               </div>
+            </div>
+
+            <div
+              data-testid="license-renewal-contact"
+              className="mt-4 flex items-start gap-2 rounded-md border border-border bg-secondary-bg px-3 py-2.5 text-xs leading-relaxed text-text-muted"
+            >
+              <Phone size={14} className="mt-0.5 shrink-0 text-secondary-text" />
+              <span>
+                <span className="font-semibold text-text-primary">
+                  For license renewal contact the vendor:
+                </span>{" "}
+                {VENDOR_NAME} — {VENDOR_PHONE}
+              </span>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">

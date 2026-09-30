@@ -10,7 +10,7 @@ use crate::utils::formatting::format_currency;
 
 /// Supplier branding shown at the end of every receipt. Deliberately not tied
 /// to any print setting so it cannot be removed from the printed output.
-pub const RECEIPT_BRANDING: &str = "Software provided by EagleNest Creations (0346-4451505)";
+pub const RECEIPT_BRANDING: &str = "Software provided by EagleNest Creations (0334-3993049)";
 
 pub fn build_document(
     receipt: &ReceiptResponse,
@@ -380,5 +380,24 @@ mod tests {
             .flatten()
             .collect();
         assert!(footer_texts.iter().any(|l| l == "Stay Fit | Stay Healthy"));
+    }
+
+    #[test]
+    fn build_document_always_ends_with_vendor_branding() {
+        let mut print = default_print();
+        print.show_footer = false;
+        print.show_gym_name = false;
+        let centered: Vec<String> = build_document(&sample_receipt(), &print, None)
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Centered(lines) => Some(lines.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(centered.contains(&RECEIPT_BRANDING.to_string()));
+        assert!(RECEIPT_BRANDING.contains("EagleNest Creations"));
+        assert!(RECEIPT_BRANDING.contains("0334-3993049"));
     }
 }

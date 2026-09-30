@@ -22,7 +22,12 @@ export interface LicenseStatusResponse {
   status: LicenseStatus;
   license: LicenseInfo | null;
   hardware_id: string;
+  /** Days of validity left; `null` for a permanent license, negative once expired. */
+  days_until_expiry: number | null;
 }
+
+/** Warn once an expiring license is within this many days of its expiry date. */
+export const LICENSE_EXPIRY_WARNING_DAYS = 7;
 
 export async function getLicenseStatus(): Promise<LicenseStatusResponse> {
   return invokeCommand<LicenseStatusResponse>("get_license_status");
@@ -57,3 +62,26 @@ export const LICENSE_STATUS_LABEL: Record<LicenseStatus, string> = {
   expired: "License has expired",
   unsupported_version: "License version is not supported",
 };
+
+/**
+ * True when a working license is close enough to its expiry date that the user
+ * should be warned. Only the backend may change these values, so this is a
+ * presentation check, never an authorization one.
+ */
+export function isExpiringSoon(
+  status: LicenseStatus | null | undefined,
+  daysUntilExpiry: number | null | undefined,
+): boolean {
+  return (
+    status === "valid" &&
+    typeof daysUntilExpiry === "number" &&
+    daysUntilExpiry <= LICENSE_EXPIRY_WARNING_DAYS
+  );
+}
+
+/** Human phrasing for the days remaining, e.g. "expires tomorrow". */
+export function describeDaysRemaining(days: number): string {
+  if (days <= 0) return "expires today";
+  if (days === 1) return "expires tomorrow";
+  return `expires in ${days} days`;
+}

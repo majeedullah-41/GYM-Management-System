@@ -1,6 +1,8 @@
+import { VENDOR_CONTACT_LINE } from "../../../lib/vendor";
+
 export const DEFAULT_RECEIPT_TITLE = "PAYMENT RECEIPT";
 export const DEFAULT_RECEIPT_FOOTER = "Stay Fit | Stay Healthy";
-export const RECEIPT_BRANDING = "Software provided by EagleNest Creations (0346-4451505)";
+export const RECEIPT_BRANDING = VENDOR_CONTACT_LINE;
 
 export function receiptFooterText(footer?: string | null): string {
   if (footer === null || footer === "") return "";

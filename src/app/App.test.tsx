@@ -18,6 +18,7 @@ vi.mock("../lib/api/license", async () => {
         expires_at: null,
       },
       hardware_id: "0000000000000000000000000000000000000000000000000000000000000000",
+      days_until_expiry: null,
     }),
   };
 });

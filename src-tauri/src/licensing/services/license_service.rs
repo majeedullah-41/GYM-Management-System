@@ -33,6 +33,11 @@ pub struct LicenseStatusResponse {
     pub status: LicenseStatus,
     pub license: Option<LicenseInfo>,
     pub hardware_id: String,
+    /// Days of validity left for an expiring license, `None` for a permanent
+    /// license. Negative once the license has expired. Measured from the same
+    /// rollback-protected date the expiry check uses, so rewinding the system
+    /// clock cannot hide an upcoming expiry from the UI.
+    pub days_until_expiry: Option<i64>,
 }
 
 struct Cached {
@@ -112,9 +117,14 @@ impl LicenseService {
     /// Current status without re-reading the files.
     pub fn snapshot(&self) -> LicenseStatusResponse {
         let cached = self.cached.lock().expect("license cache lock");
+        let reference = reference_date(chrono::Local::now().date_naive(), cached.last_seen);
         LicenseStatusResponse {
             status: cached.status,
             license: cached.license.as_ref().map(info_from_payload),
+            days_until_expiry: cached
+                .license
+                .as_ref()
+                .and_then(|payload| days_until_expiry(payload.expires_at.as_deref(), reference)),
             hardware_id: self.hardware_id(),
         }
     }
@@ -191,10 +201,7 @@ impl LicenseService {
     fn effective_now(&self) -> NaiveDate {
         let today = chrono::Local::now().date_naive();
         let seen = self.cached.lock().expect("license cache lock").last_seen;
-        match seen {
-            Some(seen) if seen > today => seen,
-            _ => today,
-        }
+        reference_date(today, seen)
     }
 
     fn save_last_seen(&self, date: NaiveDate) {
@@ -224,6 +231,23 @@ fn info_from_payload(payload: &LicensePayload) -> LicenseInfo {
         issued_at: payload.issued_at.clone(),
         expires_at: payload.expires_at.clone(),
     }
+}
+
+/// The date every expiry decision is made against. A date recorded by a
+/// previous run that is in the future means the clock has been rolled back, so
+/// that recorded date wins.
+fn reference_date(today: NaiveDate, last_seen: Option<NaiveDate>) -> NaiveDate {
+    match last_seen {
+        Some(seen) if seen > today => seen,
+        _ => today,
+    }
+}
+
+/// Whole days from `reference` until the expiry date. `None` for a permanent
+/// license or an unparseable date.
+fn days_until_expiry(expires_at: Option<&str>, reference: NaiveDate) -> Option<i64> {
+    let expiry = NaiveDate::parse_from_str(expires_at?, "%Y-%m-%d").ok()?;
+    Some((expiry - reference).num_days())
 }
 
 #[cfg(test)]
@@ -337,6 +361,70 @@ mod tests {
         let env = expiring(&h.signing_key, MACHINE, "2099-01-01");
         write_license(&h, &env);
         assert_eq!(h.service.validate(), LicenseStatus::Valid);
+    }
+
+    #[test]
+    fn snapshot_reports_days_until_expiry_for_expiring_license() {
+        let h = harness();
+        let expires = (chrono::Local::now().date_naive() + chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        let env = expiring(&h.signing_key, MACHINE, &expires);
+        write_license(&h, &env);
+        assert_eq!(h.service.validate(), LicenseStatus::Valid);
+        assert_eq!(h.service.snapshot().days_until_expiry, Some(3));
+    }
+
+    #[test]
+    fn snapshot_reports_no_days_until_expiry_for_permanent_license() {
+        let h = harness();
+        let env = permanent(&h.signing_key, MACHINE);
+        write_license(&h, &env);
+        assert_eq!(h.service.validate(), LicenseStatus::Valid);
+        assert_eq!(h.service.snapshot().days_until_expiry, None);
+    }
+
+    #[test]
+    fn days_until_expiry_is_negative_once_the_license_has_expired() {
+        let h = harness();
+        let env = expiring(&h.signing_key, MACHINE, "2000-01-01");
+        write_license(&h, &env);
+        assert_eq!(h.service.validate(), LicenseStatus::Expired);
+        assert!(h.service.snapshot().days_until_expiry.unwrap() < 0);
+    }
+
+    #[test]
+    fn days_until_expiry_ignores_a_rolled_back_clock() {
+        let dir = std::env::temp_dir().join(format!("gympos-lic-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = VerifyingKey::from(&signing_key);
+
+        // A license that looked comfortably valid on a later date than "now".
+        let later = (chrono::Local::now().date_naive() + chrono::Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
+        let env = expiring(&signing_key, MACHINE, &later);
+        let service = LicenseService::with_deps(
+            &dir,
+            Box::new(MockHwIdProvider(MACHINE.to_string())),
+            Some(verifying_key.clone()),
+        );
+        write_to(&service.license_path, &env);
+        crate::licensing::repositories::license_repository::save_state(
+            &service.state_path,
+            &later,
+        );
+
+        let reloaded = LicenseService::with_deps(
+            &dir,
+            Box::new(MockHwIdProvider(MACHINE.to_string())),
+            Some(verifying_key),
+        );
+        assert_eq!(reloaded.validate(), LicenseStatus::Valid);
+        assert_eq!(reloaded.snapshot().days_until_expiry, Some(0));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

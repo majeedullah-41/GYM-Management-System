@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { FileKey2 } from "lucide-react";
+import { LicenseProvider } from "../../../context/LicenseContext";
 import { useLicense } from "../hooks/useLicense";
 import { ActivationPage } from "../pages/ActivationPage";
 
@@ -23,7 +24,9 @@ export function LicenseGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (status === "valid") return <>{children}</>;
+  if (status === "valid") {
+    return <LicenseProvider response={response}>{children}</LicenseProvider>;
+  }
 
   return (
     <ActivationPage
