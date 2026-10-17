@@ -96,6 +96,11 @@ Migration {
             sql: include_str!("017_fix_payment_period_dates.sql"),
             with_foreign_keys_off: false,
         },
+        Migration {
+            id: "018_supplements_and_inventory",
+            sql: include_str!("018_supplements_and_inventory.sql"),
+            with_foreign_keys_off: false,
+        },
     ]
 }
 

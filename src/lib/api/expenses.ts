@@ -94,6 +94,7 @@ export const EXPENSE_CATEGORIES = [
   "Maintenance",
   "Cleaning",
   "Supplies",
+  "Supplements",
   "Staff",
   "Marketing",
   "Salary",

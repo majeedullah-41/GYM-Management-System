@@ -11,3 +11,4 @@ pub mod printing_service;
 pub mod receipt_service;
 pub mod report_pdf_service;
 pub mod report_service;
+pub mod supplement_service;

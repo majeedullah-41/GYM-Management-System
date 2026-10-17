@@ -8,6 +8,8 @@ import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
 import { MembersPage } from "../../features/members/pages/MembersPage";
 import { FinancesPage } from "../../features/finances/pages/FinancesPage";
 import { PaymentsPage } from "../../features/payments/pages/PaymentsPage";
+import { SupplementsPage } from "../../features/supplements/pages/SupplementsPage";
+import { InventoryPage } from "../../features/inventory/pages/InventoryPage";
 import { ReportsPage } from "../../features/reports/pages/ReportsPage";
 import { SettingsPage } from "../../features/settings/pages/SettingsPage";
 import type { Page } from "../../types";
@@ -19,6 +21,8 @@ const PAGE_COMPONENTS: Record<Page, React.ComponentType> = {
   members: MembersPage,
   payments: PaymentsPage,
   finances: FinancesPage,
+  supplements: SupplementsPage,
+  inventory: InventoryPage,
   reports: ReportsPage,
   settings: () => null,
   "member-detail": MembersPage,

@@ -7,6 +7,8 @@ import {
   ReceiptText,
   LogOut,
   Dumbbell,
+  Pill,
+  Package,
 } from "lucide-react";
 import { useGym } from "../../context/GymContext";
 import type { Page } from "../../types";
@@ -25,6 +27,8 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "members", label: "Members", icon: Users },
   { id: "payments", label: "Payments", icon: ReceiptText },
   { id: "finances", label: "Expense", icon: Wallet },
+  { id: "supplements", label: "Supplements", icon: Pill },
+  { id: "inventory", label: "Inventory", icon: Package },
   { id: "reports", label: "Reports", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings },
 ];

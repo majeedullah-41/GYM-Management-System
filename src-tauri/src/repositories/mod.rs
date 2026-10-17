@@ -6,4 +6,5 @@ pub mod payment_repository;
 pub mod receipt_repository;
 pub mod report_repository;
 pub mod settings_repository;
+pub mod supplement_repository;
 pub mod user_repository;

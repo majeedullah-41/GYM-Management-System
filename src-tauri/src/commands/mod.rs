@@ -12,3 +12,4 @@ pub mod printing;
 pub mod receipts;
 pub mod reports;
 pub mod settings;
+pub mod supplements;

@@ -15,6 +15,8 @@ const PAGE_TITLES: Record<Page, string> = {
   members: "Members",
   payments: "Payments",
   finances: "Finances",
+  supplements: "Supplements",
+  inventory: "Inventory",
   reports: "Reports",
   settings: "Settings",
   "member-detail": "Member Details",

@@ -4,6 +4,7 @@ mod member;
 mod membership_plan;
 mod payment;
 mod receipt;
+mod supplement;
 mod user;
 
 pub use billing::{Membership, MonthlyBill};
@@ -12,4 +13,8 @@ pub use member::Member;
 pub use membership_plan::MembershipPlan;
 pub use payment::Payment;
 pub use receipt::Receipt;
+pub use supplement::{
+    InventoryMovement, SupplementItem, SupplementPurchase, SupplementSale, SupplementSupplier,
+    SupplierPayment,
+};
 pub use user::User;

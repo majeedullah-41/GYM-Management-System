@@ -87,6 +87,8 @@ export type Page =
   | "members"
   | "payments"
   | "finances"
+  | "supplements"
+  | "inventory"
   | "reports"
   | "settings"
   | "member-detail";

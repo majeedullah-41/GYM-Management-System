@@ -13,13 +13,14 @@ pub const EXPENSE_CATEGORIES: &[&str] = &[
     "Maintenance",
     "Cleaning",
     "Supplies",
+    "Supplements",
     "Staff",
     "Marketing",
     "Salary",
     "Other",
 ];
 
-pub const EXPENSE_PAYMENT_METHODS: &[&str] = &["Cash", "Card", "BankTransfer", "Other"];
+pub const EXPENSE_PAYMENT_METHODS: &[&str] = &["Cash", "Card", "BankTransfer", "Bank Transfer", "Other"];
 
 #[derive(Debug, Deserialize)]
 pub struct CreateExpenseRequest {

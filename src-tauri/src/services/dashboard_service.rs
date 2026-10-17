@@ -141,6 +141,29 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
 
     let total_outstanding = crate::repositories::billing_repository::total_outstanding(conn)?;
 
+    // Supplement & Inventory metrics
+    let (month_supplement_sales, month_supplement_profit): (i64, i64) = conn.query_row(
+        "SELECT COALESCE(SUM(total_amount), 0), COALESCE(SUM(total_amount - (quantity * cost_price)), 0) \
+         FROM supplement_sales WHERE sale_date >= ?1 AND sale_date <= ?2",
+        params![month_start, month_end],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    let supp_summary = crate::repositories::supplement_repository::get_summary(conn)?;
+
+    let all_supp_items = crate::repositories::supplement_repository::list_items(conn, "", None, true)?;
+    let mut low_stock_items: Vec<crate::dto::supplement::ItemResponse> = all_supp_items
+        .into_iter()
+        .map(crate::dto::supplement::ItemResponse::from_item)
+        .filter(|i| i.stock_status == "low_stock" || i.stock_status == "out_of_stock")
+        .collect();
+    low_stock_items.sort_by_key(|i| i.stock_quantity);
+    low_stock_items.truncate(5);
+
+    let mut recent_supplement_sales =
+        crate::repositories::supplement_repository::list_sales(conn, "", None, None, None, None)?;
+    recent_supplement_sales.truncate(5);
+
     Ok(DashboardSummary {
         total_members,
         active_members,
@@ -149,8 +172,16 @@ pub fn get_dashboard_summary(conn: &Connection) -> Result<DashboardSummary, AppE
         today_revenue,
         month_revenue,
         month_expenses,
-        month_net_income: month_revenue - month_expenses,
+        month_net_income: (month_revenue + month_supplement_sales) - month_expenses,
         total_outstanding,
+        month_supplement_sales,
+        month_supplement_profit,
+        total_supplier_dues: supp_summary.total_supplier_dues,
+        suppliers_with_dues: supp_summary.suppliers_with_dues,
+        low_stock_count: supp_summary.low_stock_count,
+        out_of_stock_count: supp_summary.out_of_stock_count,
+        low_stock_items,
+        recent_supplement_sales,
         recent_payments,
         recent_members: recent_members_raw,
         expiring_members: expiring_members_list,
