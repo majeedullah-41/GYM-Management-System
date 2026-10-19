@@ -23,7 +23,7 @@ pub fn create_supplier(
     conn: &Connection,
     req: CreateSupplierRequest,
 ) -> Result<SupplierResponse, AppError> {
-    let name = req.name.trim().to_string();
+    let name = crate::utils::formatting::capitalize_name(&req.name);
     if name.is_empty() {
         return Err(AppError::ValidationError(
             "Supplier name cannot be empty".into(),
@@ -34,7 +34,7 @@ pub fn create_supplier(
     let supplier = SupplementSupplier {
         id: uuid::Uuid::new_v4().to_string(),
         name,
-        company: clean_opt(req.company),
+        company: clean_opt(req.company).map(|c| crate::utils::formatting::capitalize_name(&c)),
         phone: clean_opt(req.phone),
         email: clean_opt(req.email),
         address: clean_opt(req.address),
@@ -56,7 +56,7 @@ pub fn update_supplier(
     let mut supplier = supplement_repository::get_supplier_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Supplier '{}' not found", id)))?;
 
-    let name = req.name.trim().to_string();
+    let name = crate::utils::formatting::capitalize_name(&req.name);
     if name.is_empty() {
         return Err(AppError::ValidationError(
             "Supplier name cannot be empty".into(),
@@ -64,7 +64,7 @@ pub fn update_supplier(
     }
 
     supplier.name = name;
-    supplier.company = clean_opt(req.company);
+    supplier.company = clean_opt(req.company).map(|c| crate::utils::formatting::capitalize_name(&c));
     supplier.phone = clean_opt(req.phone);
     supplier.email = clean_opt(req.email);
     supplier.address = clean_opt(req.address);
@@ -109,11 +109,11 @@ pub fn list_suppliers(
 // ============================================================================
 
 pub fn create_item(conn: &Connection, req: CreateItemRequest) -> Result<ItemResponse, AppError> {
-    let name = req.name.trim().to_string();
+    let name = crate::utils::formatting::capitalize_name(&req.name);
     if name.is_empty() {
         return Err(AppError::ValidationError("Item name cannot be empty".into()));
     }
-    let category = req.category.trim().to_string();
+    let category = crate::utils::formatting::capitalize_name(&req.category);
     if category.is_empty() {
         return Err(AppError::ValidationError(
             "Item category cannot be empty".into(),
@@ -143,7 +143,7 @@ pub fn create_item(conn: &Connection, req: CreateItemRequest) -> Result<ItemResp
         id: uuid::Uuid::new_v4().to_string(),
         name,
         category,
-        brand: clean_opt(req.brand),
+        brand: clean_opt(req.brand).map(|b| crate::utils::formatting::capitalize_name(&b)),
         unit,
         cost_price: req.cost_price,
         selling_price: req.selling_price,
@@ -184,11 +184,11 @@ pub fn update_item(
     let mut item = supplement_repository::get_item_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Item '{}' not found", id)))?;
 
-    let name = req.name.trim().to_string();
+    let name = crate::utils::formatting::capitalize_name(&req.name);
     if name.is_empty() {
         return Err(AppError::ValidationError("Item name cannot be empty".into()));
     }
-    let category = req.category.trim().to_string();
+    let category = crate::utils::formatting::capitalize_name(&req.category);
     if category.is_empty() {
         return Err(AppError::ValidationError(
             "Item category cannot be empty".into(),
@@ -202,7 +202,7 @@ pub fn update_item(
 
     item.name = name;
     item.category = category;
-    item.brand = clean_opt(req.brand);
+    item.brand = clean_opt(req.brand).map(|b| crate::utils::formatting::capitalize_name(&b));
     if let Some(u) = clean_opt(req.unit) {
         item.unit = u;
     }
@@ -700,9 +700,11 @@ pub fn create_sale(conn: &Connection, req: CreateSaleRequest) -> Result<SaleResp
         let member = member_repository::get_by_id(conn, mid)?
             .ok_or_else(|| AppError::NotFoundError("Selected member not found".into()))?;
         member_number = Some(member.member_number);
-        member.full_name
+        crate::utils::formatting::capitalize_name(&member.full_name)
     } else {
-        clean_opt(req.customer_name).unwrap_or_else(|| "Walk-in Customer".to_string())
+        clean_opt(req.customer_name)
+            .map(|c| crate::utils::formatting::capitalize_name(&c))
+            .unwrap_or_else(|| "Walk-in Customer".to_string())
     };
 
     let invoice_number = supplement_repository::next_sale_invoice(conn)?;

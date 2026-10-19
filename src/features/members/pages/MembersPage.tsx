@@ -46,10 +46,16 @@ import {
 import { listActivePlans, type PlanResponse } from "../../../lib/api/membership-plans";
 import { getMemberFormSettings } from "../../../lib/api/settings";
 import { useNavigation } from "../../../components/layout/NavigationContext";
-import { formatCurrency } from "../../../lib/utils/format";
+import { formatCurrency, formatDate } from "../../../lib/utils/format";
 import { MemberDetailRow } from "../components/MemberDetailRow";
 import { MemberFormFields } from "../components/MemberFormFields";
 import { usePrivacy, HideToggleButton, maskValue } from "../../../context/PrivacyContext";
+import { useGym } from "../../../context/GymContext";
+import { WhatsAppIcon } from "../../../components/whatsapp/WhatsAppIcon";
+import {
+  WhatsAppPreviewModal,
+  type WhatsAppTarget,
+} from "../../../components/whatsapp/WhatsAppPreviewModal";
 import {
   EMPTY_FORM,
   DEFAULT_VISIBLE_MEMBER_FIELDS,
@@ -244,10 +250,31 @@ export function MembersPage({
   const { addToast } = useToast();
   const { openPaymentForMember } = useNavigation();
   const { hidden } = usePrivacy();
+  const { gymName } = useGym();
 
   const [members, setMembers] = useState<MemberResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [whatsAppTarget, setWhatsAppTarget] = useState<WhatsAppTarget | null>(null);
+
+  const openMemberWhatsApp = (member: MemberResponse) => {
+    const dueAmount = member.outstanding_balance > 0 ? member.outstanding_balance : 0;
+    setWhatsAppTarget({
+      recipientType: "member",
+      recipientName: member.full_name,
+      rawPhone: member.phone,
+      variables: {
+        member_name: member.full_name,
+        member_number: member.member_number,
+        plan_name: member.membership_plan_name || "Regular Membership",
+        due_amount: formatCurrency(dueAmount),
+        expiry_date: member.membership_expiry_date
+          ? formatDate(member.membership_expiry_date)
+          : "N/A",
+        gym_name: gymName || "Gym",
+      },
+    });
+  };
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -316,6 +343,7 @@ export function MembersPage({
         known.has(k as MemberFieldKey),
       );
       if (!fields.includes("full_name")) fields.unshift("full_name");
+      if (!fields.includes("phone")) fields.push("phone");
       setFormFieldKeys(fields);
     } catch {
       setFormFieldKeys(DEFAULT_VISIBLE_MEMBER_FIELDS);
@@ -438,7 +466,8 @@ export function MembersPage({
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!formData.full_name.trim()) errors.full_name = "Name is required";
-    if (formData.phone.trim() && !/^\d{11}$/.test(formData.phone.trim()))
+    if (!formData.phone.trim()) errors.phone = "Phone number is required";
+    else if (!/^\d{11}$/.test(formData.phone.trim()))
       errors.phone = "Phone must be exactly 11 digits";
     if (formData.cnic.trim() && formData.cnic.replace(/-/g, "").length !== 13)
       errors.cnic = "CNIC must be exactly 13 digits";
@@ -991,17 +1020,31 @@ export function MembersPage({
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             {!m.is_archived && (
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openPaymentForMember(m.id);
-                                }}
-                                className="gap-1 bg-[#17613f] hover:bg-[#104b31]"
-                              >
-                                <HandCoins size={13} />
-                                Pay
-                              </Button>
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openPaymentForMember(m.id);
+                                  }}
+                                  className="gap-1 bg-[#17613f] hover:bg-[#104b31]"
+                                >
+                                  <HandCoins size={13} />
+                                  Pay
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openMemberWhatsApp(m);
+                                  }}
+                                  className="gap-1 border-[#25D366]/40 bg-[#25D366]/10 text-[#128C7E] hover:bg-[#25D366]/20"
+                                  title="Send WhatsApp dues message"
+                                >
+                                  <WhatsAppIcon size={14} className="text-[#25D366]" />
+                                </Button>
+                              </>
                             )}
                             <Button
                               variant="secondary"
@@ -1066,6 +1109,7 @@ export function MembersPage({
                               member={m}
                               onEdit={openEditForm}
                               onPay={(memberId) => openPaymentForMember(memberId)}
+                              onWhatsApp={openMemberWhatsApp}
                             />
                           </td>
                         </tr>
@@ -1200,6 +1244,12 @@ export function MembersPage({
           remain preserved. This action cannot be undone.
         </p>
       </Modal>
+
+      {/* WhatsApp Dues Preview & Send Modal */}
+      <WhatsAppPreviewModal
+        target={whatsAppTarget}
+        onClose={() => setWhatsAppTarget(null)}
+      />
     </div>
   );
 }

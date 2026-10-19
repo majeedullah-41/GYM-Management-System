@@ -14,6 +14,28 @@ pub fn format_currency(amount: i64) -> String {
     format!("Rs. {}", formatted)
 }
 
+/// Capitalizes the first letter of each whitespace-separated word after trimming.
+/// Preserves existing casing of subsequent characters in each word.
+pub fn capitalize_name(value: &str) -> String {
+    let trimmed = value.trim();
+    let mut out = String::with_capacity(trimmed.len());
+    let mut start_of_word = true;
+    for ch in trimmed.chars() {
+        if ch.is_whitespace() {
+            start_of_word = true;
+            out.push(ch);
+        } else if start_of_word {
+            for upper in ch.to_uppercase() {
+                out.push(upper);
+            }
+            start_of_word = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -36,5 +58,13 @@ mod tests {
     #[test]
     fn should_format_large_amount() {
         assert_eq!(format_currency(125000), "Rs. 125,000");
+    }
+
+    #[test]
+    fn should_capitalize_names() {
+        assert_eq!(capitalize_name("ahmad khan"), "Ahmad Khan");
+        assert_eq!(capitalize_name("  bilal traders "), "Bilal Traders");
+        assert_eq!(capitalize_name("ON distributors"), "ON Distributors");
+        assert_eq!(capitalize_name(""), "");
     }
 }

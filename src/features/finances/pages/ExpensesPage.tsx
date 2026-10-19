@@ -23,7 +23,7 @@ import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { useToast } from "../../../components/feedback/ToastProvider";
-import { formatCurrency, formatDate } from "../../../lib/utils/format";
+import { capitalizeName, formatCurrency, formatDate } from "../../../lib/utils/format";
 import { usePrivacy, HideToggleButton, maskValue } from "../../../context/PrivacyContext";
 import {
   listExpenses,
@@ -305,7 +305,7 @@ export function ExpensesPage() {
         addToast({ variant: "success", title: "Expense recorded" });
       }
 
-      if (!allCategories.includes(cat)) {
+      if (!allCategories.some((c) => c.toLowerCase() === cat.toLowerCase())) {
         const next = [...customCategories, cat];
         setCustomCategories(next);
         saveStoredCustomCategories(next);
@@ -683,8 +683,9 @@ export function ExpensesPage() {
                 placeholder="e.g. Generator Fuel, Water Dispenser, Repairs..."
                 value={customCategoryInput}
                 onChange={(e) => {
-                  setCustomCategoryInput(e.target.value);
-                  setFormData((p) => ({ ...p, category: e.target.value }));
+                  const val = capitalizeName(e.target.value);
+                  setCustomCategoryInput(val);
+                  setFormData((p) => ({ ...p, category: val }));
                 }}
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
               />

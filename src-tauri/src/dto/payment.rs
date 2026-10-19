@@ -90,18 +90,19 @@ impl PaymentResponse {
         member_number: Option<String>,
         plan_name: Option<String>,
     ) -> Self {
+        use crate::utils::formatting::capitalize_name;
         Self {
             id: payment.id,
             receipt_number: payment.receipt_number,
             member_id: payment.member_id,
-            member_name,
+            member_name: member_name.map(|v| capitalize_name(&v)),
             member_number,
             amount: payment.amount,
             discount_amount: payment.discount_amount,
             payment_method: payment.payment_method,
             payment_date: payment.payment_date,
             membership_plan_id: payment.membership_plan_id,
-            membership_plan_name: plan_name,
+            membership_plan_name: plan_name.map(|v| capitalize_name(&v)),
             membership_start_date: payment.membership_start_date.clone(),
             membership_expiry_date: payment.membership_expiry_date.clone(),
             payment_month: payment.payment_month.clone(),

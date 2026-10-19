@@ -29,7 +29,13 @@ export const MEMBER_FIELDS: MemberFieldDef[] = [
     description: "Member's full name (required)",
   },
   { key: "father_name", label: "Father Name", description: "Member's father's name" },
-  { key: "phone", label: "Phone", description: "Mobile / contact number" },
+  {
+    key: "phone",
+    label: "Phone",
+    required: true,
+    locked: true,
+    description: "Mobile / WhatsApp contact number (required)",
+  },
   { key: "cnic", label: "CNIC", description: "National identity card number" },
   { key: "gender", label: "Gender", description: "Male or female" },
   { key: "date_of_birth", label: "Date of Birth", description: "Birth date" },
@@ -106,6 +112,4 @@ export function todayIso(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
-export function capitalizeName(value: string): string {
-  return value.replace(/(^|\s)(\p{L})/gu, (_full, prefix, letter) => prefix + letter.toUpperCase());
-}
+export { capitalizeName } from "../../lib/utils/format";

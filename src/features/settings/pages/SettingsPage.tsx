@@ -17,6 +17,7 @@ import {
   Database,
   ShieldCheck,
 } from "lucide-react";
+import { WhatsAppIcon } from "../../../components/whatsapp/WhatsAppIcon";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
 import { Modal } from "../../../components/ui/Modal";
@@ -53,10 +54,12 @@ import type { AuthUser } from "../../../lib/api/auth";
 import { UserInformationTab } from "../components/UserInformationTab";
 import { MemberFormSettingsTab } from "../components/MemberFormSettingsTab";
 import { PaymentFormSettingsTab } from "../components/PaymentFormSettingsTab";
+import { WhatsAppSettingsTab } from "../components/WhatsAppSettingsTab";
 import { RestoreBackupSection } from "../components/RestoreBackupSection";
 import { ReceiptPaper } from "../../receipts/components/ReceiptPaper";
 import { LicenseInfoTab } from "../../licensing/components/LicenseInfoTab";
 import { useGym } from "../../../context/GymContext";
+import { capitalizeName } from "../../../lib/utils/format";
 
 type Tab =
   | "user"
@@ -65,6 +68,7 @@ type Tab =
   | "member-form"
   | "payment-form"
   | "receipts"
+  | "whatsapp"
   | "data"
   | "license";
 
@@ -77,6 +81,7 @@ const TABS: { key: Tab; label: string; icon: IconComponent }[] = [
   { key: "member-form", label: "Member Form", icon: FileText },
   { key: "payment-form", label: "Payment Form", icon: Receipt },
   { key: "receipts", label: "Receipts", icon: Printer },
+  { key: "whatsapp", label: "WhatsApp", icon: WhatsAppIcon },
   { key: "data", label: "Data & Backup", icon: Database },
   { key: "license", label: "License", icon: ShieldCheck },
 ];
@@ -172,6 +177,7 @@ export function SettingsPage({
           {activeTab === "member-form" && <MemberFormSettingsTab />}
           {activeTab === "payment-form" && <PaymentFormSettingsTab />}
           {activeTab === "receipts" && <ReceiptsTab settings={settings} onSave={setSettings} />}
+          {activeTab === "whatsapp" && <WhatsAppSettingsTab />}
           {activeTab === "data" && (
             <DataTab
               settings={settings}
@@ -289,7 +295,7 @@ function GymInfoTab({
         <Input
           label="Gym Name *"
           value={form.gym_name}
-          onChange={(e) => update({ gym_name: e.target.value })}
+          onChange={(e) => update({ gym_name: capitalizeName(e.target.value) })}
           className="text-xs"
         />
         <Input
@@ -388,7 +394,7 @@ function PlansTab() {
   };
 
   const handleSubmit = async () => {
-    const name = form.name.trim();
+    const name = capitalizeName(form.name.trim());
     const price = parseInt(form.price, 10);
     const duration_days = parseInt(form.duration_days, 10);
     if (!name) {
@@ -587,7 +593,7 @@ function PlansTab() {
             <label className="font-medium text-text-primary">Plan Name *</label>
             <Input
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => setForm({ ...form, name: capitalizeName(e.target.value) })}
               placeholder="e.g. Monthly"
               className="text-xs"
             />

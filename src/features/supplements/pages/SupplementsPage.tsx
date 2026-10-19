@@ -24,11 +24,17 @@ import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { useToast } from "../../../components/feedback/ToastProvider";
-import { formatCurrency, formatDate } from "../../../lib/utils/format";
+import { capitalizeName, formatCurrency, formatDate } from "../../../lib/utils/format";
 import {
   usePrivacy,
   HideToggleButton,
 } from "../../../context/PrivacyContext";
+import { useGym } from "../../../context/GymContext";
+import { WhatsAppIcon } from "../../../components/whatsapp/WhatsAppIcon";
+import {
+  WhatsAppPreviewModal,
+  type WhatsAppTarget,
+} from "../../../components/whatsapp/WhatsAppPreviewModal";
 import { listMembers, type MemberResponse } from "../../../lib/api/members";
 import {
   listSuppliers,
@@ -65,6 +71,7 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 export function SupplementsPage() {
   const { addToast } = useToast();
   const { mask } = usePrivacy();
+  const { gymName } = useGym();
 
   const [activeTab, setActiveTab] = useState<SupplementTab>("suppliers");
   const [summary, setSummary] = useState<SupplementSummaryResponse | null>(null);
@@ -76,6 +83,23 @@ export function SupplementsPage() {
   const [members, setMembers] = useState<MemberResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [whatsAppTarget, setWhatsAppTarget] = useState<WhatsAppTarget | null>(null);
+
+  const openSupplierWhatsApp = (supplier: SupplierResponse) => {
+    setWhatsAppTarget({
+      recipientType: "supplier",
+      recipientName: supplier.name,
+      rawPhone: supplier.phone,
+      variables: {
+        supplier_name: supplier.name,
+        company: supplier.company || supplier.name,
+        total_purchased: formatCurrency(supplier.total_purchased),
+        total_paid: formatCurrency(supplier.total_paid),
+        due_amount: formatCurrency(supplier.total_due),
+        gym_name: gymName || "Gym",
+      },
+    });
+  };
 
   // Filters
   const [supplierSearch, setSupplierSearch] = useState("");
@@ -284,6 +308,10 @@ export function SupplementsPage() {
     e.preventDefault();
     if (!supplierForm.name.trim()) {
       addToast({ title: "Supplier name is required", variant: "error" });
+      return;
+    }
+    if (!supplierForm.phone.trim()) {
+      addToast({ title: "Supplier phone number is required", variant: "error" });
       return;
     }
     setSavingSupplier(true);
@@ -956,6 +984,14 @@ export function SupplementsPage() {
                           </Button>
                           <button
                             type="button"
+                            onClick={() => openSupplierWhatsApp(s)}
+                            className="rounded-md border border-[#25D366]/40 bg-[#25D366]/10 p-1.5 text-[#128C7E] hover:bg-[#25D366]/20"
+                            title="Send WhatsApp Supplier Dues Update"
+                          >
+                            <WhatsAppIcon size={15} className="text-[#25D366]" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => openEditSupplier(s)}
                             className="rounded-md p-1.5 text-text-secondary hover:bg-surface-alt hover:text-text-primary"
                             title="Edit Supplier"
@@ -1160,14 +1196,24 @@ export function SupplementsPage() {
                           Due: {mask(formatCurrency(s.total_due))}
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          openPayDueModal(s.id, undefined, s.total_due)
-                        }
-                      >
-                        Pay Now
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openSupplierWhatsApp(s)}
+                          className="rounded-md border border-[#25D366]/40 bg-[#25D366]/10 p-1.5 text-[#128C7E] hover:bg-[#25D366]/20"
+                          title="Send WhatsApp Supplier Dues Update"
+                        >
+                          <WhatsAppIcon size={15} className="text-[#25D366]" />
+                        </button>
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            openPayDueModal(s.id, undefined, s.total_due)
+                          }
+                        >
+                          Pay Now
+                        </Button>
+                      </div>
                     </div>
                   ))}
               </div>
@@ -1390,7 +1436,7 @@ export function SupplementsPage() {
               label="Supplier Name *"
               value={supplierForm.name}
               onChange={(e) =>
-                setSupplierForm({ ...supplierForm, name: e.target.value })
+                setSupplierForm({ ...supplierForm, name: capitalizeName(e.target.value) })
               }
               placeholder="e.g. Bilal Traders"
               required
@@ -1399,19 +1445,20 @@ export function SupplementsPage() {
               label="Company / Brand Distributor"
               value={supplierForm.company}
               onChange={(e) =>
-                setSupplierForm({ ...supplierForm, company: e.target.value })
+                setSupplierForm({ ...supplierForm, company: capitalizeName(e.target.value) })
               }
               placeholder="e.g. Optimum Nutrition PK"
             />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input
-              label="Phone Number"
+              label="Phone Number *"
               value={supplierForm.phone}
               onChange={(e) =>
                 setSupplierForm({ ...supplierForm, phone: e.target.value })
               }
               placeholder="0300-1234567"
+              required
             />
             <Input
               label="Email"
@@ -1426,7 +1473,7 @@ export function SupplementsPage() {
             label="Address / City"
             value={supplierForm.address}
             onChange={(e) =>
-              setSupplierForm({ ...supplierForm, address: e.target.value })
+              setSupplierForm({ ...supplierForm, address: capitalizeName(e.target.value) })
             }
             placeholder="Market / City address"
           />
@@ -1669,7 +1716,7 @@ export function SupplementsPage() {
             label="Item Name *"
             value={quickItemForm.name}
             onChange={(e) =>
-              setQuickItemForm({ ...quickItemForm, name: e.target.value })
+              setQuickItemForm({ ...quickItemForm, name: capitalizeName(e.target.value) })
             }
             placeholder="e.g. Creatine Monohydrate 300g"
             required
@@ -1939,7 +1986,7 @@ export function SupplementsPage() {
               label="Customer Name"
               value={saleForm.customer_name}
               onChange={(e) =>
-                setSaleForm({ ...saleForm, customer_name: e.target.value })
+                setSaleForm({ ...saleForm, customer_name: capitalizeName(e.target.value) })
               }
               placeholder="Walk-in Customer (optional)"
             />
@@ -2064,6 +2111,12 @@ export function SupplementsPage() {
         message={`Are you sure you want to delete this record? Stock levels, supplier dues, and linked expenses will be automatically updated.`}
         confirmLabel={deleting ? "Deleting..." : "Delete"}
         variant="danger"
+      />
+
+      {/* WHATSAPP DUES PREVIEW & SEND MODAL */}
+      <WhatsAppPreviewModal
+        target={whatsAppTarget}
+        onClose={() => setWhatsAppTarget(null)}
       />
     </div>
   );

@@ -35,7 +35,7 @@ pub async fn generate_report_pdf(
     let conn = state.inner().clone_conn();
     let df = date_from.clone();
     let dt = date_to.clone();
-    let (financial, payments, expenses, members, membership_status, gym) =
+    let (financial, payments, expenses, members, membership_status, inventory, supplier, gym) =
         tauri::async_runtime::spawn_blocking(move || {
             let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
             let financial = report_service::generate_report(
@@ -98,6 +98,30 @@ pub async fn generate_report_pdf(
                     expense_category: None,
                 },
             )?;
+            let inventory = report_service::generate_report(
+                &guard,
+                ReportRequest {
+                    report_type: "inventory".into(),
+                    date_from: df.clone(),
+                    date_to: dt.clone(),
+                    member_id: None,
+                    payment_method: None,
+                    membership_plan_id: None,
+                    expense_category: None,
+                },
+            )?;
+            let supplier = report_service::generate_report(
+                &guard,
+                ReportRequest {
+                    report_type: "supplier".into(),
+                    date_from: df.clone(),
+                    date_to: dt.clone(),
+                    member_id: None,
+                    payment_method: None,
+                    membership_plan_id: None,
+                    expense_category: None,
+                },
+            )?;
             let gym = settings_repository::get_gym_settings(&guard)?;
             Ok::<_, AppError>((
                 financial,
@@ -105,6 +129,8 @@ pub async fn generate_report_pdf(
                 expenses,
                 members,
                 membership_status,
+                inventory,
+                supplier,
                 gym,
             ))
         })
@@ -131,6 +157,14 @@ pub async fn generate_report_pdf(
         ReportResponse::MembershipStatus(r) => r,
         _ => unreachable!(),
     };
+    let inventory = match inventory {
+        ReportResponse::Inventory(r) => r,
+        _ => unreachable!(),
+    };
+    let supplier = match supplier {
+        ReportResponse::Supplier(r) => r,
+        _ => unreachable!(),
+    };
 
     let bytes = report_pdf_service::render_report_pdf(
         &gym,
@@ -141,6 +175,8 @@ pub async fn generate_report_pdf(
         &expenses,
         &members,
         &membership_status,
+        Some(&inventory),
+        Some(&supplier),
     )?;
 
     let date_label = match (&date_from, &date_to) {

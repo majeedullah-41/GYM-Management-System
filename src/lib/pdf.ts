@@ -5,6 +5,8 @@ import type {
   FinancialReport,
   MembershipStatusReport,
   PaymentReport,
+  InventoryReport,
+  SupplierReport,
 } from "./api/reports";
 
 const INDIGO: [number, number, number] = [79, 70, 229];
@@ -57,6 +59,8 @@ export interface ReportPdfData {
   payment: PaymentReport;
   expense: ExpenseReport;
   membership_status: MembershipStatusReport;
+  inventory?: InventoryReport;
+  supplier?: SupplierReport;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -101,7 +105,7 @@ export async function renderReportPdf(data: ReportPdfData): Promise<SavePdfResul
     "No expenses were recorded for this period.",
   );
 
-  drawTable(
+  y = drawTable(
     pdf,
     y,
     `Active Memberships (${data.membership_status.active.length})`,
@@ -119,6 +123,56 @@ export async function renderReportPdf(data: ReportPdfData): Promise<SavePdfResul
     ]),
     "No active memberships found.",
   );
+
+  if (data.inventory) {
+    y = drawTable(
+      pdf,
+      y,
+      `Inventory & Stock Status (${data.inventory.items.length} items)`,
+      [
+        { header: "Item Name", width: 44 },
+        { header: "Category", width: 32 },
+        { header: "Stock", width: 22, align: "right" },
+        { header: "Cost", width: 25, align: "right" },
+        { header: "Price", width: 25, align: "right" },
+        { header: "Status", width: 26 },
+      ],
+      data.inventory.items.map((it) => [
+        it.name,
+        it.category,
+        `${it.stock_quantity} ${it.unit}`,
+        fmt(it.cost_price),
+        fmt(it.selling_price),
+        it.stock_status.replace(/_/g, " ").toUpperCase(),
+      ]),
+      "No inventory items found.",
+    );
+  }
+
+  if (data.supplier) {
+    y = drawTable(
+      pdf,
+      y,
+      `Supplier Balances & Outstanding Dues (${data.supplier.suppliers.length} suppliers)`,
+      [
+        { header: "Supplier Name", width: 38 },
+        { header: "Company", width: 32 },
+        { header: "Phone", width: 30 },
+        { header: "Purchased", width: 25, align: "right" },
+        { header: "Paid", width: 24, align: "right" },
+        { header: "Due", width: 25, align: "right" },
+      ],
+      data.supplier.suppliers.map((s) => [
+        s.name,
+        s.company || "-",
+        s.phone || "-",
+        fmt(s.total_purchased),
+        fmt(s.total_paid),
+        fmt(s.total_due),
+      ]),
+      "No suppliers recorded.",
+    );
+  }
 
   addPageFooters(pdf);
 

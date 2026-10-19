@@ -16,6 +16,7 @@ import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { LoadingState } from "../../../components/ui/LoadingState";
+import { WhatsAppIcon } from "../../../components/whatsapp/WhatsAppIcon";
 import { formatCurrency, formatDate, formatPeriod } from "../../../lib/utils/format";
 import { usePrivacy, maskValue } from "../../../context/PrivacyContext";
 import {
@@ -56,9 +57,10 @@ interface MemberDetailRowProps {
   member: MemberResponse;
   onEdit?: (member: MemberResponse) => void;
   onPay?: (memberId: string) => void;
+  onWhatsApp?: (member: MemberResponse) => void;
 }
 
-export function MemberDetailRow({ member, onEdit, onPay }: MemberDetailRowProps) {
+export function MemberDetailRow({ member, onEdit, onPay, onWhatsApp }: MemberDetailRowProps) {
   const { hidden } = usePrivacy();
   const [payments, setPayments] = useState<PaymentResponse[]>([]);
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
@@ -146,7 +148,19 @@ export function MemberDetailRow({ member, onEdit, onPay }: MemberDetailRowProps)
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onWhatsApp && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onWhatsApp(member)}
+              className="gap-1.5 border-[#25D366]/40 bg-[#25D366]/10 text-[#128C7E] hover:bg-[#25D366]/20"
+              title="Send WhatsApp dues message"
+            >
+              <WhatsAppIcon size={15} className="text-[#25D366]" />
+              WhatsApp Dues
+            </Button>
+          )}
           {onPay && !member.is_archived && (
             <Button size="sm" onClick={() => onPay(member.id)} className="gap-1.5">
               <HandCoins size={14} />

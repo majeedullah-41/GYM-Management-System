@@ -172,7 +172,7 @@ function FieldControl({
     case "phone":
       return (
         <Input
-          label="Phone"
+          label="Phone *"
           placeholder="03xxxxxxxxx"
           type="tel"
           value={formData.phone}

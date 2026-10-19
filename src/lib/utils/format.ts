@@ -46,3 +46,9 @@ export function formatPeriod(
   if (!end) return formatDate(start);
   return `${formatDate(start)} ${separator} ${formatDate(end)}`;
 }
+
+export function capitalizeName(value: string): string {
+  return value.replace(/(^|\s)(\p{L})/gu, (_full, prefix, letter) =>
+    prefix + letter.toUpperCase(),
+  );
+}

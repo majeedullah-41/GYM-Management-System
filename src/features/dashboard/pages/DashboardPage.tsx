@@ -20,7 +20,7 @@ import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { useNavigation } from "../../../components/layout/NavigationContext";
 import { type AuthUser } from "../../../lib/api/auth";
-import { formatCurrency, formatDate } from "../../../lib/utils/format";
+import { capitalizeName, formatCurrency, formatDate } from "../../../lib/utils/format";
 import {
   getDashboardSummary,
   type DashboardSummary,
@@ -561,7 +561,7 @@ export function DashboardPage({ user }: DashboardPageProps = {}) {
             {user?.username ? (
               <>
                 Welcome back,{" "}
-                <span className="text-[#286148]">{user.username}</span>
+                <span className="text-[#286148]">{capitalizeName(user.username)}</span>
               </>
             ) : (
               "Welcome back"

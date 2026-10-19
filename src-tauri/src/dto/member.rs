@@ -63,11 +63,12 @@ pub struct MemberResponse {
 
 impl MemberResponse {
     pub fn from_member(member: Member, membership: MembershipInfo) -> Self {
+        use crate::utils::formatting::capitalize_name;
         Self {
             id: member.id,
             member_number: member.member_number,
-            full_name: member.full_name,
-            father_name: member.father_name,
+            full_name: capitalize_name(&member.full_name),
+            father_name: member.father_name.map(|v| capitalize_name(&v)),
             phone: member.phone,
             cnic: member.cnic,
             address: member.address,
@@ -78,7 +79,7 @@ impl MemberResponse {
             is_archived: member.is_archived,
             admission_date: member.admission_date.clone(),
             membership_plan_id: member.membership_plan_id.clone(),
-            membership_plan_name: membership.plan_name,
+            membership_plan_name: membership.plan_name.map(|v| capitalize_name(&v)),
             membership_start_date: membership.start_date,
             membership_expiry_date: membership.expiry_date,
             membership_status: membership.status,

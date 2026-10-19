@@ -1840,4 +1840,37 @@ mod tests {
         let result = create_payment(&conn, request);
         assert!(matches!(result, Err(AppError::ValidationError(_))));
     }
+
+    #[test]
+    fn should_allow_complete_discount_on_previous_month_while_paying_current_month() {
+        let conn = test_db();
+        let (member_id, plan_id, bills) = member_with_outstanding_periods(&conn);
+        let due_bills: Vec<_> = bills.iter().filter(|b| b.status == "DUE").collect();
+        let current = bills
+            .iter()
+            .find(|b| b.status == "CURRENT")
+            .expect("current bill");
+        assert!(!due_bills.is_empty());
+
+        let first_due = due_bills[0];
+        let mut request = valid_request(&member_id, &plan_id, 2000);
+        request.bill_ids = Some(vec![first_due.id.clone(), current.id.clone()]);
+        request.discounts = Some(vec![PaymentDiscountRequest {
+            monthly_bill_id: first_due.id.clone(),
+            amount: 2000,
+        }]);
+
+        let payment = create_payment(&conn, request).expect("payment with 100% previous month discount should succeed");
+        assert_eq!(payment.amount, 2000);
+        assert_eq!(payment.discount_amount, 2000);
+
+        let summary = crate::services::billing_service::get_billing_summary(&conn, &member_id).unwrap();
+        let updated_due = summary.bills.iter().find(|b| b.id == first_due.id).unwrap();
+        let updated_current = summary.bills.iter().find(|b| b.id == current.id).unwrap();
+        assert_eq!(updated_due.status, "PAID");
+        assert_eq!(updated_due.discount_amount, 2000);
+        assert_eq!(updated_due.paid_amount, 0);
+        assert_eq!(updated_current.status, "PAID");
+        assert_eq!(updated_current.paid_amount, 2000);
+    }
 }

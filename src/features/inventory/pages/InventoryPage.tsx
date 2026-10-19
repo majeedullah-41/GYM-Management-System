@@ -25,7 +25,7 @@ import { LoadingState } from "../../../components/ui/LoadingState";
 import { ErrorState } from "../../../components/ui/ErrorState";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { useToast } from "../../../components/feedback/ToastProvider";
-import { formatCurrency, formatDate } from "../../../lib/utils/format";
+import { capitalizeName, formatCurrency, formatDate } from "../../../lib/utils/format";
 import {
   usePrivacy,
   HideToggleButton,
@@ -749,7 +749,7 @@ export function InventoryPage() {
               label="Item Name *"
               value={itemForm.name}
               onChange={(e) =>
-                setItemForm({ ...itemForm, name: e.target.value })
+                setItemForm({ ...itemForm, name: capitalizeName(e.target.value) })
               }
               placeholder="e.g. Gold Standard Whey 5lbs"
               required
@@ -758,7 +758,7 @@ export function InventoryPage() {
               label="Brand"
               value={itemForm.brand}
               onChange={(e) =>
-                setItemForm({ ...itemForm, brand: e.target.value })
+                setItemForm({ ...itemForm, brand: capitalizeName(e.target.value) })
               }
               placeholder="e.g. Optimum Nutrition"
             />

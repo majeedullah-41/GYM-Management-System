@@ -217,6 +217,109 @@ pub fn save_payment_form_settings(
     set_setting(conn, "payment_form_visible_fields", &encoded, &now)
 }
 
+pub const DEFAULT_MEMBER_DUES_TEMPLATE: &str = "Assalam-o-Alaikum [Member Name],\n\nThis is a friendly reminder from *[Gym Name]*. Your pending membership balance is *[Due Amount]* (Member ID: #[Member ID], Plan: [Plan Name]).\n\nKindly clear your remaining dues at your earliest convenience. Thank you!";
+
+pub const DEFAULT_SUPPLIER_DUES_TEMPLATE: &str = "Assalam-o-Alaikum [Supplier Name],\n\nAccount update from *[Gym Name]*:\n• Total Purchased: [Total Purchased]\n• Total Paid: [Total Paid]\n• *Remaining Balance Due: [Remaining Due]*\n\nThank you!";
+
+fn upgrade_legacy_whatsapp_template(tpl: &str, is_supplier: bool) -> String {
+    tpl.replace("{member_name}", "[Member Name]")
+        .replace("{member_number}", "[Member ID]")
+        .replace("{plan_name}", "[Plan Name]")
+        .replace(
+            "{due_amount}",
+            if is_supplier {
+                "[Remaining Due]"
+            } else {
+                "[Due Amount]"
+            },
+        )
+        .replace("{expiry_date}", "[Expiry Date]")
+        .replace("{gym_name}", "[Gym Name]")
+        .replace("{supplier_name}", "[Supplier Name]")
+        .replace("{company}", "[Company]")
+        .replace("{total_purchased}", "[Total Purchased]")
+        .replace("{total_paid}", "[Total Paid]")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhatsAppSettings {
+    pub default_country_code: String,
+    pub launch_mode: String,
+    pub member_dues_template: String,
+    pub supplier_dues_template: String,
+}
+
+impl Default for WhatsAppSettings {
+    fn default() -> Self {
+        Self {
+            default_country_code: "92".to_string(),
+            launch_mode: "web".to_string(),
+            member_dues_template: DEFAULT_MEMBER_DUES_TEMPLATE.to_string(),
+            supplier_dues_template: DEFAULT_SUPPLIER_DUES_TEMPLATE.to_string(),
+        }
+    }
+}
+
+pub fn get_whatsapp_settings(conn: &Connection) -> Result<WhatsAppSettings, AppError> {
+    let mut s = WhatsAppSettings::default();
+    if let Ok(code) = get_setting(conn, "whatsapp_country_code") {
+        let trimmed = code.trim().trim_start_matches('+').to_string();
+        if !trimmed.is_empty() {
+            s.default_country_code = trimmed;
+        }
+    }
+    if let Ok(mode) = get_setting(conn, "whatsapp_launch_mode") {
+        if mode == "desktop" || mode == "web" {
+            s.launch_mode = mode;
+        }
+    }
+    if let Ok(tpl) = get_setting(conn, "whatsapp_member_dues_template") {
+        if !tpl.trim().is_empty() {
+            s.member_dues_template = upgrade_legacy_whatsapp_template(&tpl, false);
+        }
+    }
+    if let Ok(tpl) = get_setting(conn, "whatsapp_supplier_dues_template") {
+        if !tpl.trim().is_empty() {
+            s.supplier_dues_template = upgrade_legacy_whatsapp_template(&tpl, true);
+        }
+    }
+    Ok(s)
+}
+
+pub fn save_whatsapp_settings(
+    conn: &Connection,
+    settings: &WhatsAppSettings,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let code = settings
+        .default_country_code
+        .trim()
+        .trim_start_matches('+')
+        .to_string();
+    let clean_code = if code.is_empty() { "92" } else { &code };
+    let mode = if settings.launch_mode == "desktop" {
+        "desktop"
+    } else {
+        "web"
+    };
+    let member_tpl = if settings.member_dues_template.trim().is_empty() {
+        DEFAULT_MEMBER_DUES_TEMPLATE
+    } else {
+        settings.member_dues_template.trim()
+    };
+    let supplier_tpl = if settings.supplier_dues_template.trim().is_empty() {
+        DEFAULT_SUPPLIER_DUES_TEMPLATE
+    } else {
+        settings.supplier_dues_template.trim()
+    };
+
+    set_setting(conn, "whatsapp_country_code", clean_code, &now)?;
+    set_setting(conn, "whatsapp_launch_mode", mode, &now)?;
+    set_setting(conn, "whatsapp_member_dues_template", member_tpl, &now)?;
+    set_setting(conn, "whatsapp_supplier_dues_template", supplier_tpl, &now)?;
+    Ok(())
+}
+
 pub fn get_gym_settings(conn: &Connection) -> Result<GymSettings, AppError> {
     let mut settings = GymSettings::default();
 

@@ -10,7 +10,7 @@ pub fn create_plan(
     conn: &Connection,
     request: CreatePlanRequest,
 ) -> Result<PlanResponse, AppError> {
-    let name = request.name.trim().to_string();
+    let name = crate::utils::formatting::capitalize_name(&request.name);
     if name.is_empty() {
         return Err(AppError::ValidationError("Plan name is required".into()));
     }
@@ -86,7 +86,7 @@ pub fn update_plan(
     let mut plan = membership_plan_repository::get_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Plan with id '{}' not found", id)))?;
 
-    let name = request.name.trim().to_string();
+    let name = crate::utils::formatting::capitalize_name(&request.name);
     if name.is_empty() {
         return Err(AppError::ValidationError("Plan name is required".into()));
     }

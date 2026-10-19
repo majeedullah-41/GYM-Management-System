@@ -48,7 +48,7 @@ fn assemble_receipt(
     let member = member_repository::get_by_id(conn, &payment.member_id)?;
     let member_name = member
         .as_ref()
-        .map(|m| m.full_name.clone())
+        .map(|m| crate::utils::formatting::capitalize_name(&m.full_name))
         .unwrap_or_default();
     let member_number = member
         .as_ref()
@@ -56,7 +56,10 @@ fn assemble_receipt(
         .unwrap_or_default();
 
     let plan = membership_plan_repository::get_by_id(conn, &payment.membership_plan_id)?;
-    let plan_name = plan.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+    let plan_name = plan
+        .as_ref()
+        .map(|p| crate::utils::formatting::capitalize_name(&p.name))
+        .unwrap_or_default();
 
     crate::services::billing_service::ensure_monthly_billing_generated(conn, &payment.member_id)?;
     let remaining_balance =

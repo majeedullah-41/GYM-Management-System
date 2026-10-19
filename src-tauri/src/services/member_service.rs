@@ -14,7 +14,7 @@ pub fn create_member(
     conn: &Connection,
     request: CreateMemberRequest,
 ) -> Result<MemberResponse, AppError> {
-    let full_name = request.full_name.trim().to_string();
+    let full_name = crate::utils::formatting::capitalize_name(&request.full_name);
     if full_name.is_empty() {
         return Err(AppError::ValidationError("Member name is required".into()));
     }
@@ -47,7 +47,7 @@ pub fn create_member(
         full_name,
         father_name: request
             .father_name
-            .map(|v| v.trim().to_string())
+            .map(|v| crate::utils::formatting::capitalize_name(&v))
             .filter(|v| !v.is_empty()),
         phone: request
             .phone
@@ -151,7 +151,7 @@ pub fn update_member(
     let mut member = member_repository::get_operational_by_id(conn, id)?
         .ok_or_else(|| AppError::NotFoundError(format!("Member '{}' not found", id)))?;
 
-    let full_name = request.full_name.trim().to_string();
+    let full_name = crate::utils::formatting::capitalize_name(&request.full_name);
     if full_name.is_empty() {
         return Err(AppError::ValidationError("Member name is required".into()));
     }
@@ -167,7 +167,7 @@ pub fn update_member(
     member.full_name = full_name;
     member.father_name = request
         .father_name
-        .map(|v| v.trim().to_string())
+        .map(|v| crate::utils::formatting::capitalize_name(&v))
         .filter(|v| !v.is_empty());
     member.phone = request
         .phone

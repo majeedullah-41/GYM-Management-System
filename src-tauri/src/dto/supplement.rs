@@ -73,11 +73,12 @@ impl SupplierResponse {
         total_paid: i64,
         purchase_count: i64,
     ) -> Self {
+        use crate::utils::formatting::capitalize_name;
         let total_due = (total_purchased - total_paid).max(0);
         Self {
             id: s.id,
-            name: s.name,
-            company: s.company,
+            name: capitalize_name(&s.name),
+            company: s.company.map(|c| capitalize_name(&c)),
             phone: s.phone,
             email: s.email,
             address: s.address,
@@ -152,6 +153,7 @@ pub struct ItemResponse {
 
 impl ItemResponse {
     pub fn from_item(item: SupplementItem) -> Self {
+        use crate::utils::formatting::capitalize_name;
         let stock_status = if item.stock_quantity <= 0 {
             "out_of_stock".to_string()
         } else if item.stock_quantity <= item.min_stock_level {
@@ -165,9 +167,9 @@ impl ItemResponse {
 
         Self {
             id: item.id,
-            name: item.name,
+            name: capitalize_name(&item.name),
             category: item.category,
-            brand: item.brand,
+            brand: item.brand.map(|b| capitalize_name(&b)),
             unit: item.unit,
             cost_price: item.cost_price,
             selling_price: item.selling_price,
@@ -305,7 +307,7 @@ impl InventoryMovementResponse {
         Self {
             id: m.id,
             item_id: m.item_id,
-            item_name,
+            item_name: crate::utils::formatting::capitalize_name(&item_name),
             item_unit,
             movement_type: m.movement_type,
             quantity_change: m.quantity_change,

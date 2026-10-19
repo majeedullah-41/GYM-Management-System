@@ -363,6 +363,153 @@ pub fn membership_status_report(
     })
 }
 
+pub fn inventory_report(
+    conn: &Connection,
+    date_from: &Option<String>,
+    date_to: &Option<String>,
+) -> Result<InventoryReportResponse, AppError> {
+    let summary = crate::repositories::supplement_repository::get_summary(conn)?;
+    let items_raw = crate::repositories::supplement_repository::list_items(conn, "", None, false)?;
+    let items = items_raw
+        .into_iter()
+        .map(|it| {
+            let stock_status = if it.stock_quantity <= 0 {
+                "out_of_stock".to_string()
+            } else if it.stock_quantity <= it.min_stock_level {
+                "low_stock".to_string()
+            } else {
+                "in_stock".to_string()
+            };
+            let stock_value_cost = it.stock_quantity.max(0) * it.cost_price;
+            let stock_value_retail = it.stock_quantity.max(0) * it.selling_price;
+            InventoryReportItemRow {
+                id: it.id,
+                name: crate::utils::formatting::capitalize_name(&it.name),
+                category: crate::utils::formatting::capitalize_name(&it.category),
+                brand: it.brand.map(|b| crate::utils::formatting::capitalize_name(&b)),
+                unit: it.unit,
+                cost_price: it.cost_price,
+                selling_price: it.selling_price,
+                stock_quantity: it.stock_quantity,
+                min_stock_level: it.min_stock_level,
+                stock_status,
+                stock_value_cost,
+                stock_value_retail,
+            }
+        })
+        .collect();
+
+    let sales_raw = crate::repositories::supplement_repository::list_sales(
+        conn,
+        "",
+        None,
+        None,
+        date_from.as_deref(),
+        date_to.as_deref(),
+    )?;
+
+    let mut period_sales_revenue: i64 = 0;
+    let mut period_sales_profit: i64 = 0;
+    let period_sales_count = sales_raw.len() as i64;
+
+    let sales = sales_raw
+        .into_iter()
+        .map(|s| {
+            period_sales_revenue += s.total_amount;
+            period_sales_profit += s.profit;
+            InventoryReportSaleRow {
+                id: s.id,
+                invoice_number: s.invoice_number,
+                customer_name: s.customer_name,
+                item_name: s.item_name,
+                item_unit: s.item_unit,
+                quantity: s.quantity,
+                unit_price: s.unit_price,
+                total_amount: s.total_amount,
+                profit: s.profit,
+                payment_method: s.payment_method,
+                sale_date: s.sale_date,
+            }
+        })
+        .collect();
+
+    Ok(InventoryReportResponse {
+        total_items: summary.total_items,
+        total_stock_units: summary.total_stock_units,
+        low_stock_count: summary.low_stock_count,
+        out_of_stock_count: summary.out_of_stock_count,
+        inventory_cost_value: summary.inventory_cost_value,
+        inventory_retail_value: summary.inventory_retail_value,
+        period_sales_revenue,
+        period_sales_profit,
+        period_sales_count,
+        items,
+        sales,
+    })
+}
+
+pub fn supplier_report(
+    conn: &Connection,
+    date_from: &Option<String>,
+    date_to: &Option<String>,
+) -> Result<SupplierReportResponse, AppError> {
+    let summary = crate::repositories::supplement_repository::get_summary(conn)?;
+    let suppliers_raw = crate::repositories::supplement_repository::list_suppliers(conn, "", false)?;
+    let mut suppliers = Vec::new();
+
+    for s in suppliers_raw {
+        let (purchased, paid, purchase_count) =
+            crate::repositories::supplement_repository::get_supplier_financials(conn, &s.id)?;
+        let total_due = (purchased - paid).max(0);
+        suppliers.push(SupplierReportRow {
+            id: s.id,
+            name: crate::utils::formatting::capitalize_name(&s.name),
+            company: s.company.map(|c| crate::utils::formatting::capitalize_name(&c)),
+            phone: s.phone,
+            total_purchased: purchased,
+            total_paid: paid,
+            total_due,
+            purchase_count,
+            is_active: s.is_active,
+        });
+    }
+
+    let purchases_raw = crate::repositories::supplement_repository::list_purchases(
+        conn,
+        None,
+        None,
+        date_from.as_deref(),
+        date_to.as_deref(),
+    )?;
+
+    let purchases = purchases_raw
+        .into_iter()
+        .map(|p| SupplierPurchaseReportRow {
+            id: p.id,
+            invoice_number: p.invoice_number,
+            supplier_name: p.supplier_name,
+            item_name: p.item_name,
+            quantity: p.quantity,
+            unit_cost: p.unit_cost,
+            total_amount: p.total_amount,
+            paid_amount: p.paid_amount,
+            due_amount: p.due_amount,
+            payment_status: p.payment_status,
+            purchase_date: p.purchase_date,
+        })
+        .collect();
+
+    Ok(SupplierReportResponse {
+        total_suppliers: summary.total_suppliers,
+        suppliers_with_dues: summary.suppliers_with_dues,
+        total_purchases_amount: summary.total_purchased_amount,
+        total_paid_amount: summary.total_paid_to_suppliers,
+        total_dues_amount: summary.total_supplier_dues,
+        suppliers,
+        purchases,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -20,6 +20,8 @@ pub fn render_report_pdf(
     expenses: &ExpenseReportResponse,
     members: &MemberReportResponse,
     membership_status: &MembershipStatusReportResponse,
+    inventory: Option<&InventoryReportResponse>,
+    supplier: Option<&SupplierReportResponse>,
 ) -> Result<Vec<u8>, AppError> {
     let font_size: f32 = 10.0;
     let small_size: f32 = 8.5;
@@ -324,6 +326,109 @@ pub fn render_report_pdf(
                 ],
                 &[22.0, 28.0, 25.0, 25.0, 22.0],
             ));
+        }
+    }
+
+    // ── INVENTORY & STOCK ──
+    if let Some(inv) = inventory {
+        lines.push(LineItem::divider());
+        lines.push(LineItem::text(
+            "INVENTORY & STOCK",
+            section_size,
+            true,
+            Align::Left,
+        ));
+        lines.push(LineItem::kv("Total Items", &inv.total_items.to_string()));
+        lines.push(LineItem::kv("Total Stock Units", &inv.total_stock_units.to_string()));
+        lines.push(LineItem::kv("Low Stock Items", &inv.low_stock_count.to_string()));
+        lines.push(LineItem::kv("Out of Stock Items", &inv.out_of_stock_count.to_string()));
+        lines.push(LineItem::kv(
+            "Inventory Cost Value",
+            &format!("Rs. {}", fmt_amt(inv.inventory_cost_value)),
+        ));
+        lines.push(LineItem::kv(
+            "Inventory Retail Value",
+            &format!("Rs. {}", fmt_amt(inv.inventory_retail_value)),
+        ));
+        lines.push(LineItem::kv(
+            "Period Sales Revenue",
+            &format!("Rs. {} ({} sales)", fmt_amt(inv.period_sales_revenue), inv.period_sales_count),
+        ));
+        lines.push(LineItem::kv(
+            "Period Sales Profit",
+            &format!("Rs. {}", fmt_amt(inv.period_sales_profit)),
+        ));
+        lines.push(LineItem::divider());
+
+        lines.push(LineItem::text("STOCK STATUS DETAILS", font_size, true, Align::Left));
+        if inv.items.is_empty() {
+            lines.push(LineItem::text("  No inventory items recorded.", small_size, false, Align::Left));
+        } else {
+            lines.push(LineItem::table_row(
+                &["Item Name", "Category", "Stock", "Cost", "Price", "Status"],
+                &[28.0, 18.0, 14.0, 13.0, 13.0, 14.0],
+            ));
+            for it in &inv.items {
+                lines.push(LineItem::table_row(
+                    &[
+                        &truncate(&it.name, 20),
+                        &truncate(&it.category, 15),
+                        &format!("{} {}", it.stock_quantity, it.unit),
+                        &format!("Rs. {}", fmt_amt(it.cost_price)),
+                        &format!("Rs. {}", fmt_amt(it.selling_price)),
+                        &it.stock_status.replace('_', " "),
+                    ],
+                    &[28.0, 18.0, 14.0, 13.0, 13.0, 14.0],
+                ));
+            }
+        }
+    }
+
+    // ── SUPPLIERS & OUTSTANDING DUES ──
+    if let Some(sup) = supplier {
+        lines.push(LineItem::divider());
+        lines.push(LineItem::text(
+            "SUPPLIERS & OUTSTANDING DUES",
+            section_size,
+            true,
+            Align::Left,
+        ));
+        lines.push(LineItem::kv("Total Suppliers", &sup.total_suppliers.to_string()));
+        lines.push(LineItem::kv("Suppliers with Dues", &sup.suppliers_with_dues.to_string()));
+        lines.push(LineItem::kv(
+            "Total Purchased Amount",
+            &format!("Rs. {}", fmt_amt(sup.total_purchases_amount)),
+        ));
+        lines.push(LineItem::kv(
+            "Total Paid to Suppliers",
+            &format!("Rs. {}", fmt_amt(sup.total_paid_amount)),
+        ));
+        lines.push(LineItem::kv(
+            "Total Outstanding Dues",
+            &format!("Rs. {}", fmt_amt(sup.total_dues_amount)),
+        ));
+        lines.push(LineItem::divider());
+
+        lines.push(LineItem::text("SUPPLIER BALANCES", font_size, true, Align::Left));
+        if sup.suppliers.is_empty() {
+            lines.push(LineItem::text("  No suppliers recorded.", small_size, false, Align::Left));
+        } else {
+            lines.push(LineItem::table_row(
+                &["Supplier Name", "Company", "Purchased", "Paid", "Due Balance"],
+                &[26.0, 22.0, 18.0, 17.0, 17.0],
+            ));
+            for s in &sup.suppliers {
+                lines.push(LineItem::table_row(
+                    &[
+                        &truncate(&s.name, 18),
+                        &truncate(s.company.as_deref().unwrap_or("-"), 16),
+                        &format!("Rs. {}", fmt_amt(s.total_purchased)),
+                        &format!("Rs. {}", fmt_amt(s.total_paid)),
+                        &format!("Rs. {}", fmt_amt(s.total_due)),
+                    ],
+                    &[26.0, 22.0, 18.0, 17.0, 17.0],
+                ));
+            }
         }
     }
 
@@ -726,6 +831,8 @@ mod tests {
             &sample_expenses(),
             &sample_members(),
             &sample_membership_status(),
+            None,
+            None,
         )
         .unwrap();
         assert!(bytes.starts_with(b"%PDF"));
@@ -767,8 +874,19 @@ mod tests {
             expired: vec![],
         };
 
-        let bytes = render_report_pdf(&sample_gym(), &None, &None, &fin, &pay, &exp, &mem, &status)
-            .unwrap();
+        let bytes = render_report_pdf(
+            &sample_gym(),
+            &None,
+            &None,
+            &fin,
+            &pay,
+            &exp,
+            &mem,
+            &status,
+            None,
+            None,
+        )
+        .unwrap();
         assert!(bytes.starts_with(b"%PDF"));
         assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
     }

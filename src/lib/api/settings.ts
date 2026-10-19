@@ -136,3 +136,25 @@ export async function restoreBackup(
 ): Promise<RestoreBackupResult> {
   return invokeCommand<RestoreBackupResult>("restore_backup", { source, adminPassword });
 }
+
+export interface WhatsAppSettings {
+  default_country_code: string;
+  launch_mode: "web" | "desktop";
+  member_dues_template: string;
+  supplier_dues_template: string;
+}
+
+export async function getWhatsAppSettings(): Promise<WhatsAppSettings> {
+  return invokeCommand<WhatsAppSettings>("get_whatsapp_settings");
+}
+
+export async function saveWhatsAppSettings(
+  settings: WhatsAppSettings,
+): Promise<void> {
+  return invokeCommand<void>("save_whatsapp_settings", { settings });
+}
+
+export async function openWhatsAppUrl(url: string): Promise<void> {
+  return invokeCommand<void>("open_whatsapp_url", { url });
+}
+

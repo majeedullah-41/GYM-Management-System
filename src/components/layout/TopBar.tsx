@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { CalendarDays, ChevronDown } from "lucide-react";
 import { useGym } from "../../context/GymContext";
 import { LicenseExpiryNotice } from "../../features/licensing/components/LicenseExpiryNotice";
+import { capitalizeName } from "../../lib/utils/format";
 import type { Page } from "../../types";
 import type { AuthUser } from "../../lib/api/auth";
 
@@ -45,7 +46,7 @@ export function TopBar({ currentPage, user }: TopBarProps) {
 
         <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center px-4">
           <h1 className="pointer-events-auto max-w-[55%] truncate text-center text-2xl font-extrabold tracking-tight text-text-primary sm:text-3xl lg:text-4xl">
-            {gymName}
+            {capitalizeName(gymName)}
           </h1>
         </div>
 
@@ -56,7 +57,7 @@ export function TopBar({ currentPage, user }: TopBarProps) {
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#375d4d] text-[11px] font-semibold text-white">
             {user.username.charAt(0).toUpperCase()}
           </span>
-          <span className="hidden font-semibold text-text-primary sm:inline-block">{user.username}</span>
+          <span className="hidden font-semibold text-text-primary sm:inline-block">{capitalizeName(user.username)}</span>
           <ChevronDown size={14} className="text-secondary-text" />
         </div>
       </header>

@@ -35,7 +35,7 @@ impl From<MembershipPlan> for PlanResponse {
     fn from(plan: MembershipPlan) -> Self {
         Self {
             id: plan.id,
-            name: plan.name,
+            name: crate::utils::formatting::capitalize_name(&plan.name),
             duration_days: plan.duration_days,
             price: plan.price,
             description: plan.description,

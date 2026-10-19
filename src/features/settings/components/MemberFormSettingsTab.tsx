@@ -40,6 +40,7 @@ export function MemberFormSettingsTab() {
         (k): k is MemberFieldKey => known.has(k as MemberFieldKey),
       );
       if (!fields.includes("full_name")) fields.unshift("full_name");
+      if (!fields.includes("phone")) fields.push("phone");
       setVisibleFields(new Set(fields));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load member form settings");

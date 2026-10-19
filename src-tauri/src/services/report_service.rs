@@ -10,6 +10,8 @@ const VALID_REPORT_TYPES: &[&str] = &[
     "expense",
     "member",
     "membership_status",
+    "inventory",
+    "supplier",
 ];
 
 pub fn generate_report(conn: &Connection, req: ReportRequest) -> Result<ReportResponse, AppError> {
@@ -83,6 +85,22 @@ pub fn generate_report(conn: &Connection, req: ReportRequest) -> Result<ReportRe
         "membership_status" => {
             let report = crate::repositories::report_repository::membership_status_report(conn)?;
             Ok(ReportResponse::MembershipStatus(report))
+        }
+        "inventory" => {
+            let report = crate::repositories::report_repository::inventory_report(
+                conn,
+                &req.date_from,
+                &req.date_to,
+            )?;
+            Ok(ReportResponse::Inventory(report))
+        }
+        "supplier" => {
+            let report = crate::repositories::report_repository::supplier_report(
+                conn,
+                &req.date_from,
+                &req.date_to,
+            )?;
+            Ok(ReportResponse::Supplier(report))
         }
         _ => unreachable!(),
     }
@@ -201,6 +219,34 @@ mod tests {
                 assert!(r.active.is_empty());
             }
             _ => panic!("Expected MembershipStatus report"),
+        }
+    }
+
+    #[test]
+    fn should_generate_inventory_report() {
+        let conn = test_db();
+        let req = base_req("inventory");
+        let result = generate_report(&conn, req).unwrap();
+        match result {
+            ReportResponse::Inventory(r) => {
+                assert_eq!(r.total_items, 0);
+                assert_eq!(r.total_stock_units, 0);
+            }
+            _ => panic!("Expected Inventory report"),
+        }
+    }
+
+    #[test]
+    fn should_generate_supplier_report() {
+        let conn = test_db();
+        let req = base_req("supplier");
+        let result = generate_report(&conn, req).unwrap();
+        match result {
+            ReportResponse::Supplier(r) => {
+                assert_eq!(r.total_suppliers, 0);
+                assert_eq!(r.suppliers_with_dues, 0);
+            }
+            _ => panic!("Expected Supplier report"),
         }
     }
 

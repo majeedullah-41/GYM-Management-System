@@ -453,13 +453,15 @@ pub fn list_purchases(
         } else {
             "unpaid".to_string()
         };
+        let supplier_name: String = row.get(3)?;
+        let item_name: String = row.get(5)?;
         out.push(PurchaseResponse {
             id: row.get(0)?,
             invoice_number: row.get(1)?,
             supplier_id: row.get(2)?,
-            supplier_name: row.get(3)?,
+            supplier_name: crate::utils::formatting::capitalize_name(&supplier_name),
             item_id: row.get(4)?,
-            item_name: row.get(5)?,
+            item_name: crate::utils::formatting::capitalize_name(&item_name),
             item_unit: row.get(6)?,
             quantity: row.get(7)?,
             unit_cost: row.get(8)?,
@@ -618,10 +620,11 @@ pub fn list_supplier_payments(
     let mut rows = stmt.query(params_refs.as_slice())?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
+        let supplier_name: String = row.get(2)?;
         out.push(SupplierPaymentResponse {
             id: row.get(0)?,
             supplier_id: row.get(1)?,
-            supplier_name: row.get(2)?,
+            supplier_name: crate::utils::formatting::capitalize_name(&supplier_name),
             purchase_id: row.get(3)?,
             purchase_invoice: row.get(4)?,
             expense_id: row.get(5)?,
@@ -854,14 +857,16 @@ pub fn list_sales(
         let cost_price: i64 = row.get(10)?;
         let total_amount: i64 = row.get(12)?;
         let profit = total_amount - (quantity * cost_price);
+        let customer_name: String = row.get(4)?;
+        let item_name: String = row.get(6)?;
         out.push(SaleResponse {
             id: row.get(0)?,
             invoice_number: row.get(1)?,
             member_id: row.get(2)?,
             member_number: row.get(3)?,
-            customer_name: row.get(4)?,
+            customer_name: crate::utils::formatting::capitalize_name(&customer_name),
             item_id: row.get(5)?,
-            item_name: row.get(6)?,
+            item_name: crate::utils::formatting::capitalize_name(&item_name),
             item_unit: row.get(7)?,
             quantity,
             unit_price: row.get(9)?,

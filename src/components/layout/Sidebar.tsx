@@ -11,6 +11,7 @@ import {
   Package,
 } from "lucide-react";
 import { useGym } from "../../context/GymContext";
+import { capitalizeName } from "../../lib/utils/format";
 import type { Page } from "../../types";
 
 interface SidebarProps {
@@ -42,7 +43,7 @@ export function Sidebar({
   gymLogo: propGymLogo,
 }: SidebarProps) {
   const gymContext = useGym();
-  const gymName = propGymName ?? gymContext.gymName ?? "Gym POS";
+  const gymName = capitalizeName(propGymName ?? gymContext.gymName ?? "Gym POS");
   const gymLogo = propGymLogo !== undefined ? propGymLogo : gymContext.gymLogo;
   const gymTagline = gymContext.gymTagline;
 
@@ -95,7 +96,7 @@ export function Sidebar({
       <div className="mx-4 border-t border-white/10 py-4">
         <div className="mb-3 flex items-center gap-3">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-semibold">{username.charAt(0).toUpperCase()}</span>
-          <div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{username}</p>
+          <div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{capitalizeName(username)}</p>
           <p className="text-[10px] text-white/55">Administrator</p></div>
         </div>
         <button

@@ -6,7 +6,7 @@ use crate::database::Database;
 use crate::errors::AppError;
 use crate::repositories::settings_repository::{
     self, AllSettings, BackupSettings, GymSettings, MemberFormSettings, PaymentFormSettings,
-    PrintSettings, ReceiptSettings,
+    PrintSettings, ReceiptSettings, WhatsAppSettings,
 };
 use crate::services::auth_service::{self, AuthState};
 use crate::services::backup_service::{self, BackupKind};
@@ -17,6 +17,58 @@ use super::db::{run_db, run_db_unauthenticated};
 pub async fn get_all_settings(state: State<'_, Database>) -> Result<AllSettings, AppError> {
     let conn = state.inner().clone_conn();
     run_db_unauthenticated(conn, |c| settings_repository::get_all_settings(c)).await
+}
+
+#[tauri::command]
+pub async fn get_whatsapp_settings(
+    state: State<'_, Database>,
+) -> Result<WhatsAppSettings, AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, |c| settings_repository::get_whatsapp_settings(c)).await
+}
+
+#[tauri::command]
+pub async fn save_whatsapp_settings(
+    state: State<'_, Database>,
+    settings: WhatsAppSettings,
+) -> Result<(), AppError> {
+    let conn = state.inner().clone_conn();
+    run_db(conn, move |c| {
+        settings_repository::save_whatsapp_settings(c, &settings)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn open_whatsapp_url(url: String) -> Result<(), AppError> {
+    auth_service::require_authenticated()?;
+    let trimmed = url.trim();
+    if !trimmed.starts_with("whatsapp://send?")
+        && !trimmed.starts_with("https://wa.me/")
+        && !trimmed.starts_with("https://web.whatsapp.com/")
+    {
+        return Err(AppError::ValidationError(
+            "Only WhatsApp URLs are permitted".into(),
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", trimmed])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| AppError::InternalError(format!("Failed to launch WhatsApp: {e}")))?;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = trimmed;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

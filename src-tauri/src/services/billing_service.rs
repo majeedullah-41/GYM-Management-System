@@ -311,7 +311,7 @@ pub fn paid_through(conn: &Connection, member_id: &str) -> Result<Option<String>
     let bills = billing_repository::list_member_bills(conn, member_id)?;
     Ok(bills
         .iter()
-        .filter(|b| b.paid_amount >= b.expected_amount)
+        .filter(|b| b.paid_amount + b.discount_amount >= b.expected_amount)
         .map(|b| b.period_end.as_str())
         .max()
         .map(str::to_string))
@@ -452,7 +452,11 @@ pub fn allocate_payment(
         if remaining <= 0 {
             break;
         }
-        let allocated = remaining.min(bill.expected_amount - bill.paid_amount - bill.discount_amount);
+        let due = (bill.expected_amount - bill.paid_amount - bill.discount_amount).max(0);
+        if due <= 0 {
+            continue;
+        }
+        let allocated = remaining.min(due);
         billing_repository::create_bill_allocation(
             conn,
             payment_id,
